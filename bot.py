@@ -10,7 +10,7 @@ import requests
 from datetime import datetime
 
 # ========== কনফিগারেশন ==========
-LICENSE_SERVER = "https://ridol-license-server.onrender.com"
+LICENSE_SERVER = "https://ridol-fb-tool.onrender.com
 FB_PACKAGE = "com.facebook.lite"
 APP_NAME = "Ridol FB Tool"
 
