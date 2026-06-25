@@ -2,6 +2,7 @@
 """
 Ridol FB Tool v4.0 - Complete Audio Experience Edition
 Author: Ridol Islam
+License: MIT
 """
 
 import os
@@ -55,19 +56,15 @@ class Color:
 
 # ==================== API CONNECTION MANAGER ====================
 class APIManager:
-    """Manages all API communication between tool and server"""
-    
     BASE_URL = LICENSE_SERVER
     API_VERSION = 'v1'
     
     @classmethod
     def get_endpoint(cls, path):
-        """Get full API endpoint URL"""
         return f'{cls.BASE_URL}/api/{cls.API_VERSION}/{path}'
     
     @classmethod
     def test_connection(cls):
-        """Test if server is reachable"""
         try:
             print(f'{Color.CYAN}[*] Testing API connection...{Color.RESET}')
             response = requests.get(cls.get_endpoint('ping'), timeout=10)
@@ -90,7 +87,6 @@ class APIManager:
     
     @classmethod
     def get_server_status(cls):
-        """Get full server status"""
         try:
             response = requests.get(cls.get_endpoint('status'), timeout=10)
             if response.status_code == 200:
@@ -101,7 +97,6 @@ class APIManager:
     
     @classmethod
     def verify_license(cls, license_key, device_serial=''):
-        """Verify license key with server"""
         try:
             response = requests.post(
                 cls.get_endpoint('license/verify'),
@@ -115,19 +110,7 @@ class APIManager:
             return {'valid': False, 'message': 'Connection failed'}
     
     @classmethod
-    def get_license_status(cls, license_key):
-        """Get license status from server"""
-        try:
-            response = requests.get(cls.get_endpoint(f'license/status/{license_key}'), timeout=10)
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except:
-            return None
-    
-    @classmethod
     def check_sound_status(cls):
-        """Check if sound exists on server"""
         try:
             response = requests.get(cls.get_endpoint('sound/status'), timeout=10)
             if response.status_code == 200:
@@ -138,9 +121,7 @@ class APIManager:
     
     @classmethod
     def download_sound(cls):
-        """Download sound from server"""
         try:
-            # First check if sound exists
             status = cls.check_sound_status()
             if not status or not status.get('exists'):
                 print(f'{Color.YELLOW}[!] No custom sound on server{Color.RESET}')
@@ -176,7 +157,6 @@ class APIManager:
     
     @classmethod
     def register_device(cls, device_serial, license_key=''):
-        """Register device with server"""
         try:
             response = requests.post(
                 cls.get_endpoint('device/register'),
@@ -209,7 +189,6 @@ class TitleAnimation:
         
         print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
         
-        # Check API connection
         connected, _ = APIManager.test_connection()
         status_text = "API CONNECTED" if connected else "API OFFLINE"
         status_color = Color.GREEN if connected else Color.RED
@@ -255,19 +234,14 @@ class AudioEngine:
             except:
                 return False
     
-    # ===== PLAY SOUND METHOD (FIXED) =====
-    def play_sound(self, filename, gain='-5', sound_dir=None):
+    def play_sound(self, filename, gain='-5'):
         """Play a sound file asynchronously"""
         if not self.sound_available:
             return
         
-        if sound_dir is None:
-            sound_dir = self.sound_dir
-        
-        # Check multiple locations
-        filepath = os.path.join(sound_dir, filename)
+        filepath = os.path.join(self.sound_dir, filename)
         if not os.path.exists(filepath):
-            filepath = os.path.join(self.sound_dir, filename)
+            filepath = os.path.join(self.custom_sound_dir, filename)
             if not os.path.exists(filepath):
                 return
         
@@ -281,7 +255,6 @@ class AudioEngine:
             except:
                 pass
     
-    # ===== SHORTCUT METHODS =====
     def play_startup(self): self.play_sound('startup.wav', '-3')
     def play_click(self): self.play_sound('click.wav', '-8')
     def play_success(self): self.play_sound('success.wav', '-5')
@@ -289,14 +262,12 @@ class AudioEngine:
     def play_done(self): self.play_sound('done.wav', '-3')
     
     def download_background_sound(self):
-        """Download sound using API"""
         return APIManager.download_sound()
     
     def play_background_loop(self):
         if not self.sound_available:
             return
         
-        # Try to download from server first
         custom_bg = os.path.join(self.custom_sound_dir, 'background.wav')
         if not os.path.exists(custom_bg):
             self.download_background_sound()
@@ -620,8 +591,6 @@ class MainMenu:
         print(f' {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}{"connected" if devices else "No device"}{Color.RESET}')
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}*{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
-        
-        # Check API connection
         connected, _ = APIManager.test_connection()
         status_color = Color.GREEN if connected else Color.RED
         status_text = "CONNECTED" if connected else "OFFLINE"
@@ -866,7 +835,6 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {self.audio.get_status()}{Color.CYAN}       |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         
-        # API Status
         status = APIManager.get_server_status()
         if status:
             print(f'\n{Color.CYAN}API Server Status:{Color.RESET}')
@@ -1005,7 +973,6 @@ class MainMenu:
 # ==================== MAIN ====================
 if __name__ == '__main__':
     try:
-        # Test API connection first
         print(f'{Color.CYAN}[*] Initializing API Connection...{Color.RESET}')
         connected, _ = APIManager.test_connection()
         
