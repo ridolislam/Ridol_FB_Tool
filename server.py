@@ -17,6 +17,12 @@ import io
 # ==================== MONGODB ATLAS CONNECTION ====================
 MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
 
+# MongoDB connection variables
+db = None
+fs = None
+client = None
+MONGO_AVAILABLE = False
+
 try:
     from pymongo import MongoClient
     from bson import ObjectId
@@ -27,10 +33,6 @@ except ImportError:
     print("[-] pymongo not installed. Install: pip install pymongo")
 
 # Connect to MongoDB
-db = None
-fs = None
-client = None
-
 if MONGO_AVAILABLE:
     try:
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
@@ -60,27 +62,27 @@ ADMIN_PASSWORD = 'Ridol123@'
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    if db:
+    if db is not None:
         return users_collection.find_one({'license_key': license_key})
     return None
 
 def get_users():
-    if db:
+    if db is not None:
         return list(users_collection.find({}))
     return []
 
 def get_devices():
-    if db:
+    if db is not None:
         return list(devices_collection.find({}))
     return []
 
 def get_device(device_serial):
-    if db:
+    if db is not None:
         return devices_collection.find_one({'device_serial': device_serial})
     return None
 
 def save_user(user_data):
-    if db:
+    if db is not None:
         if 'created_at' not in user_data:
             user_data['created_at'] = datetime.now().isoformat()
         existing = users_collection.find_one({'license_key': user_data['license_key']})
@@ -95,7 +97,7 @@ def save_user(user_data):
     return False
 
 def save_device(device_data):
-    if db:
+    if db is not None:
         if 'created_at' not in device_data:
             device_data['created_at'] = datetime.now().isoformat()
         existing = devices_collection.find_one({'device_serial': device_data['device_serial']})
@@ -110,12 +112,12 @@ def save_device(device_data):
     return False
 
 def delete_user(license_key):
-    if db:
+    if db is not None:
         return users_collection.delete_one({'license_key': license_key})
     return None
 
 def save_sound_file(file_data, filename):
-    if fs:
+    if fs is not None:
         existing = fs.find_one({'filename': filename})
         if existing:
             fs.delete(existing._id)
@@ -128,12 +130,12 @@ def save_sound_file(file_data, filename):
     return None
 
 def get_sound_file(filename):
-    if fs:
+    if fs is not None:
         return fs.find_one({'filename': filename})
     return None
 
 def delete_sound_file(filename):
-    if fs:
+    if fs is not None:
         existing = fs.find_one({'filename': filename})
         if existing:
             fs.delete(existing._id)
@@ -141,7 +143,7 @@ def delete_sound_file(filename):
     return False
 
 def get_all_sound_files():
-    if fs:
+    if fs is not None:
         sounds = []
         for f in fs.find({}):
             sounds.append({
@@ -205,7 +207,7 @@ def home():
         'server': 'Ridol FB Tool License Server',
         'version': '4.0',
         'status': 'online',
-        'database': 'MongoDB Atlas' if db else 'Not Connected',
+        'database': 'MongoDB Atlas' if db is not None else 'Not Connected',
         'timestamp': datetime.now().isoformat()
     })
 
@@ -215,20 +217,20 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': '4.0',
-        'database': 'MongoDB Atlas' if db else 'Not Connected'
+        'database': 'MongoDB Atlas' if db is not None else 'Not Connected'
     })
 
 @app.route('/api/v1/status')
 def api_status():
-    users = get_users() if db else []
-    devices = get_devices() if db else []
-    sound_files = get_all_sound_files()
+    users = get_users() if db is not None else []
+    devices = get_devices() if db is not None else []
+    sound_files = get_all_sound_files() if fs is not None else []
     
     return jsonify({
         'status': 'online',
         'version': '4.0',
         'timestamp': datetime.now().isoformat(),
-        'database': 'MongoDB Atlas' if db else 'Not Connected',
+        'database': 'MongoDB Atlas' if db is not None else 'Not Connected',
         'license_count': len(users),
         'device_count': len(devices),
         'sound_files': [f['name'] for f in sound_files],
@@ -237,7 +239,7 @@ def api_status():
 
 @app.route('/api/v1/sound/status')
 def api_sound_status():
-    sound_files = get_all_sound_files()
+    sound_files = get_all_sound_files() if fs is not None else []
     return jsonify({
         'exists': len(sound_files) > 0,
         'sounds': sound_files,
@@ -399,8 +401,8 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = get_users() if db else []
-    devices = get_devices() if db else []
+    users = get_users() if db is not None else []
+    devices = get_devices() if db is not None else []
     
     now = datetime.now()
     total = len(users)
@@ -533,114 +535,22 @@ LOGIN_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Login</title>
     <style>
-        body {
-            background: #0a0a1a;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            background: #111;
-            padding: 40px;
-            border-radius: 16px;
-            border: 1px solid #1a1a2e;
-            max-width: 400px;
-            width: 100%;
-        }
-        h1 {
-            color: #00ff88;
-            text-align: center;
-            font-size: 24px;
-            margin-bottom: 5px;
-        }
-        .subtitle {
-            text-align: center;
-            color: #666;
-            font-size: 13px;
-            margin-bottom: 30px;
-        }
-        .db-badge {
-            background: #003311;
-            color: #00ff88;
-            padding: 2px 12px;
-            border-radius: 12px;
-            font-size: 10px;
-            display: inline-block;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            color: #aaa;
-            font-size: 13px;
-            display: block;
-            margin-bottom: 6px;
-        }
-        input {
-            width: 100%;
-            padding: 12px 16px;
-            background: #1a1a2e;
-            border: 1px solid #333;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 14px;
-            outline: none;
-            box-sizing: border-box;
-        }
-        input:focus {
-            border-color: #00ff88;
-        }
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: #00ff88;
-            border: none;
-            border-radius: 8px;
-            color: #000;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .btn:hover {
-            background: #00cc77;
-        }
-        .error {
-            background: rgba(255,68,68,0.1);
-            border: 1px solid #ff4444;
-            color: #ff4444;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 13px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .hint {
-            text-align: center;
-            color: #333;
-            font-size: 12px;
-            margin-top: 15px;
-        }
-        .hint span {
-            background: #1a1a2e;
-            padding: 2px 10px;
-            border-radius: 4px;
-            color: #666;
-        }
-        .footer {
-            text-align: center;
-            color: #333;
-            font-size: 11px;
-            margin-top: 20px;
-        }
-        .footer .brand {
-            color: #00ff88;
-        }
+        body { background: #0a0a1a; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+        .container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
+        h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
+        .db-badge { background: #003311; color: #00ff88; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
+        .form-group { margin-bottom: 20px; }
+        label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
+        input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; box-sizing: border-box; }
+        input:focus { border-color: #00ff88; }
+        .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn:hover { background: #00cc77; }
+        .error { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
+        .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
+        .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
+        .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
+        .footer .brand { color: #00ff88; }
     </style>
 </head>
 <body>
