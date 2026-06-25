@@ -2,46 +2,61 @@
 """
 Ridol FB Tool License Server v4.0 - MongoDB Atlas Integration
 Author: Ridol Islam
+License: MIT
 """
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
 from flask_cors import CORS
 import os
 import uuid
-import bcrypt
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
-import gridfs
-from pymongo import MongoClient
-from bson import ObjectId
 import io
+import base64
 
 # ==================== MONGODB ATLAS CONNECTION ====================
 MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
 
-# Connect to MongoDB
 try:
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-    db = client['ridol_fb_tool']
-    users_collection = db['users']
-    devices_collection = db['devices']
-    sounds_collection = db['sounds']
-    fs = gridfs.GridFS(db)
-    
-    # Test connection
-    client.admin.command('ping')
-    print("[+] MongoDB Atlas Connected Successfully!")
-except Exception as e:
-    print(f"[-] MongoDB Connection Error: {e}")
-    # Fallback to local file storage
-    db = None
-    fs = None
+    from pymongo import MongoClient
+    from bson import ObjectId
+    import gridfs
+    MONGO_AVAILABLE = True
+except ImportError:
+    MONGO_AVAILABLE = False
+    print("[-] pymongo not installed. Install: pip install pymongo")
+
+# Connect to MongoDB
+db = None
+fs = None
+client = None
+
+if MONGO_AVAILABLE:
+    try:
+        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
+        db = client['ridol_fb_tool']
+        users_collection = db['users']
+        devices_collection = db['devices']
+        fs = gridfs.GridFS(db)
+        
+        # Test connection
+        client.admin.command('ping')
+        print("[+] MongoDB Atlas Connected Successfully!")
+        print(f"[+] Database: {db.name}")
+        print(f"[+] Users Collection: {users_collection.count_documents({})} records")
+        print(f"[+] Devices Collection: {devices_collection.count_documents({})} records")
+    except Exception as e:
+        print(f"[-] MongoDB Connection Error: {e}")
+        db = None
+        fs = None
+        client = None
 
 app = Flask(__name__)
 CORS(app)
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 ADMIN_PASSWORD = 'Ridol123@'
 
@@ -76,7 +91,6 @@ def save_user(user_data):
     if db:
         if 'created_at' not in user_data:
             user_data['created_at'] = datetime.now().isoformat()
-        # Check if exists
         existing = users_collection.find_one({'license_key': user_data['license_key']})
         if existing:
             users_collection.update_one(
@@ -118,8 +132,12 @@ def save_sound_file(file_data, filename):
         if existing:
             fs.delete(existing._id)
         
-        # Save new file
-        file_id = fs.put(file_data, filename=filename, uploaded_at=datetime.now().isoformat())
+        file_id = fs.put(
+            file_data, 
+            filename=filename, 
+            uploaded_at=datetime.now().isoformat(),
+            content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+        )
         return file_id
     return None
 
@@ -204,7 +222,7 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': 'v4.0',
-        'database': 'MongoDB Atlas' if db else 'Local File Storage'
+        'database': 'MongoDB Atlas' if db else 'Not Connected'
     })
 
 @app.route('/api/v1/status')
@@ -217,11 +235,11 @@ def api_status():
         'status': 'online',
         'version': 'v4.0',
         'timestamp': datetime.now().isoformat(),
+        'database': 'MongoDB Atlas' if db else 'Not Connected',
         'license_count': len(users),
         'device_count': len(devices),
         'sound_files': [f['name'] for f in sound_files],
-        'sound_exists': len(sound_files) > 0,
-        'database': 'MongoDB Atlas' if db else 'Local File Storage'
+        'sound_exists': len(sound_files) > 0
     })
 
 @app.route('/api/v1/sound/status')
@@ -242,11 +260,12 @@ def api_download_sound(filename):
         sound_file = get_sound_file(filename)
         if sound_file:
             data = sound_file.read()
+            mimetype = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
             return send_file(
                 io.BytesIO(data),
                 as_attachment=True,
                 download_name=filename,
-                mimetype='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+                mimetype=mimetype
             )
         return jsonify({'error': 'File not found'}), 404
     except Exception as e:
@@ -257,7 +276,6 @@ def api_download_sound_default():
     try:
         sound_files = get_all_sound_files()
         if sound_files:
-            # Prefer MP3
             for f in sound_files:
                 if f['name'].endswith('.mp3'):
                     return api_download_sound(f['name'])
@@ -370,7 +388,7 @@ def home():
         'server': 'Ridol FB Tool License Server',
         'version': 'v4.0',
         'status': 'online',
-        'database': 'MongoDB Atlas' if db else 'Local File Storage',
+        'database': 'MongoDB Atlas' if db else 'Not Connected',
         'api_endpoints': {
             'ping': '/api/v1/ping',
             'status': '/api/v1/status',
@@ -389,6 +407,7 @@ def admin_login():
         password = request.form.get('password', '')
         if password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
+            session.permanent = True
             return redirect(url_for('admin_panel'))
         else:
             return render_template_string(LOGIN_HTML, error='❌ Incorrect password!')
@@ -430,8 +449,8 @@ def admin_data():
             active += 1
     
     return jsonify({
-        'users': {u['license_key']: u for u in users},
-        'devices': {d['device_serial']: d for d in devices},
+        'users': {u['license_key']: {k: v for k, v in u.items() if k != '_id'} for u in users},
+        'devices': {d['device_serial']: {k: v for k, v in d.items() if k != '_id'} for d in devices},
         'total': total,
         'active': active,
         'expired': expired,
