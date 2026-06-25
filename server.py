@@ -5,7 +5,7 @@ Author: Ridol Islam
 License: MIT
 """
 
-from flask import Flask, request, jsonify, session, redirect, url_for, send_file
+from flask import Flask, request, jsonify, session, redirect, url_for, send_file, render_template_string
 from flask_cors import CORS
 import os
 import uuid
@@ -203,7 +203,7 @@ def login_required(f):
 def home():
     return jsonify({
         'server': 'Ridol FB Tool License Server',
-        'version': 'v4.0',
+        'version': '4.0',
         'status': 'online',
         'database': 'MongoDB Atlas' if db else 'Not Connected',
         'timestamp': datetime.now().isoformat()
@@ -214,7 +214,7 @@ def ping():
     return jsonify({
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
-        'version': 'v4.0',
+        'version': '4.0',
         'database': 'MongoDB Atlas' if db else 'Not Connected'
     })
 
@@ -226,7 +226,7 @@ def api_status():
     
     return jsonify({
         'status': 'online',
-        'version': 'v4.0',
+        'version': '4.0',
         'timestamp': datetime.now().isoformat(),
         'database': 'MongoDB Atlas' if db else 'Not Connected',
         'license_count': len(users),
@@ -299,7 +299,7 @@ def api_upload_sound():
         if file_id:
             return jsonify({
                 'success': True,
-                'message': f'✅ Sound uploaded successfully!',
+                'message': 'Sound uploaded successfully!',
                 'filename': filename,
                 'original_name': file.filename,
                 'size': len(file_data),
@@ -307,7 +307,7 @@ def api_upload_sound():
             })
         return jsonify({'success': False, 'message': 'Failed to save to database'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
 @login_required
@@ -318,7 +318,7 @@ def api_delete_sound():
             return jsonify({'success': False, 'message': 'No filename provided'})
         
         if delete_sound_file(filename):
-            return jsonify({'success': True, 'message': '✅ Sound deleted'})
+            return jsonify({'success': True, 'message': 'Sound deleted'})
         return jsonify({'success': False, 'message': 'File not found'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -384,7 +384,7 @@ def admin_login():
             session.permanent = True
             return redirect(url_for('admin_panel'))
         else:
-            return render_template_string(LOGIN_HTML, error='❌ Incorrect password!')
+            return render_template_string(LOGIN_HTML, error='Incorrect password!')
     
     if session.get('admin_logged_in'):
         return redirect(url_for('admin_panel'))
@@ -458,7 +458,7 @@ def admin_create():
         if save_user(user_data):
             return jsonify({
                 'success': True,
-                'message': f'✅ License created! Valid for {days} days.',
+                'message': f'License created! Valid for {days} days.',
                 'license_key': key,
                 'expires_at': expires
             })
@@ -480,7 +480,7 @@ def admin_ban():
         
         user['banned'] = True
         save_user(user)
-        return jsonify({'success': True, 'message': '✅ License banned'})
+        return jsonify({'success': True, 'message': 'License banned'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -498,7 +498,7 @@ def admin_unban():
         
         user['banned'] = False
         save_user(user)
-        return jsonify({'success': True, 'message': '✅ License unbanned'})
+        return jsonify({'success': True, 'message': 'License unbanned'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -512,7 +512,7 @@ def admin_delete():
         
         result = delete_user(key)
         if result and result.deleted_count > 0:
-            return jsonify({'success': True, 'message': '✅ License deleted'})
+            return jsonify({'success': True, 'message': 'License deleted'})
         return jsonify({'success': False, 'message': 'License not found'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -523,69 +523,163 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ==================== HTML TEMPLATES ====================
+# ==================== HTML TEMPLATES (SIMPLIFIED) ====================
 
-LOGIN_HTML = '''<!DOCTYPE html>
+LOGIN_HTML = """
+<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Login - MongoDB</title>
+    <title>Admin Login</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
-        .login-container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
-        .login-container h1 { color: #00ff88; text-align: center; font-size: 24px; }
-        .login-container .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
-        .form-group input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
-        .form-group input:focus { border-color: #00ff88; }
-        .btn-login { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
-        .btn-login:hover { background: #00cc77; }
-        .error-msg { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
-        .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
-        .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
-        .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
-        .footer .brand { color: #00ff88; }
-        .db-badge { background: #003311; color: #00ff88; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; margin-top: 5px; }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: #111;
+            padding: 40px;
+            border-radius: 16px;
+            border: 1px solid #1a1a2e;
+            max-width: 400px;
+            width: 100%;
+        }
+        h1 {
+            color: #00ff88;
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 30px;
+        }
+        .db-badge {
+            background: #003311;
+            color: #00ff88;
+            padding: 2px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            display: inline-block;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            color: #aaa;
+            font-size: 13px;
+            display: block;
+            margin-bottom: 6px;
+        }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+        }
+        input:focus {
+            border-color: #00ff88;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #00ff88;
+            border: none;
+            border-radius: 8px;
+            color: #000;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #00cc77;
+        }
+        .error {
+            background: rgba(255,68,68,0.1);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .hint {
+            text-align: center;
+            color: #333;
+            font-size: 12px;
+            margin-top: 15px;
+        }
+        .hint span {
+            background: #1a1a2e;
+            padding: 2px 10px;
+            border-radius: 4px;
+            color: #666;
+        }
+        .footer {
+            text-align: center;
+            color: #333;
+            font-size: 11px;
+            margin-top: 20px;
+        }
+        .footer .brand {
+            color: #00ff88;
+        }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <h1>🔐 RIDOL FB TOOL</h1>
-        <div class="subtitle">Admin Authentication • v4.0</div>
-        <div style="text-align:center"><span class="db-badge">🍃 MongoDB Atlas</span></div>
+    <div class="container">
+        <h1>RIDOL FB TOOL</h1>
+        <div class="subtitle">Admin Authentication v4.0</div>
+        <div style="text-align:center"><span class="db-badge">MongoDB Atlas</span></div>
         {% if error %}
-        <div class="error-msg">{{ error }}</div>
+        <div class="error">{{ error }}</div>
         {% endif %}
         <form method="POST" action="/admin">
             <div class="form-group">
-                <label>🔑 Admin Password</label>
-                <input type="password" name="password" placeholder="Enter admin password" required autofocus>
+                <label>Admin Password</label>
+                <input type="password" name="password" placeholder="Enter admin password" required>
             </div>
-            <button type="submit" class="btn-login">🚀 Access Panel</button>
+            <button type="submit" class="btn">Access Panel</button>
         </form>
-        <div class="hint"><span>🔑 Hint: Admin Password</span></div>
-        <div class="footer"><span class="brand">RIDOL FB TOOL</span> • v4.0</div>
+        <div class="hint"><span>Hint: Admin Password</span></div>
+        <div class="footer"><span class="brand">RIDOL FB TOOL</span> v4.0</div>
     </div>
 </body>
-</html>'''
+</html>
+"""
 
-ADMIN_HTML = '''<!DOCTYPE html>
+ADMIN_HTML = """
+<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Panel - MongoDB</title>
+    <title>Admin Panel</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
         .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         .header h1 { color: #00ff88; font-size: 20px; }
-        .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .header .db-badge { background: #003311; color: #00ff88; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #00ff88; }
+        .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .db-badge { background: #003311; color: #00ff88; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #00ff88; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
         .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
@@ -594,7 +688,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .flex-grow { flex: 1; min-width: 200px; }
         .form-group { margin-bottom: 15px; }
         .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
-        .form-group input, .form-group select { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+        .form-group input { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
         .form-group input:focus { border-color: #00ff88; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; }
         .btn:hover { transform: scale(1.02); }
@@ -613,7 +707,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
         th { color: #00ff88; font-size: 11px; text-transform: uppercase; }
         td code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
-        .badge { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
+        .badge-status { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
         .badge-active { background: #003311; color: #00ff88; }
         .badge-expired { background: #330000; color: #ff4444; }
         .badge-banned { background: #331100; color: #ff8800; }
@@ -644,21 +738,21 @@ ADMIN_HTML = '''<!DOCTYPE html>
     <div class="container">
         <div class="header">
             <div>
-                <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
+                <h1>RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
                 <div style="color:#666;font-size:12px;margin-top:3px">
-                    Admin Panel • <span class="db-badge">🍃 MongoDB Atlas</span>
+                    Admin Panel • <span class="db-badge">MongoDB Atlas</span>
                 </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
-                <span class="badge">👑 ADMIN</span>
-                <a href="/admin/logout"><button class="btn-logout">🚪 LOGOUT</button></a>
+                <span class="badge">ADMIN</span>
+                <a href="/admin/logout"><button class="btn-logout">LOGOUT</button></a>
             </div>
         </div>
         
         <div id="msg" class="msg"></div>
         
         <div class="card">
-            <h2>🔌 MongoDB API Endpoints</h2>
+            <h2>API Endpoints</h2>
             <div class="api-info">
                 <code>/api/v1/sound/status</code> - Check sound status<br>
                 <code>/api/v1/sound/download</code> - Download sound<br>
@@ -670,7 +764,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         </div>
         
         <div class="card">
-            <h2>🎵 Custom Sound Upload (MP3 / WAV / OGG)</h2>
+            <h2>Custom Sound Upload</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
                 <span class="icon">📤</span>
                 <p>Drop your MP3 / WAV / OGG file here</p>
@@ -679,42 +773,42 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
             <div style="margin-top:15px" id="soundList"></div>
             <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
-                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
-                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Link</button>
-                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Status</button>
-                <button class="btn btn-green" onclick="testConnection()">🔌 Test</button>
+                <button class="btn btn-blue" onclick="refreshSounds()">Refresh</button>
+                <button class="btn btn-purple" onclick="copyDownloadLink()">Copy Link</button>
+                <button class="btn btn-orange" onclick="checkSoundStatus()">Status</button>
+                <button class="btn btn-green" onclick="testConnection()">Test</button>
             </div>
         </div>
         
         <div class="card">
-            <h2>➕ Create License</h2>
+            <h2>Create License</h2>
             <div class="flex">
                 <div class="flex-grow">
                     <div class="form-group">
-                        <label>📅 Expiry Days (1-365)</label>
+                        <label>Expiry Days (1-365)</label>
                         <input type="number" id="days" value="30" min="1" max="365">
                     </div>
                 </div>
                 <div class="flex-grow">
                     <div class="form-group">
-                        <label>📝 Notes</label>
+                        <label>Notes</label>
                         <input type="text" id="notes" placeholder="Client name">
                     </div>
                 </div>
             </div>
-            <button class="btn btn-green" onclick="createLic()">⚡ GENERATE LICENSE</button>
+            <button class="btn btn-green" onclick="createLic()">GENERATE LICENSE</button>
             <div id="new_key" class="new-key-box">
-                <strong style="color:#00ff88">✅ License Created!</strong>
+                <strong style="color:#00ff88">License Created!</strong>
                 <span class="key" id="key_display">RIDOL-XXXX-XXXX-XXXX</span>
                 <div class="flex" style="gap:10px">
-                    <button class="btn btn-blue" onclick="copyKey()">📋 COPY</button>
-                    <button class="btn btn-orange" onclick="searchNewKey()">🔍 FIND</button>
+                    <button class="btn btn-blue" onclick="copyKey()">COPY</button>
+                    <button class="btn btn-orange" onclick="searchNewKey()">FIND</button>
                 </div>
             </div>
         </div>
         
         <div class="card">
-            <h2>📊 Statistics</h2>
+            <h2>Statistics</h2>
             <div class="stats">
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_total">0</div><div class="label">Total</div></div>
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">Active</div></div>
@@ -725,11 +819,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
         </div>
         
         <div class="card">
-            <h2>👥 License Management</h2>
+            <h2>License Management</h2>
             <div class="search-box">
-                <input type="text" id="search" placeholder="🔍 Search..." onkeyup="if(event.key==='Enter')searchLic()">
-                <button class="btn btn-blue" onclick="searchLic()">🔍 SEARCH</button>
-                <button class="btn btn-orange" onclick="refreshAll()">🔄 REFRESH</button>
+                <input type="text" id="search" placeholder="Search..." onkeyup="if(event.key==='Enter')searchLic()">
+                <button class="btn btn-blue" onclick="searchLic()">SEARCH</button>
+                <button class="btn btn-orange" onclick="refreshAll()">REFRESH</button>
             </div>
             <div class="table-wrapper">
                 <table>
@@ -739,214 +833,220 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <div class="footer">✦ RIDOL FB TOOL v4.0 • MongoDB Atlas ✦</div>
+        <div class="footer">RIDOL FB TOOL v4.0 • MongoDB Atlas</div>
     </div>
     
     <script>
-        let allUsers = {};
-        let lastCreatedKey = '';
+        var allUsers = {};
+        var lastCreatedKey = '';
         
         function showMsg(text, type) {
-            const el = document.getElementById('msg');
+            var el = document.getElementById('msg');
             el.textContent = text;
             el.className = 'msg msg-' + type;
             el.style.display = 'block';
-            setTimeout(() => el.style.display = 'none', 5000);
+            setTimeout(function() { el.style.display = 'none'; }, 5000);
         }
         
-        async function apiCall(url, method, data) {
-            try {
-                const res = await fetch(url, {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: data ? JSON.stringify(data) : undefined
-                });
+        function apiCall(url, method, data) {
+            return fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: data ? JSON.stringify(data) : undefined
+            }).then(function(res) {
                 if (res.status === 401 || res.status === 302) {
                     window.location.href = '/admin';
                     return null;
                 }
-                return await res.json();
-            } catch (e) {
-                showMsg('❌ Network Error', 'error');
+                return res.json();
+            }).catch(function(e) {
+                showMsg('Network Error', 'error');
                 return null;
-            }
+            });
         }
         
-        async function testConnection() {
-            showMsg('🔌 Testing API connection...', 'info');
-            try {
-                const res = await fetch('/api/v1/ping');
-                const data = await res.json();
-                if (data.status === 'online') {
-                    showMsg('✅ Server reachable! DB: ' + data.database, 'success');
-                } else {
-                    showMsg('❌ Server error', 'error');
-                }
-            } catch (e) {
-                showMsg('❌ Connection failed: ' + e.message, 'error');
-            }
+        function testConnection() {
+            showMsg('Testing API connection...', 'info');
+            fetch('/api/v1/ping')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.status === 'online') {
+                        showMsg('Server reachable! DB: ' + data.database, 'success');
+                    } else {
+                        showMsg('Server error', 'error');
+                    }
+                })
+                .catch(function(e) {
+                    showMsg('Connection failed: ' + e.message, 'error');
+                });
         }
         
-        const dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
-        dropZone.addEventListener('drop', e => {
+        var dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', function(e) {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
         });
         
-        async function uploadSound(files) {
-            if (!files || files.length === 0) { showMsg('❌ No file', 'error'); return; }
-            const file = files[0];
+        function uploadSound(files) {
+            if (!files || files.length === 0) { showMsg('No file', 'error'); return; }
+            var file = files[0];
             if (!file.name.match(/\.(mp3|wav|ogg)$/i)) {
-                showMsg('❌ Only MP3, WAV, OGG allowed', 'error');
+                showMsg('Only MP3, WAV, OGG allowed', 'error');
                 return;
             }
-            if (file.size > 50*1024*1024) { showMsg('❌ Max 50MB', 'error'); return; }
+            if (file.size > 50*1024*1024) { showMsg('Max 50MB', 'error'); return; }
             
-            const formData = new FormData();
+            var formData = new FormData();
             formData.append('file', file);
-            try {
-                showMsg('⏳ Uploading to MongoDB...', 'info');
-                const res = await fetch('/api/v1/sound/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.success) {
-                    showMsg('✅ ' + data.message + ' (' + file.name + ')', 'success');
-                    loadSounds();
-                    checkSoundStatus();
-                } else {
-                    showMsg('❌ ' + data.message, 'error');
-                }
-            } catch (e) { showMsg('❌ Upload failed', 'error'); }
+            showMsg('Uploading to MongoDB...', 'info');
+            fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showMsg(data.message + ' (' + file.name + ')', 'success');
+                        loadSounds();
+                        checkSoundStatus();
+                    } else {
+                        showMsg(data.message, 'error');
+                    }
+                })
+                .catch(function(e) { showMsg('Upload failed', 'error'); });
         }
         
-        async function loadSounds() {
-            try {
-                const res = await fetch('/api/v1/sound/status');
-                const data = await res.json();
-                const list = document.getElementById('soundList');
-                if (data.sounds && data.sounds.length > 0) {
-                    let html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (MongoDB):</div>';
-                    data.sounds.forEach(s => {
-                        const ext = s.name.split('.').pop().toUpperCase();
-                        html += `<div class="sound-item">
-                            <span>🎵 ${s.name}</span>
-                            <span class="type">${ext}</span>
-                            <span class="size">${s.size_mb} MB</span>
-                            <div style="display:flex;gap:6px">
-                                <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶</button>
-                                <button class="btn btn-green btn-sm" onclick="copySingleLink('${s.name}')">📋</button>
-                                <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
-                            </div>
-                        </div>`;
-                    });
-                    list.innerHTML = html;
-                } else {
-                    list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in MongoDB</div>';
-                }
-            } catch (e) {}
+        function loadSounds() {
+            fetch('/api/v1/sound/status')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var list = document.getElementById('soundList');
+                    if (data.sounds && data.sounds.length > 0) {
+                        var html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (MongoDB):</div>';
+                        data.sounds.forEach(function(s) {
+                            var ext = s.name.split('.').pop().toUpperCase();
+                            html += '<div class="sound-item">' +
+                                '<span>🎵 ' + s.name + '</span>' +
+                                '<span class="type">' + ext + '</span>' +
+                                '<span class="size">' + s.size_mb + ' MB</span>' +
+                                '<div style="display:flex;gap:6px">' +
+                                '<button class="btn btn-blue btn-sm" onclick="playSound(\'' + s.name + '\')">▶</button>' +
+                                '<button class="btn btn-green btn-sm" onclick="copySingleLink(\'' + s.name + '\')">📋</button>' +
+                                '<button class="btn btn-red btn-sm" onclick="deleteSound(\'' + s.name + '\')">✕</button>' +
+                                '</div></div>';
+                        });
+                        list.innerHTML = html;
+                    } else {
+                        list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in MongoDB</div>';
+                    }
+                })
+                .catch(function(e) {});
         }
         
-        async function playSound(filename) {
-            try {
-                const url = window.location.origin + '/api/v1/sound/download/' + filename;
-                const audio = new Audio(url);
-                audio.play();
-                showMsg('▶ Playing: ' + filename, 'info');
-            } catch (e) { showMsg('❌ Play failed: ' + e.message, 'error'); }
+        function playSound(filename) {
+            var url = window.location.origin + '/api/v1/sound/download/' + filename;
+            var audio = new Audio(url);
+            audio.play();
+            showMsg('Playing: ' + filename, 'info');
         }
         
         function copySingleLink(filename) {
-            const url = window.location.origin + '/api/v1/sound/download/' + filename;
-            navigator.clipboard.writeText(url).then(() => showMsg('📋 Link copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var url = window.location.origin + '/api/v1/sound/download/' + filename;
+            navigator.clipboard.writeText(url).then(function() {
+                showMsg('Link copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('📋 Link copied!', 'success');
+                showMsg('Link copied!', 'success');
             });
         }
         
-        async function deleteSound(filename) {
+        function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
-            try {
-                const res = await fetch('/api/v1/sound/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename })
-                });
-                const data = await res.json();
-                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
-                else { showMsg('❌ ' + data.message, 'error'); }
-            } catch (e) { showMsg('❌ Delete failed', 'error'); }
+            fetch('/api/v1/sound/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) { showMsg(data.message, 'success'); loadSounds(); checkSoundStatus(); }
+                else { showMsg(data.message, 'error'); }
+            })
+            .catch(function(e) { showMsg('Delete failed', 'error'); });
         }
         
         function copyDownloadLink() {
-            const url = window.location.origin + '/api/v1/sound/download';
-            navigator.clipboard.writeText(url).then(() => showMsg('📋 Download link copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var url = window.location.origin + '/api/v1/sound/download';
+            navigator.clipboard.writeText(url).then(function() {
+                showMsg('Download link copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('📋 Link copied!', 'success');
+                showMsg('Link copied!', 'success');
             });
         }
         
-        async function checkSoundStatus() {
-            try {
-                const res = await fetch('/api/v1/sound/status');
-                const data = await res.json();
-                if (data.exists) {
-                    showMsg('✅ Sound exists in MongoDB! ' + data.count + ' file(s)', 'success');
-                } else {
-                    showMsg('❌ No sound in MongoDB', 'error');
-                }
-            } catch (e) { showMsg('❌ Status check failed', 'error'); }
+        function checkSoundStatus() {
+            fetch('/api/v1/sound/status')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.exists) {
+                        showMsg('Sound exists in MongoDB! ' + data.count + ' file(s)', 'success');
+                    } else {
+                        showMsg('No sound in MongoDB', 'error');
+                    }
+                })
+                .catch(function(e) { showMsg('Status check failed', 'error'); });
         }
         
-        async function refreshSounds() {
-            showMsg('🔄 Refreshing...', 'info');
-            await loadSounds();
-            await checkSoundStatus();
+        function refreshSounds() {
+            showMsg('Refreshing...', 'info');
+            loadSounds();
+            checkSoundStatus();
         }
         
-        async function createLic() {
-            const days = parseInt(document.getElementById('days').value) || 30;
-            const notes = document.getElementById('notes').value || '';
-            if (days < 1) { showMsg('❌ At least 1 day', 'error'); return; }
-            if (days > 365) { showMsg('❌ Max 365 days', 'error'); return; }
+        function createLic() {
+            var days = parseInt(document.getElementById('days').value) || 30;
+            var notes = document.getElementById('notes').value || '';
+            if (days < 1) { showMsg('At least 1 day', 'error'); return; }
+            if (days > 365) { showMsg('Max 365 days', 'error'); return; }
             
-            showMsg('⏳ Generating...', 'info');
-            const result = await apiCall('/admin/create', 'POST', { days, notes });
-            if (result && result.success) {
-                lastCreatedKey = result.license_key;
-                document.getElementById('key_display').textContent = lastCreatedKey;
-                document.getElementById('new_key').style.display = 'block';
-                showMsg('✅ ' + result.message, 'success');
-                refreshAll();
-            } else {
-                showMsg(result ? result.message : '❌ Failed', 'error');
-            }
+            showMsg('Generating...', 'info');
+            apiCall('/admin/create', 'POST', { days: days, notes: notes })
+                .then(function(result) {
+                    if (result && result.success) {
+                        lastCreatedKey = result.license_key;
+                        document.getElementById('key_display').textContent = lastCreatedKey;
+                        document.getElementById('new_key').style.display = 'block';
+                        showMsg(result.message, 'success');
+                        refreshAll();
+                    } else {
+                        showMsg(result ? result.message : 'Failed', 'error');
+                    }
+                });
         }
         
         function copyKey() {
-            const key = document.getElementById('key_display').textContent;
-            navigator.clipboard.writeText(key).then(() => showMsg('📋 Copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var key = document.getElementById('key_display').textContent;
+            navigator.clipboard.writeText(key).then(function() {
+                showMsg('Copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = key;
                 document.body.appendChild(ta);
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('📋 Copied!', 'success');
+                showMsg('Copied!', 'success');
             });
         }
         
@@ -958,80 +1058,85 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        async function toggleBan(key, isBanned) {
-            const action = isBanned ? 'unban' : 'ban';
-            const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+        function toggleBan(key, isBanned) {
+            var action = isBanned ? 'unban' : 'ban';
+            showMsg('Processing...', 'info');
+            apiCall('/admin/' + action, 'POST', { license_key: key })
+                .then(function(result) {
+                    if (result && result.success) { showMsg(result.message, 'success'); refreshAll(); }
+                    else { showMsg(result ? result.message : 'Failed', 'error'); }
+                });
         }
         
-        async function deleteLic(key) {
+        function deleteLic(key) {
             if (!confirm('Delete ' + key + '?')) return;
-            const result = await apiCall('/admin/delete', 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            showMsg('Deleting...', 'info');
+            apiCall('/admin/delete', 'POST', { license_key: key })
+                .then(function(result) {
+                    if (result && result.success) { showMsg(result.message, 'success'); refreshAll(); }
+                    else { showMsg(result ? result.message : 'Failed', 'error'); }
+                });
         }
         
         function renderTable(users) {
-            const tbody = document.getElementById('tbody');
+            var tbody = document.getElementById('tbody');
             tbody.innerHTML = '';
-            const now = new Date();
-            const keys = Object.keys(users);
+            var now = new Date();
+            var keys = Object.keys(users);
             if (keys.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#444;padding:30px">No licenses</td></tr>';
                 return;
             }
-            keys.forEach(key => {
-                const u = users[key];
-                const expires = u.expires_at ? new Date(u.expires_at) : null;
-                const isExpired = expires && now > expires;
-                const isBanned = u.banned || false;
-                let status = 'Active', badge = 'badge-active';
+            keys.forEach(function(key) {
+                var u = users[key];
+                var expires = u.expires_at ? new Date(u.expires_at) : null;
+                var isExpired = expires && now > expires;
+                var isBanned = u.banned || false;
+                var status = 'Active';
+                var badge = 'badge-active';
                 if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
                 else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><code>${key}</code></td>
-                    <td style="font-size:11px">${u.expires_at || 'Never'}</td>
-                    <td><span class="badge ${badge}">${status}</span></td>
-                    <td style="color:#666;font-size:12px">${u.device || '-'}</td>
-                    <td style="color:#666;font-size:12px">${u.notes || '-'}</td>
-                    <td>
-                        <button class="btn ${isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="toggleBan('${key}', ${isBanned})">${isBanned ? 'UNBAN' : 'BAN'}</button>
-                        <button class="btn btn-red btn-sm" onclick="deleteLic('${key}')">✕</button>
-                    </td>
-                `;
+                var tr = document.createElement('tr');
+                tr.innerHTML = '<td><code>' + key + '</code></td>' +
+                    '<td style="font-size:11px">' + (u.expires_at || 'Never') + '</td>' +
+                    '<td><span class="badge-status ' + badge + '">' + status + '</span></td>' +
+                    '<td style="color:#666;font-size:12px">' + (u.device || '-') + '</td>' +
+                    '<td style="color:#666;font-size:12px">' + (u.notes || '-') + '</td>' +
+                    '<td><button class="btn ' + (isBanned ? 'btn-green' : 'btn-red') + ' btn-sm" onclick="toggleBan(\'' + key + '\',' + isBanned + ')">' + (isBanned ? 'UNBAN' : 'BAN') + '</button>' +
+                    '<button class="btn btn-red btn-sm" onclick="deleteLic(\'' + key + '\')">✕</button></td>';
                 tbody.appendChild(tr);
             });
         }
         
-        async function refreshAll() {
-            const data = await apiCall('/admin/data', 'GET');
-            if (!data) {
-                document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">❌ Failed</td></tr>';
-                return;
-            }
-            allUsers = data.users || {};
-            renderTable(allUsers);
-            document.getElementById('s_total').textContent = data.total || 0;
-            document.getElementById('s_active').textContent = data.active || 0;
-            document.getElementById('s_expired').textContent = data.expired || 0;
-            document.getElementById('s_banned').textContent = data.banned || 0;
-            document.getElementById('s_devices').textContent = data.device_count || 0;
+        function refreshAll() {
+            apiCall('/admin/data', 'GET')
+                .then(function(data) {
+                    if (!data) {
+                        document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">Failed</td></tr>';
+                        return;
+                    }
+                    allUsers = data.users || {};
+                    renderTable(allUsers);
+                    document.getElementById('s_total').textContent = data.total || 0;
+                    document.getElementById('s_active').textContent = data.active || 0;
+                    document.getElementById('s_expired').textContent = data.expired || 0;
+                    document.getElementById('s_banned').textContent = data.banned || 0;
+                    document.getElementById('s_devices').textContent = data.device_count || 0;
+                });
         }
         
         function searchLic() {
-            const q = document.getElementById('search').value.toLowerCase().trim();
+            var q = document.getElementById('search').value.toLowerCase().trim();
             if (!q) { renderTable(allUsers); return; }
-            const filtered = {};
-            Object.keys(allUsers).forEach(key => {
-                const u = allUsers[key];
+            var filtered = {};
+            Object.keys(allUsers).forEach(function(key) {
+                var u = allUsers[key];
                 if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
                     filtered[key] = u;
                 }
             });
             renderTable(filtered);
-            showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
+            showMsg('Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
         refreshAll();
@@ -1040,7 +1145,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
         setInterval(refreshAll, 30000);
     </script>
 </body>
-</html>'''
+</html>
+"""
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
