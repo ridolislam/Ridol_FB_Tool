@@ -5,7 +5,7 @@ Author: Ridol Islam
 License: MIT
 """
 
-from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
+from flask import Flask, request, jsonify, session, redirect, url_for, send_file
 from flask_cors import CORS
 import os
 import uuid
@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 from functools import wraps
 import logging
 import io
-import base64
 
 # ==================== MONGODB ATLAS CONNECTION ====================
 MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
@@ -44,8 +43,6 @@ if MONGO_AVAILABLE:
         client.admin.command('ping')
         print("[+] MongoDB Atlas Connected Successfully!")
         print(f"[+] Database: {db.name}")
-        print(f"[+] Users Collection: {users_collection.count_documents({})} records")
-        print(f"[+] Devices Collection: {devices_collection.count_documents({})} records")
     except Exception as e:
         print(f"[-] MongoDB Connection Error: {e}")
         db = None
@@ -63,31 +60,26 @@ ADMIN_PASSWORD = 'Ridol123@'
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    """Get user by license key from MongoDB"""
     if db:
         return users_collection.find_one({'license_key': license_key})
     return None
 
 def get_users():
-    """Get all users from MongoDB"""
     if db:
         return list(users_collection.find({}))
     return []
 
 def get_devices():
-    """Get all devices from MongoDB"""
     if db:
         return list(devices_collection.find({}))
     return []
 
 def get_device(device_serial):
-    """Get device by serial from MongoDB"""
     if db:
         return devices_collection.find_one({'device_serial': device_serial})
     return None
 
 def save_user(user_data):
-    """Save user to MongoDB"""
     if db:
         if 'created_at' not in user_data:
             user_data['created_at'] = datetime.now().isoformat()
@@ -103,7 +95,6 @@ def save_user(user_data):
     return False
 
 def save_device(device_data):
-    """Save device to MongoDB"""
     if db:
         if 'created_at' not in device_data:
             device_data['created_at'] = datetime.now().isoformat()
@@ -119,36 +110,29 @@ def save_device(device_data):
     return False
 
 def delete_user(license_key):
-    """Delete user from MongoDB"""
     if db:
         return users_collection.delete_one({'license_key': license_key})
     return None
 
 def save_sound_file(file_data, filename):
-    """Save sound file to GridFS"""
     if fs:
-        # Delete existing sound file
         existing = fs.find_one({'filename': filename})
         if existing:
             fs.delete(existing._id)
-        
         file_id = fs.put(
             file_data, 
             filename=filename, 
-            uploaded_at=datetime.now().isoformat(),
-            content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+            uploaded_at=datetime.now().isoformat()
         )
         return file_id
     return None
 
 def get_sound_file(filename):
-    """Get sound file from GridFS"""
     if fs:
         return fs.find_one({'filename': filename})
     return None
 
 def delete_sound_file(filename):
-    """Delete sound file from GridFS"""
     if fs:
         existing = fs.find_one({'filename': filename})
         if existing:
@@ -157,7 +141,6 @@ def delete_sound_file(filename):
     return False
 
 def get_all_sound_files():
-    """Get all sound files from GridFS"""
     if fs:
         sounds = []
         for f in fs.find({}):
@@ -214,7 +197,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ==================== API ENDPOINTS ====================
+# ==================== ROUTES ====================
+
+@app.route('/')
+def home():
+    return jsonify({
+        'server': 'Ridol FB Tool License Server',
+        'version': 'v4.0',
+        'status': 'online',
+        'database': 'MongoDB Atlas' if db else 'Not Connected',
+        'timestamp': datetime.now().isoformat()
+    })
 
 @app.route('/api/v1/ping')
 def ping():
@@ -381,25 +374,6 @@ def api_device_status(device_serial):
     })
 
 # ==================== ADMIN ROUTES ====================
-
-@app.route('/')
-def home():
-    return jsonify({
-        'server': 'Ridol FB Tool License Server',
-        'version': 'v4.0',
-        'status': 'online',
-        'database': 'MongoDB Atlas' if db else 'Not Connected',
-        'api_endpoints': {
-            'ping': '/api/v1/ping',
-            'status': '/api/v1/status',
-            'sound_status': '/api/v1/sound/status',
-            'sound_download': '/api/v1/sound/download',
-            'sound_upload': '/api/v1/sound/upload',
-            'license_verify': '/api/v1/license/verify',
-            'device_register': '/api/v1/device/register',
-            'admin': '/admin'
-        }
-    })
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -683,7 +657,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <div id="msg" class="msg"></div>
         
-        <!-- API Info -->
         <div class="card">
             <h2>🔌 MongoDB API Endpoints</h2>
             <div class="api-info">
@@ -696,7 +669,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- SOUND UPLOAD -->
         <div class="card">
             <h2>🎵 Custom Sound Upload (MP3 / WAV / OGG)</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
@@ -714,7 +686,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- LICENSE -->
         <div class="card">
             <h2>➕ Create License</h2>
             <div class="flex">
@@ -742,7 +713,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- STATISTICS -->
         <div class="card">
             <h2>📊 Statistics</h2>
             <div class="stats">
@@ -754,7 +724,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- LICENSE LIST -->
         <div class="card">
             <h2>👥 License Management</h2>
             <div class="search-box">
@@ -803,7 +772,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        // ===== TEST CONNECTION =====
         async function testConnection() {
             showMsg('🔌 Testing API connection...', 'info');
             try {
@@ -819,7 +787,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        // ===== SOUND FUNCTIONS =====
         const dropZone = document.getElementById('dropZone');
         dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
         dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
@@ -950,7 +917,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             await checkSoundStatus();
         }
         
-        // ===== LICENSE FUNCTIONS =====
         async function createLic() {
             const days = parseInt(document.getElementById('days').value) || 30;
             const notes = document.getElementById('notes').value || '';
@@ -1068,7 +1034,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
-        // ===== INIT =====
         refreshAll();
         loadSounds();
         setTimeout(checkSoundStatus, 1000);
