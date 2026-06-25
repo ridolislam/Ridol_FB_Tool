@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0
+Ridol FB Tool License Server v4.0 - Complete API
 Author: Ridol Islam
 """
 
@@ -12,30 +12,31 @@ from datetime import datetime, timedelta
 from functools import wraps
 import logging
 
-# Flask-CORS import with fallback
+# Flask-CORS with fallback
 try:
     from flask_cors import CORS
     cors_available = True
 except ImportError:
     cors_available = False
-    print("[!] flask-cors not installed. Install with: pip install flask-cors")
 
 app = Flask(__name__)
 if cors_available:
-    CORS(app)  # Enable CORS for all routes
+    CORS(app)
 
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# Logging setup
+# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ==================== CONFIG ====================
 DB_FILE = 'licenses.json'
 ADMIN_PASSWORD = 'Ridol123@'
 CUSTOM_SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
 os.makedirs(CUSTOM_SOUNDS_DIR, exist_ok=True)
 
+# ==================== DATABASE ====================
 def load_db():
     if os.path.exists(DB_FILE):
         try:
@@ -89,7 +90,198 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ============ TEST ENDPOINT ============
+# ==================== API ENDPOINTS ====================
+
+# -------- Connection Test --------
+@app.route('/api/v1/ping')
+def ping():
+    """Test connection between tool and server"""
+    return jsonify({
+        'status': 'online',
+        'timestamp': datetime.now().isoformat(),
+        'version': 'v4.0',
+        'server': 'Ridol FB Tool Server'
+    })
+
+@app.route('/api/v1/status')
+def api_status():
+    """Full server status"""
+    return jsonify({
+        'status': 'online',
+        'version': 'v4.0',
+        'timestamp': datetime.now().isoformat(),
+        'license_count': len(db.get('users', {})),
+        'device_count': len(db.get('devices', {})),
+        'sound_exists': os.path.exists(os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav'))
+    })
+
+# -------- License API --------
+@app.route('/api/v1/license/verify', methods=['POST'])
+def api_verify_license():
+    """Verify license key"""
+    data = request.json
+    key = data.get('license_key', '')
+    device = data.get('device_serial', '')
+    return jsonify(validate_license(key, device))
+
+@app.route('/api/v1/license/status/<license_key>')
+def api_license_status(license_key):
+    """Get license status"""
+    user = db['users'].get(license_key)
+    if not user:
+        return jsonify({'exists': False, 'message': 'License not found'})
+    return jsonify({
+        'exists': True,
+        'valid': not user.get('banned', False),
+        'expires_at': user.get('expires_at', 'Never'),
+        'device': user.get('device', ''),
+        'notes': user.get('notes', '')
+    })
+
+# -------- Sound API --------
+@app.route('/api/v1/sound/status')
+def api_sound_status():
+    """Check if sound exists on server"""
+    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+    if os.path.exists(filepath):
+        size = os.path.getsize(filepath)
+        return jsonify({
+            'exists': True,
+            'size': size,
+            'size_mb': round(size / (1024 * 1024), 2),
+            'url': '/api/v1/sound/download',
+            'last_modified': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
+        })
+    return jsonify({
+        'exists': False,
+        'message': 'No sound uploaded'
+    })
+
+@app.route('/api/v1/sound/download')
+def api_download_sound():
+    """Download background sound"""
+    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+    if os.path.exists(filepath):
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name='background.wav',
+            mimetype='audio/wav'
+        )
+    return jsonify({'error': 'No sound found'}), 404
+
+@app.route('/api/v1/sound/upload', methods=['POST'])
+@login_required
+def api_upload_sound():
+    """Upload background sound"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'message': 'No file uploaded'})
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'message': 'No file selected'})
+        
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+        file.save(filepath)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sound uploaded successfully',
+            'filename': 'background.wav',
+            'size': os.path.getsize(filepath)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/v1/sound/delete', methods=['POST'])
+@login_required
+def api_delete_sound():
+    """Delete background sound"""
+    try:
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return jsonify({'success': True, 'message': 'Sound deleted'})
+        return jsonify({'success': False, 'message': 'Sound not found'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+# -------- Device API --------
+@app.route('/api/v1/device/register', methods=['POST'])
+def api_register_device():
+    """Register a device"""
+    data = request.json
+    device_serial = data.get('device_serial', '')
+    license_key = data.get('license_key', '')
+    
+    if not device_serial:
+        return jsonify({'success': False, 'message': 'No device serial'})
+    
+    db['devices'][device_serial] = {
+        'license_key': license_key,
+        'last_seen': datetime.now().isoformat(),
+        'created_at': datetime.now().isoformat()
+    }
+    save_db(db)
+    return jsonify({'success': True, 'device_serial': device_serial})
+
+@app.route('/api/v1/device/status/<device_serial>')
+def api_device_status(device_serial):
+    """Get device status"""
+    device = db['devices'].get(device_serial)
+    if not device:
+        return jsonify({'exists': False, 'message': 'Device not found'})
+    return jsonify({
+        'exists': True,
+        'license_key': device.get('license_key', ''),
+        'last_seen': device.get('last_seen', ''),
+        'created_at': device.get('created_at', '')
+    })
+
+# -------- Admin API (Protected) --------
+@app.route('/api/v1/admin/licenses')
+@login_required
+def api_list_licenses():
+    """List all licenses"""
+    return jsonify({
+        'licenses': db.get('users', {}),
+        'total': len(db.get('users', {}))
+    })
+
+@app.route('/api/v1/admin/license/create', methods=['POST'])
+@login_required
+def api_create_license():
+    """Create a new license"""
+    try:
+        data = request.json
+        days = int(data.get('days', 30))
+        notes = data.get('notes', '').strip()
+        
+        if days < 1 or days > 365:
+            return jsonify({'success': False, 'message': 'Days must be 1-365'})
+        
+        key = generate_license_key()
+        expires = (datetime.now() + timedelta(days=days)).isoformat()
+        
+        db['users'][key] = {
+            'created_at': datetime.now().isoformat(),
+            'expires_at': expires,
+            'banned': False,
+            'notes': notes if notes else 'No notes',
+            'device': ''
+        }
+        save_db(db)
+        
+        return jsonify({
+            'success': True,
+            'license_key': key,
+            'expires_at': expires
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+# -------- Compatibility Endpoints (Legacy) --------
 @app.route('/api/test')
 def test():
     return jsonify({
@@ -99,114 +291,33 @@ def test():
         'version': 'v4.0'
     })
 
-@app.route('/api/sounds/test')
-def test_sound():
-    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-    return jsonify({
-        'sound_exists': os.path.exists(filepath),
-        'path': filepath,
-        'custom_sounds_dir': CUSTOM_SOUNDS_DIR,
-        'files': os.listdir(CUSTOM_SOUNDS_DIR) if os.path.exists(CUSTOM_SOUNDS_DIR) else []
-    })
-
-# ============ SOUND ROUTES ============
-
 @app.route('/api/sounds/status')
 def sound_status():
-    try:
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-        logger.info(f"Checking sound at: {filepath}")
-        
-        if os.path.exists(filepath):
-            size = os.path.getsize(filepath)
-            return jsonify({
-                'exists': True,
-                'size': size,
-                'size_mb': round(size / (1024 * 1024), 2),
-                'url': f'/api/sounds/download/background.wav',
-                'path': filepath
-            })
-        else:
-            return jsonify({
-                'exists': False,
-                'message': 'No sound file found',
-                'directory': CUSTOM_SOUNDS_DIR,
-                'files': os.listdir(CUSTOM_SOUNDS_DIR) if os.path.exists(CUSTOM_SOUNDS_DIR) else []
-            })
-    except Exception as e:
-        logger.error(f"Status check error: {e}")
-        return jsonify({'exists': False, 'error': str(e)})
+    return api_sound_status()
 
 @app.route('/api/sounds/download/background.wav')
 def download_background():
-    try:
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-        logger.info(f"Download requested for: {filepath}")
-        
-        if os.path.exists(filepath):
-            return send_file(
-                filepath, 
-                as_attachment=True, 
-                download_name='background.wav',
-                mimetype='audio/wav'
-            )
-        else:
-            logger.warning(f"File not found: {filepath}")
-            return jsonify({'error': 'No sound file found'}), 404
-    except Exception as e:
-        logger.error(f"Download error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/sounds/list')
-@login_required
-def list_sounds():
-    try:
-        sounds = []
-        if os.path.exists(CUSTOM_SOUNDS_DIR):
-            for f in os.listdir(CUSTOM_SOUNDS_DIR):
-                if f.endswith(('.mp3', '.wav', '.ogg')):
-                    size = os.path.getsize(os.path.join(CUSTOM_SOUNDS_DIR, f))
-                    sounds.append({
-                        'name': f,
-                        'size': size,
-                        'size_mb': round(size / (1024 * 1024), 2)
-                    })
-        return jsonify({'sounds': sounds, 'count': len(sounds)})
-    except Exception as e:
-        logger.error(f"List error: {e}")
-        return jsonify({'sounds': [], 'error': str(e)})
+    return api_download_sound()
 
 @app.route('/api/sounds/upload', methods=['POST'])
 @login_required
 def upload_sound():
-    try:
-        logger.info("Upload request received")
-        
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'message': '❌ No file uploaded'})
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'message': '❌ No file selected'})
-        
-        logger.info(f"Filename: {file.filename}")
-        
-        # Save as background.wav
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-        file.save(filepath)
-        logger.info(f"File saved to: {filepath}")
-        
-        return jsonify({
-            'success': True,
-            'message': '✅ Sound uploaded successfully!',
-            'filename': 'background.wav',
-            'original_name': file.filename,
-            'size': os.path.getsize(filepath),
-            'download_url': '/api/sounds/download/background.wav'
-        })
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+    return api_upload_sound()
+
+@app.route('/api/sounds/list')
+@login_required
+def list_sounds():
+    sounds = []
+    if os.path.exists(CUSTOM_SOUNDS_DIR):
+        for f in os.listdir(CUSTOM_SOUNDS_DIR):
+            if f.endswith(('.mp3', '.wav', '.ogg')):
+                size = os.path.getsize(os.path.join(CUSTOM_SOUNDS_DIR, f))
+                sounds.append({
+                    'name': f,
+                    'size': size,
+                    'size_mb': round(size / (1024 * 1024), 2)
+                })
+    return jsonify({'sounds': sounds})
 
 @app.route('/api/sounds/delete', methods=['POST'])
 @login_required
@@ -216,10 +327,10 @@ def delete_sound():
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         if os.path.exists(filepath):
             os.remove(filepath)
-            return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
-        return jsonify({'success': False, 'message': 'File not found'})
+            return jsonify({'success': True, 'message': 'Deleted'})
+        return jsonify({'success': False, 'message': 'Not found'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/sounds/play', methods=['POST'])
 @login_required
@@ -229,23 +340,24 @@ def play_sound():
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         if os.path.exists(filepath):
             return send_file(filepath, as_attachment=False)
-        return jsonify({'success': False, 'message': 'File not found'})
+        return jsonify({'success': False, 'message': 'Not found'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
-# ============ LICENSE ROUTES ============
-
+# ==================== WEB ROUTES ====================
 @app.route('/')
 def home():
     return jsonify({
         'server': 'Ridol FB Tool License Server',
         'version': 'v4.0',
         'status': 'online',
-        'endpoints': {
-            'test': '/api/test',
-            'status': '/api/sounds/status',
-            'download': '/api/sounds/download/background.wav',
-            'upload': '/api/sounds/upload',
+        'api_endpoints': {
+            'ping': '/api/v1/ping',
+            'status': '/api/v1/status',
+            'license_verify': '/api/v1/license/verify',
+            'sound_status': '/api/v1/sound/status',
+            'sound_download': '/api/v1/sound/download',
+            'device_register': '/api/v1/device/register',
             'admin': '/admin'
         }
     })
@@ -333,7 +445,7 @@ def admin_create():
         notes = data.get('notes', '').strip()
         
         if days < 1 or days > 365:
-            return jsonify({'success': False, 'message': '❌ Days must be between 1 and 365'})
+            return jsonify({'success': False, 'message': 'Days must be 1-365'})
         
         key = generate_license_key()
         expires = (datetime.now() + timedelta(days=days)).isoformat()
@@ -349,12 +461,12 @@ def admin_create():
         
         return jsonify({
             'success': True,
-            'message': f'✅ License created! Valid for {days} days.',
+            'message': f'License created! Valid for {days} days.',
             'license_key': key,
             'expires_at': expires
         })
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/ban', methods=['POST'])
 @login_required
@@ -363,8 +475,8 @@ def admin_ban():
     if key in db['users']:
         db['users'][key]['banned'] = True
         save_db(db)
-        return jsonify({'success': True, 'message': '✅ License banned'})
-    return jsonify({'success': False, 'message': '❌ License not found'})
+        return jsonify({'success': True, 'message': 'License banned'})
+    return jsonify({'success': False, 'message': 'License not found'})
 
 @app.route('/admin/unban', methods=['POST'])
 @login_required
@@ -373,8 +485,8 @@ def admin_unban():
     if key in db['users']:
         db['users'][key]['banned'] = False
         save_db(db)
-        return jsonify({'success': True, 'message': '✅ License unbanned'})
-    return jsonify({'success': False, 'message': '❌ License not found'})
+        return jsonify({'success': True, 'message': 'License unbanned'})
+    return jsonify({'success': False, 'message': 'License not found'})
 
 @app.route('/admin/delete', methods=['POST'])
 @login_required
@@ -383,8 +495,8 @@ def admin_delete():
     if key in db['users']:
         del db['users'][key]
         save_db(db)
-        return jsonify({'success': True, 'message': '✅ License deleted'})
-    return jsonify({'success': False, 'message': '❌ License not found'})
+        return jsonify({'success': True, 'message': 'License deleted'})
+    return jsonify({'success': False, 'message': 'License not found'})
 
 @app.route('/admin/logout')
 @login_required
@@ -392,8 +504,7 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ============ HTML TEMPLATES ============
-
+# ==================== HTML TEMPLATES ====================
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
@@ -500,9 +611,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .search-box input { flex: 1; min-width: 180px; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 13px; outline: none; }
         .search-box input:focus { border-color: #00ff88; }
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 30px; }
-        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; margin-left: 10px; }
-        .status-badge.online { background: #003311; color: #00ff88; }
-        .status-badge.offline { background: #330000; color: #ff4444; }
+        .api-info { background: #1a1a2e; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #888; margin-top: 10px; }
+        .api-info code { color: #00ff88; }
         @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .stats { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
@@ -511,7 +621,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         <div class="header">
             <div>
                 <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
-                <div style="color:#666;font-size:12px;margin-top:3px">Admin Panel • License Management <span class="status-badge online" id="serverStatus">● ONLINE</span></div>
+                <div style="color:#666;font-size:12px;margin-top:3px">Admin Panel • License Management</div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
                 <span class="badge">👑 ADMIN</span>
@@ -520,6 +630,19 @@ ADMIN_HTML = '''<!DOCTYPE html>
         </div>
         
         <div id="msg" class="msg"></div>
+        
+        <!-- API Info -->
+        <div class="card">
+            <h2>🔌 API Endpoints</h2>
+            <div class="api-info">
+                <code>/api/v1/ping</code> - Test connection<br>
+                <code>/api/v1/status</code> - Server status<br>
+                <code>/api/v1/license/verify</code> - Verify license<br>
+                <code>/api/v1/sound/status</code> - Sound status<br>
+                <code>/api/v1/sound/download</code> - Download sound<br>
+                <code>/api/v1/device/register</code> - Register device
+            </div>
+        </div>
         
         <!-- SOUND UPLOAD -->
         <div class="card">
@@ -599,6 +722,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
     </div>
     
     <script>
+        // ==================== SCRIPT ====================
         let allUsers = {};
         let lastCreatedKey = '';
         
@@ -628,11 +752,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        // TEST CONNECTION
+        // ===== TEST CONNECTION =====
         async function testConnection() {
-            showMsg('🔌 Testing connection...', 'info');
+            showMsg('🔌 Testing API connection...', 'info');
             try {
-                const res = await fetch('/api/test');
+                const res = await fetch('/api/v1/ping');
                 const data = await res.json();
                 if (data.status === 'online') {
                     showMsg('✅ Server reachable! Version: ' + data.version, 'success');
@@ -644,7 +768,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        // SOUND FUNCTIONS
+        // ===== SOUND FUNCTIONS =====
         const dropZone = document.getElementById('dropZone');
         dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
         dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
@@ -667,7 +791,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             formData.append('file', file);
             try {
                 showMsg('⏳ Uploading...', 'info');
-                const res = await fetch('/api/sounds/upload', { method: 'POST', body: formData });
+                const res = await fetch('/api/v1/sound/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.success) {
                     showMsg('✅ ' + data.message, 'success');
@@ -734,8 +858,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
         }
         
         function copyDownloadLink() {
-            const url = window.location.origin + '/api/sounds/download/background.wav';
-            navigator.clipboard.writeText(url).then(() => showMsg('📋 Link copied!', 'success'))
+            const url = window.location.origin + '/api/v1/sound/download';
+            navigator.clipboard.writeText(url).then(() => showMsg('📋 API link copied!', 'success'))
             .catch(() => {
                 const ta = document.createElement('textarea');
                 ta.value = url;
@@ -749,7 +873,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function checkSoundStatus() {
             try {
-                const res = await fetch('/api/sounds/status');
+                const res = await fetch('/api/v1/sound/status');
                 const data = await res.json();
                 if (data.exists) {
                     showMsg('✅ Sound exists! Size: ' + data.size_mb + ' MB', 'success');
@@ -765,7 +889,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             await checkSoundStatus();
         }
         
-        // LICENSE FUNCTIONS
+        // ===== LICENSE FUNCTIONS =====
         async function createLic() {
             const days = parseInt(document.getElementById('days').value) || 30;
             const notes = document.getElementById('notes').value || '';
@@ -883,32 +1007,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
             showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
-        // INIT
+        // ===== INIT =====
         refreshAll();
         loadSounds();
         setTimeout(checkSoundStatus, 1000);
         setInterval(refreshAll, 30000);
-        
-        async function checkServerStatus() {
-            try {
-                const res = await fetch('/api/test');
-                const data = await res.json();
-                const badge = document.getElementById('serverStatus');
-                if (data.status === 'online') {
-                    badge.className = 'status-badge online';
-                    badge.textContent = '● ONLINE';
-                } else {
-                    badge.className = 'status-badge offline';
-                    badge.textContent = '● OFFLINE';
-                }
-            } catch (e) {
-                const badge = document.getElementById('serverStatus');
-                badge.className = 'status-badge offline';
-                badge.textContent = '● OFFLINE';
-            }
-        }
-        checkServerStatus();
-        setInterval(checkServerStatus, 10000);
     </script>
 </body>
 </html>'''

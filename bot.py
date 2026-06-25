@@ -2,7 +2,6 @@
 """
 Ridol FB Tool v4.0 - Complete Audio Experience Edition
 Author: Ridol Islam
-License: MIT
 """
 
 import os
@@ -54,21 +53,154 @@ class Color:
     NEON_GREEN = '\033[38;5;46m'
     NEON_BLUE = '\033[38;5;45m'
 
-# ==================== 3D TITLE (TERMUX FRIENDLY) ====================
+# ==================== API CONNECTION MANAGER ====================
+class APIManager:
+    """Manages all API communication between tool and server"""
+    
+    BASE_URL = LICENSE_SERVER
+    API_VERSION = 'v1'
+    
+    @classmethod
+    def get_endpoint(cls, path):
+        """Get full API endpoint URL"""
+        return f'{cls.BASE_URL}/api/{cls.API_VERSION}/{path}'
+    
+    @classmethod
+    def test_connection(cls):
+        """Test if server is reachable"""
+        try:
+            print(f'{Color.CYAN}[*] Testing API connection...{Color.RESET}')
+            response = requests.get(cls.get_endpoint('ping'), timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                print(f'{Color.GREEN}[+] API Server reachable! Version: {data.get("version", "unknown")}{Color.RESET}')
+                return True, data
+            else:
+                print(f'{Color.RED}[-] API Server returned: {response.status_code}{Color.RESET}')
+                return False, None
+        except requests.exceptions.ConnectionError:
+            print(f'{Color.RED}[-] Cannot connect to API server!{Color.RESET}')
+            return False, None
+        except requests.exceptions.Timeout:
+            print(f'{Color.RED}[-] API connection timeout!{Color.RESET}')
+            return False, None
+        except Exception as e:
+            print(f'{Color.RED}[-] API Error: {e}{Color.RESET}')
+            return False, None
+    
+    @classmethod
+    def get_server_status(cls):
+        """Get full server status"""
+        try:
+            response = requests.get(cls.get_endpoint('status'), timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except:
+            return None
+    
+    @classmethod
+    def verify_license(cls, license_key, device_serial=''):
+        """Verify license key with server"""
+        try:
+            response = requests.post(
+                cls.get_endpoint('license/verify'),
+                json={'license_key': license_key, 'device_serial': device_serial},
+                timeout=15
+            )
+            if response.status_code == 200:
+                return response.json()
+            return {'valid': False, 'message': 'Server error'}
+        except:
+            return {'valid': False, 'message': 'Connection failed'}
+    
+    @classmethod
+    def get_license_status(cls, license_key):
+        """Get license status from server"""
+        try:
+            response = requests.get(cls.get_endpoint(f'license/status/{license_key}'), timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except:
+            return None
+    
+    @classmethod
+    def check_sound_status(cls):
+        """Check if sound exists on server"""
+        try:
+            response = requests.get(cls.get_endpoint('sound/status'), timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except:
+            return None
+    
+    @classmethod
+    def download_sound(cls):
+        """Download sound from server"""
+        try:
+            # First check if sound exists
+            status = cls.check_sound_status()
+            if not status or not status.get('exists'):
+                print(f'{Color.YELLOW}[!] No custom sound on server{Color.RESET}')
+                return None
+            
+            print(f'{Color.CYAN}[*] Downloading sound from server...{Color.RESET}')
+            response = requests.get(cls.get_endpoint('sound/download'), stream=True, timeout=30)
+            
+            if response.status_code != 200:
+                print(f'{Color.RED}[-] Download failed: {response.status_code}{Color.RESET}')
+                return None
+            
+            filepath = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
+            total_size = int(response.headers.get('content-length', 0))
+            
+            with open(filepath, 'wb') as f:
+                if total_size == 0:
+                    f.write(response.content)
+                else:
+                    downloaded = 0
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        progress = int((downloaded / total_size) * 100)
+                        print(f'\r{Color.CYAN}[*] Downloading: {progress}%{Color.RESET}', end='', flush=True)
+            
+            print(f'\n{Color.GREEN}[+] Sound downloaded successfully!{Color.RESET}')
+            return filepath
+            
+        except Exception as e:
+            print(f'{Color.RED}[-] Download error: {e}{Color.RESET}')
+            return None
+    
+    @classmethod
+    def register_device(cls, device_serial, license_key=''):
+        """Register device with server"""
+        try:
+            response = requests.post(
+                cls.get_endpoint('device/register'),
+                json={'device_serial': device_serial, 'license_key': license_key},
+                timeout=15
+            )
+            if response.status_code == 200:
+                return response.json()
+            return {'success': False, 'message': 'Server error'}
+        except:
+            return {'success': False, 'message': 'Connection failed'}
+
+# ==================== 3D TITLE ====================
 class TitleAnimation:
     @staticmethod
     def big_3d_title():
-        """Display 3D title using simple ASCII characters (Termux friendly)"""
         os.system('clear')
         
-        # Simple border using + - and |
         border_top = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
         border_bottom = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
         
         print(border_top)
         print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
         
-        # Title with colors
         title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}Termux Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
         print(title_line1)
         
@@ -77,36 +209,20 @@ class TitleAnimation:
         
         print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
         
-        # Status line
-        status_line = f"{Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        # Check API connection
+        connected, _ = APIManager.test_connection()
+        status_text = "API CONNECTED" if connected else "API OFFLINE"
+        status_color = Color.GREEN if connected else Color.RED
+        
+        status_line = f"{Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {status_color}Server: {status_text}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
         print(status_line)
         
-        # Server status
-        server_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}@ {Color.RESET}Server: {Color.GREEN}ACTIVE{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        server_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}@ {Color.RESET}API URL: {Color.DIM}{APIManager.BASE_URL}/api/v1{Color.RESET}  {Color.CYAN}|{Color.RESET}"
         print(server_line)
         
         print(border_bottom)
         print()
         time.sleep(0.5)
-    
-    @staticmethod
-    def animated_banner():
-        """Display animated banner with loading effect"""
-        os.system('clear')
-        
-        print(f"{Color.CYAN}+{'-' * 70}+{Color.RESET}")
-        print(f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}Initializing Ridol FB Tool System{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.CYAN}|{Color.RESET}")
-        print(f"{Color.CYAN}+{'-' * 70}+{Color.RESET}")
-        
-        # Loading animation
-        for i in range(10):
-            bar = '#' * i + '-' * (10 - i)
-            print(f'\r{Color.CYAN}    Loading: [{bar}] {i*10}%{Color.RESET}', end='', flush=True)
-            time.sleep(0.1)
-        print()
-        time.sleep(0.5)
-        
-        TitleAnimation.big_3d_title()
 
 # ==================== AUDIO ENGINE ====================
 class AudioEngine:
@@ -117,6 +233,7 @@ class AudioEngine:
         self.sound_available = self._check_sound()
         self.bg_playing = False
         self.bg_thread = None
+        self.background_file = None
         os.makedirs(self.sound_dir, exist_ok=True)
         os.makedirs(self.custom_sound_dir, exist_ok=True)
     
@@ -138,47 +255,35 @@ class AudioEngine:
             except:
                 return False
     
-    def play_sound_async(self, filename, gain='-5', sound_dir=None):
-        if not self.sound_available:
-            return
-        
-        if sound_dir is None:
-            sound_dir = self.sound_dir
-        
-        filepath = os.path.join(sound_dir, filename)
-        if not os.path.exists(filepath):
-            filepath = os.path.join(self.sound_dir, filename)
-            if not os.path.exists(filepath):
-                return
-        
-        try:
-            subprocess.Popen(['play', '-q', filepath, 'gain', gain],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except:
-            try:
-                subprocess.Popen(['mpv', '--no-video', '--really-quiet', filepath],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except:
-                pass
+    def download_background_sound(self):
+        """Download sound using API"""
+        return APIManager.download_sound()
     
     def play_background_loop(self):
         if not self.sound_available:
             return
         
+        # Try to download from server first
         custom_bg = os.path.join(self.custom_sound_dir, 'background.wav')
-        default_bg = os.path.join(self.sound_dir, 'binary_rain.wav')
-        bg_file = custom_bg if os.path.exists(custom_bg) else default_bg
+        if not os.path.exists(custom_bg):
+            self.download_background_sound()
         
-        if not os.path.exists(bg_file):
-            return
+        if os.path.exists(custom_bg):
+            bg_file = custom_bg
+            print(f'{Color.GREEN}[+] Playing custom sound from API{Color.RESET}')
+        else:
+            bg_file = os.path.join(self.sound_dir, 'binary_rain.wav')
+            if not os.path.exists(bg_file):
+                return
+            print(f'{Color.DIM}[*] Playing default sound{Color.RESET}')
         
+        self.background_file = bg_file
         self.bg_playing = True
+        
         while self.bg_playing:
             try:
                 subprocess.run(['play', '-q', bg_file, 'gain', '-3', 'repeat', '999'],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
-            except subprocess.TimeoutExpired:
-                continue
             except:
                 try:
                     subprocess.run(['mpv', '--no-video', '--really-quiet', '--loop=inf', bg_file],
@@ -191,7 +296,7 @@ class AudioEngine:
             return
         self.bg_thread = threading.Thread(target=self.play_background_loop, daemon=True)
         self.bg_thread.start()
-        time.sleep(0.5)
+        time.sleep(1)
     
     def stop_background_sound(self):
         self.bg_playing = False
@@ -230,93 +335,12 @@ class AudioEngine:
     def speak_account_created(self): self.speak('Account created')
     
     def get_status(self):
+        bg_status = 'Playing' if self.bg_playing else 'Stopped'
+        if self.background_file:
+            bg_status += f' ({os.path.basename(self.background_file)})'
         return f""" {Color.GREEN}*{Color.RESET} Voice: {'Active' if self.voice_available else 'Not available'}
  {Color.GREEN}*{Color.RESET} Sound: {'Active' if self.sound_available else 'Not available'}
- {Color.GREEN}*{Color.RESET} Background: {'Playing' if self.bg_playing else 'Stopped'}"""
-
-# ==================== ANIMATION ENGINE ====================
-class Animation:
-    @staticmethod
-    def typing(text, delay=0.03, color=Color.CYAN):
-        for char in text:
-            print(f'{color}{char}{Color.RESET}', end='', flush=True)
-            time.sleep(delay)
-        print()
-    
-    @staticmethod
-    def spinner(duration=2, message=''):
-        spin = ['-', '\\', '|', '/']
-        end_time = time.time() + duration
-        i = 0
-        while time.time() < end_time:
-            print(f'\r{Color.CYAN}{spin[i % len(spin)]}{Color.RESET} {message}', end='', flush=True)
-            i += 1
-            time.sleep(0.1)
-        print()
-    
-    @staticmethod
-    def progress_bar(duration=3, message='Loading'):
-        for i in range(21):
-            progress = '#' * i + '-' * (20 - i)
-            percent = i * 5
-            print(f'\r{Color.CYAN}{message}: [{progress}] {percent}%{Color.RESET}', end='', flush=True)
-            time.sleep(duration / 20)
-        print()
-    
-    @staticmethod
-    def matrix_effect(duration=2):
-        chars = '01'
-        end_time = time.time() + duration
-        while time.time() < end_time:
-            line = ''.join(random.choice(chars) if random.random() < 0.7 else ' ' for _ in range(40))
-            print(f'\r{Color.GREEN}{line}{Color.RESET}')
-            time.sleep(0.05)
-    
-    @staticmethod
-    def logo_with_writing():
-        TitleAnimation.big_3d_title()
-    
-    @staticmethod
-    def ending_animation():
-        print(f'\n{Color.CYAN}')
-        print('    +--------------------------------------+')
-        print('    |     Thank you for using Ridol FB Tool    |')
-        print(f'    |     {Color.YELLOW}Stay Secure!{Color.CYAN}                      |')
-        print('    +--------------------------------------+')
-        print(f'{Color.RESET}')
-        for i in range(3):
-            print(f'\r{Color.DIM}Shutting down{"." * (i+1)}{" " * (3-i)}{Color.RESET}', end='', flush=True)
-            time.sleep(0.5)
-        print()
-
-# ==================== UTILITY FUNCTIONS ====================
-def load_json(path):
-    try:
-        with open(path, 'r') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_json(path, data):
-    try:
-        with open(path, 'w') as f:
-            json.dump(data, f, indent=2)
-        return True
-    except:
-        return False
-
-def load_file_lines(path):
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return [l.strip() for l in f if l.strip() and not l.startswith('#')]
-    except:
-        return []
-
-def clear_screen():
-    os.system('clear')
-
-def press_enter():
-    input(f'\n{Color.DIM}Press Enter to continue...{Color.RESET}')
+ {Color.GREEN}*{Color.RESET} Background: {bg_status}"""
 
 # ==================== ADB MANAGER ====================
 class ADBManager:
@@ -379,7 +403,6 @@ class ADBManager:
 # ==================== LICENSE MANAGER ====================
 class LicenseManager:
     def __init__(self):
-        self.server = LICENSE_SERVER
         self.config = load_json(CONFIG_FILE)
     
     def save(self): save_json(CONFIG_FILE, self.config)
@@ -389,31 +412,55 @@ class LicenseManager:
     def set_device_serial(self, s): self.config['device_serial'] = s; self.save()
     
     def verify(self, key):
-        print(f'  {Color.YELLOW}[*] Verifying license...{Color.RESET}')
-        try:
-            r = requests.post(f'{self.server}/verify', json={
-                'license_key': key, 'device_serial': self.get_device_serial()
-            }, timeout=15)
-            data = r.json()
-            if data.get('valid'):
-                print(f'  {Color.GREEN}[+] License Active! Expires: {data.get("expires_at", "N/A")}{Color.RESET}')
-                self.set_license_key(key)
-                return True, data
-            else:
-                print(f'  {Color.RED}[-] {data.get("message", "Invalid license")}{Color.RESET}')
-                return False, data
-        except Exception as e:
-            print(f'  {Color.RED}[-] Error: {e}{Color.RESET}')
-            return False, {}
+        print(f'  {Color.YELLOW}[*] Verifying license via API...{Color.RESET}')
+        result = APIManager.verify_license(key, self.get_device_serial())
+        if result.get('valid'):
+            print(f'  {Color.GREEN}[+] License Active! Expires: {result.get("expires_at", "N/A")}{Color.RESET}')
+            self.set_license_key(key)
+            return True, result
+        else:
+            print(f'  {Color.RED}[-] {result.get("message", "Invalid license")}{Color.RESET}')
+            return False, result
     
     def register_device(self, device_serial):
-        try:
-            r = requests.post(f'{self.server}/register_device', json={
-                'device_serial': device_serial
-            }, timeout=15)
-            return r.json()
-        except:
-            return None
+        print(f'  {Color.CYAN}[*] Registering device via API...{Color.RESET}')
+        result = APIManager.register_device(device_serial, self.get_license_key())
+        if result.get('success'):
+            self.set_device_serial(device_serial)
+            print(f'  {Color.GREEN}[+] Device registered successfully{Color.RESET}')
+            return True
+        else:
+            print(f'  {Color.RED}[-] {result.get("message", "Registration failed")}{Color.RESET}')
+            return False
+
+# ==================== UTILITY FUNCTIONS ====================
+def load_json(path):
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_json(path, data):
+    try:
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except:
+        return False
+
+def load_file_lines(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return [l.strip() for l in f if l.strip() and not l.startswith('#')]
+    except:
+        return []
+
+def clear_screen():
+    os.system('clear')
+
+def press_enter():
+    input(f'\n{Color.DIM}Press Enter to continue...{Color.RESET}')
 
 # ==================== FACEBOOK BOT ====================
 class FacebookBot:
@@ -495,11 +542,16 @@ class MainMenu:
         print(f' {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}{"connected" if devices else "No device"}{Color.RESET}')
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}*{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
-        print(f' {Color.CYAN}@{Color.RESET} Server: {Color.GREEN}ACTIVE{Color.RESET}\n')
+        
+        # Check API connection
+        connected, _ = APIManager.test_connection()
+        status_color = Color.GREEN if connected else Color.RED
+        status_text = "CONNECTED" if connected else "OFFLINE"
+        print(f' {Color.CYAN}@ {Color.RESET}API Server: {status_color}{status_text}{Color.RESET}\n')
     
     def welcome_screen(self):
         clear_screen()
-        TitleAnimation.animated_banner()
+        TitleAnimation.big_3d_title()
         self.audio.play_startup()
         self.audio.play_background()
         threading.Thread(target=self.audio.speak_welcome, daemon=True).start()
@@ -596,8 +648,9 @@ class MainMenu:
  {Color.CYAN}+--------------------------------------+{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Verify License (API)             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Register Device (API)            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Check API Status                 {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -625,12 +678,18 @@ class MainMenu:
             elif choice == '4':
                 serial = input(f'  {Color.CYAN}Enter device serial: {Color.RESET}').strip()
                 if serial:
-                    self.license.set_device_serial(serial)
-                    result = self.license.register_device(serial)
-                    if result and result.get('success'):
-                        print(f'  {Color.GREEN}[+] Device registered{Color.RESET}')
-                    else:
-                        print(f'  {Color.RED}[-] Registration failed{Color.RESET}')
+                    self.license.register_device(serial)
+                press_enter()
+            elif choice == '5':
+                status = APIManager.get_server_status()
+                if status:
+                    print(f'\n  {Color.GREEN}[+] API Server Status:{Color.RESET}')
+                    print(f'    Version: {status.get("version", "N/A")}')
+                    print(f'    Licenses: {status.get("license_count", 0)}')
+                    print(f'    Devices: {status.get("device_count", 0)}')
+                    print(f'    Sound: {"Yes" if status.get("sound_exists") else "No"}')
+                else:
+                    print(f'\n  {Color.RED}[-] API Server not reachable{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -728,6 +787,18 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}            |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {self.audio.get_status()}{Color.CYAN}       |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
+        
+        # API Status
+        status = APIManager.get_server_status()
+        if status:
+            print(f'\n{Color.CYAN}API Server Status:{Color.RESET}')
+            print(f'  Version: {status.get("version", "N/A")}')
+            print(f'  Licenses: {status.get("license_count", 0)}')
+            print(f'  Devices: {status.get("device_count", 0)}')
+            print(f'  Sound: {"Yes" if status.get("sound_exists") else "No"}')
+        else:
+            print(f'\n{Color.RED}API Server: OFFLINE{Color.RESET}')
+        
         if self.bot:
             print(self.bot.get_status())
         press_enter()
@@ -742,6 +813,7 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Test Voice Feedback             {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Toggle Background Audio         {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Audio Status                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Download Sound from API         {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -767,6 +839,15 @@ class MainMenu:
                 press_enter()
             elif choice == '4':
                 print(f'\n{self.audio.get_status()}')
+                press_enter()
+            elif choice == '5':
+                print(f'\n  {Color.CYAN}Downloading sound from API...{Color.RESET}')
+                self.audio.stop_background_sound()
+                bg_file = os.path.join(self.audio.custom_sound_dir, 'background.wav')
+                if os.path.exists(bg_file):
+                    os.remove(bg_file)
+                APIManager.download_sound()
+                self.audio.play_background()
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -827,11 +908,11 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  4. Connect your device (Option 1)              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  5. Start the bot (Option 4)                    {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}
- {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Troubleshooting{Color.RESET}{Color.CYAN}                   |{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Ensure ADB is installed and running         {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Enable USB Debugging on your device         {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Check internet connection for license       {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Install sox and espeak for audio            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}API Features{Color.RESET}{Color.CYAN}                    |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - License verification via API                 {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Sound download from API                     {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Device registration via API                 {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}{Color.CYAN}  |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         press_enter()
     
@@ -843,9 +924,75 @@ class MainMenu:
         print(f'\n{Color.GREEN}Goodbye!{Color.RESET}')
         sys.exit(0)
 
+# ==================== ANIMATION ====================
+class Animation:
+    @staticmethod
+    def typing(text, delay=0.03, color=Color.CYAN):
+        for char in text:
+            print(f'{color}{char}{Color.RESET}', end='', flush=True)
+            time.sleep(delay)
+        print()
+    
+    @staticmethod
+    def spinner(duration=2, message=''):
+        spin = ['-', '\\', '|', '/']
+        end_time = time.time() + duration
+        i = 0
+        while time.time() < end_time:
+            print(f'\r{Color.CYAN}{spin[i % len(spin)]}{Color.RESET} {message}', end='', flush=True)
+            i += 1
+            time.sleep(0.1)
+        print()
+    
+    @staticmethod
+    def progress_bar(duration=3, message='Loading'):
+        for i in range(21):
+            progress = '#' * i + '-' * (20 - i)
+            percent = i * 5
+            print(f'\r{Color.CYAN}{message}: [{progress}] {percent}%{Color.RESET}', end='', flush=True)
+            time.sleep(duration / 20)
+        print()
+    
+    @staticmethod
+    def matrix_effect(duration=2):
+        chars = '01'
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            line = ''.join(random.choice(chars) if random.random() < 0.7 else ' ' for _ in range(40))
+            print(f'\r{Color.GREEN}{line}{Color.RESET}')
+            time.sleep(0.05)
+    
+    @staticmethod
+    def ending_animation():
+        print(f'\n{Color.CYAN}')
+        print('    +--------------------------------------+')
+        print('    |     Thank you for using Ridol FB Tool    |')
+        print(f'    |     {Color.YELLOW}Stay Secure!{Color.CYAN}                      |')
+        print('    +--------------------------------------+')
+        print(f'{Color.RESET}')
+        for i in range(3):
+            print(f'\r{Color.DIM}Shutting down{"." * (i+1)}{" " * (3-i)}{Color.RESET}', end='', flush=True)
+            time.sleep(0.5)
+        print()
+
 # ==================== MAIN ====================
 if __name__ == '__main__':
     try:
+        # Test API connection first
+        print(f'{Color.CYAN}[*] Initializing API Connection...{Color.RESET}')
+        connected, _ = APIManager.test_connection()
+        
+        if connected:
+            status = APIManager.get_server_status()
+            if status:
+                print(f'{Color.GREEN}[+] Server Status: {status.get("version")}{Color.RESET}')
+                print(f'{Color.GREEN}[+] Licenses: {status.get("license_count", 0)}{Color.RESET}')
+                print(f'{Color.GREEN}[+] Sound: {"Available" if status.get("sound_exists") else "Not available"}{Color.RESET}')
+        else:
+            print(f'{Color.YELLOW}[!] API Server offline. Some features may not work.{Color.RESET}')
+        
+        time.sleep(1)
+        
         menu = MainMenu()
         menu.menu_main()
     except KeyboardInterrupt:
