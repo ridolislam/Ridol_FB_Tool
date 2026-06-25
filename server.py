@@ -328,7 +328,7 @@ def admin_logout():
     return redirect(url_for('admin_login'))
 
 # ============================================================
-# ============ LOGIN HTML WITH 3D + WRITING EFFECT ============
+# ============ LOGIN HTML (Fixed Regex Warning) ============
 # ============================================================
 
 LOGIN_HTML = '''<!DOCTYPE html>
@@ -353,7 +353,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             perspective: 1200px;
         }
         
-        /* Animated Background */
         .bg-animation {
             position: fixed;
             top: 0;
@@ -373,7 +372,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { opacity: 1; transform: scale(1.1); }
         }
         
-        /* Particles */
         .particles {
             position: fixed;
             top: 0;
@@ -401,7 +399,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             100% { transform: translateY(-100vh) scale(1); opacity: 0; }
         }
         
-        /* Main Container */
         .login-container {
             position: relative;
             z-index: 1;
@@ -431,7 +428,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 60px rgba(0, 255, 136, 0.2);
         }
         
-        /* ===== 3D BIG TITLE WITH WRITING EFFECT ===== */
         .title-section {
             text-align: center;
             margin-bottom: 35px;
@@ -451,7 +447,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { transform: scale(1.15) rotate(5deg); }
         }
         
-        /* 3D Title - Large & Glowing */
         .title-3d {
             font-size: 42px;
             font-weight: 900;
@@ -468,7 +463,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             transform: translateZ(30px);
         }
         
-        /* Writing Effect Cursor */
         .cursor {
             display: inline-block;
             width: 4px;
@@ -484,7 +478,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { opacity: 0; }
         }
         
-        /* Gradient Text for Title */
         .title-text {
             background: linear-gradient(135deg, #00ff88 0%, #00ff88 30%, #44ffaa 50%, #4488ff 70%, #00ff88 100%);
             background-size: 300% 300%;
@@ -502,7 +495,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             100% { background-position: 0% 50%; }
         }
         
-        /* 3D Shadow Layer */
         .title-3d::before {
             content: 'RIDOL FB TOOL';
             position: absolute;
@@ -514,7 +506,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             -webkit-text-fill-color: rgba(0, 255, 136, 0.1);
         }
         
-        /* Subtitle with writing effect */
         .subtitle-3d {
             font-size: 12px;
             letter-spacing: 8px;
@@ -554,7 +545,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { box-shadow: 0 0 40px rgba(0, 255, 136, 0.2); }
         }
         
-        /* Form */
         .form-group {
             margin-bottom: 22px;
             position: relative;
@@ -734,13 +724,11 @@ LOGIN_HTML = '''<!DOCTYPE html>
         <div class="title-section">
             <span class="icon">🔐</span>
             
-            <!-- 3D BIG TITLE WITH WRITING EFFECT -->
             <div class="title-3d">
                 <span class="title-text" id="titleText"></span>
                 <span class="cursor" id="cursor"></span>
             </div>
             
-            <!-- Subtitle with writing effect -->
             <div class="subtitle-3d">
                 <span id="subText"></span>
                 <span class="sub-cursor" id="subCursor"></span>
@@ -789,9 +777,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
                 setTimeout(typeTitle, 80 + Math.random() * 40);
             } else {
                 isTitleComplete = true;
-                // Remove cursor after title complete
                 document.getElementById('cursor').style.display = 'none';
-                // Start subtitle after a delay
                 setTimeout(typeSubtitle, 300);
             }
         }
@@ -802,14 +788,11 @@ LOGIN_HTML = '''<!DOCTYPE html>
                 subIndex++;
                 setTimeout(typeSubtitle, 50 + Math.random() * 30);
             } else {
-                // Remove subtitle cursor
                 document.getElementById('subCursor').style.display = 'none';
             }
         }
         
-        // Start typing on page load
         window.onload = function() {
-            // Clear any existing text
             document.getElementById('titleText').textContent = '';
             document.getElementById('subText').textContent = '';
             setTimeout(typeTitle, 500);
@@ -835,7 +818,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
 </html>'''
 
 # ============================================================
-# ============ ADMIN HTML WITH 3D UI ============
+# ============ ADMIN HTML (Fixed Regex Warning) ============
 # ============================================================
 
 ADMIN_HTML = '''<!DOCTYPE html>
@@ -863,7 +846,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             margin: 0 auto;
         }
         
-        /* 3D Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -963,7 +945,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             box-shadow: 0 10px 30px rgba(255, 68, 68, 0.1);
         }
         
-        /* 3D Cards */
         .card {
             background: rgba(17, 17, 34, 0.85);
             backdrop-filter: blur(20px);
@@ -995,7 +976,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         .card h2 .icon { font-size: 20px; }
         
-        /* Stats */
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1030,7 +1010,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             text-transform: uppercase;
         }
         
-        /* Form */
         .flex { display: flex; gap: 15px; flex-wrap: wrap; }
         .flex-grow { flex: 1; min-width: 180px; }
         
@@ -1064,7 +1043,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             transform: translateZ(10px);
         }
         
-        /* Buttons */
         .btn {
             padding: 14px 28px;
             border: none;
@@ -1097,7 +1075,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         .btn-sm { padding: 8px 14px; font-size: 9px; }
         
-        /* Messages */
         .msg {
             padding: 16px 22px;
             border-radius: 14px;
@@ -1112,7 +1089,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .msg-error { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
         .msg-info { background: rgba(68, 136, 255, 0.08); color: #4488ff; border: 1px solid rgba(68, 136, 255, 0.15); }
         
-        /* New Key Box */
         .new-key-box {
             margin-top: 18px;
             padding: 24px;
@@ -1136,7 +1112,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             letter-spacing: 2px;
         }
         
-        /* Table */
         .table-wrapper { overflow-x: auto; margin-top: 10px; }
         table { width: 100%; border-collapse: collapse; }
         th, td {
@@ -1171,7 +1146,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .badge-expired { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
         .badge-banned { background: rgba(255, 136, 0, 0.08); color: #ff8800; border: 1px solid rgba(255, 136, 0, 0.15); }
         
-        /* Search */
         .search-box {
             display: flex;
             gap: 12px;
@@ -1196,7 +1170,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             transform: translateZ(10px);
         }
         
-        /* Upload Area */
         .upload-area {
             border: 2px dashed rgba(0, 255, 136, 0.08);
             border-radius: 14px;
@@ -1409,7 +1382,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        // Sound Functions
+        // ===== SOUND FUNCTIONS (FIXED REGEX) =====
         const dropZone = document.getElementById('dropZone');
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
         dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
@@ -1422,7 +1395,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
             const file = files[0];
-            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
+            // FIXED: Using proper regex without escape issues
+            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { 
+                showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); 
+                return; 
+            }
             if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
             const formData = new FormData();
@@ -1483,7 +1460,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             } catch (e) { showMsg('❌ Delete failed', 'error'); }
         }
         
-        // License Functions
+        // ===== LICENSE FUNCTIONS =====
         async function createLic() {
             const days = parseInt(document.getElementById('days').value) || 30;
             const notes = document.getElementById('notes').value || '';
