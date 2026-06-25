@@ -1,403 +1,481 @@
-# server.py - Ridol FB Tool License Server v2.0
-# Render এ deploy করার জন্য
+#!/usr/bin/env python3
+"""
+Ridol FB Tool License Server
+Author: Ridol Islam
+License: MIT
+"""
 
 from flask import Flask, request, jsonify, render_template_string
-import sqlite3
-import uuid
-import hashlib
-import datetime
+import json
 import os
-import base64
+import uuid
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
-DB = "licenses.db"
-ADMIN_USER = "admin"
-ADMIN_PASS = "admin123"  # production এ change করুন
+DB_FILE = 'licenses.json'
 
-# ============== ডাটাবেস ==============
-def init_db():
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS licenses
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  license_key TEXT UNIQUE NOT NULL,
-                  device_id TEXT,
-                  username TEXT,
-                  created_at TEXT,
-                  expires_at TEXT,
-                  is_active INTEGER DEFAULT 1,
-                  is_banned INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS usage_log
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  license_key TEXT,
-                  device_id TEXT,
-                  ip_address TEXT,
-                  action TEXT,
-                  timestamp TEXT)''')
-    conn.commit()
-    conn.close()
+def load_db():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE) as f:
+                return json.load(f)
+        except:
+            pass
+    return {'users': {}, 'devices': {}}
+
+def save_db(db):
+    with open(DB_FILE, 'w') as f:
+        json.dump(db, f, indent=2)
+
+db = load_db()
 
 def generate_license_key():
-    return hashlib.md5(str(uuid.uuid4()).encode()).hexdigest()[:16].upper()
+    return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
-def log_usage(license_key, device_id, ip, action):
-    try:
-        conn = sqlite3.connect(DB)
-        c = conn.cursor()
-        c.execute("INSERT INTO usage_log (license_key, device_id, ip_address, action, timestamp) VALUES (?,?,?,?,?)",
-                  (license_key, device_id, ip, action, datetime.datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
-    except:
-        pass
-
-def check_admin_auth(auth):
-    if not auth.startswith('Basic '):
-        return False
-    try:
-        decoded = base64.b64decode(auth[6:]).decode()
-        user, pwd = decoded.split(':', 1)
-        return user == ADMIN_USER and pwd == ADMIN_PASS
-    except:
-        return False
-
-# ============== API Endpoints ==============
+def validate_license(key, device_serial):
+    user = db['users'].get(key)
+    if not user:
+        return {'valid': False, 'message': 'Invalid license key'}
+    if user.get('banned', False):
+        return {'valid': False, 'message': 'License is banned'}
+    expires_str = user.get('expires_at', '')
+    if expires_str:
+        try:
+            if datetime.now() > datetime.fromisoformat(expires_str):
+                return {'valid': False, 'message': 'License has expired'}
+        except:
+            pass
+    if device_serial:
+        db['devices'][device_serial] = {
+            'license_key': key,
+            'last_seen': datetime.now().isoformat(),
+            'created_at': user.get('created_at', datetime.now().isoformat())
+        }
+        save_db(db)
+    return {
+        'valid': True,
+        'message': 'License active',
+        'expires_at': user.get('expires_at', 'Never'),
+        'device': device_serial
+    }
 
 @app.route('/')
 def home():
-    return jsonify({"status": "Ridol License Server Active", "version": "2.0"})
+    return jsonify({
+        'server': 'Ridol FB Tool License Server',
+        'version': 'v2.0',
+        'status': 'online',
+        'endpoints': ['/verify', '/register_device', '/admin']
+    })
 
 @app.route('/verify', methods=['POST'])
-def verify_license():
+def verify():
     data = request.json
-    key = data.get('license_key', '').strip()
-    device_id = data.get('device_id', '').strip()
-    
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT * FROM licenses WHERE license_key=? AND is_active=1 AND is_banned=0", (key,))
-    row = c.fetchone()
-    conn.close()
-    
-    if not row:
-        return jsonify({"valid": False, "message": "Invalid license key"})
-    
-    expires = datetime.datetime.fromisoformat(row[6])
-    if datetime.datetime.now() > expires:
-        return jsonify({"valid": False, "message": "License expired"})
-    
-    log_usage(key, device_id, request.remote_addr, "verify")
-    
-    return jsonify({
-        "valid": True,
-        "device_id": row[2],
-        "username": row[3],
-        "expires_at": row[6],
-        "days_left": (expires - datetime.datetime.now()).days
-    })
+    license_key = data.get('license_key', '')
+    device_serial = data.get('device_serial', '')
+    return jsonify(validate_license(license_key, device_serial))
 
 @app.route('/register_device', methods=['POST'])
 def register_device():
     data = request.json
-    device_id = data.get('device_id', '').strip()
+    device_serial = data.get('device_serial', '')
+    if device_serial:
+        db['devices'][device_serial] = {
+            'license_key': '',
+            'last_seen': datetime.now().isoformat(),
+            'created_at': datetime.now().isoformat()
+        }
+        save_db(db)
+        return jsonify({'success': True, 'device_serial': device_serial})
+    return jsonify({'success': False, 'message': 'No device serial'})
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin():
+    if request.method == 'POST':
+        data = request.json or request.form
+        if data.get('username') == 'admin' and data.get('password') == 'admin123':
+            return jsonify({'authenticated': True})
+        return jsonify({'authenticated': False})
+    return render_template_string(ADMIN_HTML)
+
+@app.route('/admin/check')
+def admin_check():
+    return jsonify({'authenticated': True})
+
+@app.route('/admin/data')
+def admin_data():
+    users = db.get('users', {})
+    devices = db.get('devices', {})
+    now = datetime.now()
+    total = len(users)
+    active = 0
+    expired = 0
+    banned = 0
     
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT * FROM licenses WHERE device_id=? AND is_banned=0", (device_id,))
-    existing = c.fetchone()
-    
-    if existing:
-        exp = datetime.datetime.fromisoformat(existing[6])
-        if datetime.datetime.now() < exp:
-            conn.close()
-            return jsonify({
-                "status": "registered",
-                "license_key": existing[1],
-                "expires_at": existing[6]
-            })
-    conn.close()
+    for key, user in users.items():
+        if user.get('banned'):
+            banned += 1
+        elif user.get('expires_at', ''):
+            try:
+                if now > datetime.fromisoformat(user['expires_at']):
+                    expired += 1
+                else:
+                    active += 1
+            except:
+                active += 1
+        else:
+            active += 1
     
     return jsonify({
-        "status": "pending",
-        "device_id": device_id,
-        "message": "Device not registered. Send this Device ID to admin."
+        'users': users,
+        'devices': devices,
+        'total': total,
+        'active': active,
+        'expired': expired,
+        'banned': banned,
+        'device_count': len(devices)
     })
 
-@app.route('/admin/generate', methods=['POST'])
-def admin_generate():
+@app.route('/admin/create', methods=['POST'])
+def admin_create():
     data = request.json
-    auth = request.headers.get('Authorization', '')
-    if not check_admin_auth(auth):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    device_id = data.get('device_id', '')
-    username = data.get('username', 'user')
-    days = data.get('days', 30)
-    
+    days = int(data.get('days', 30))
+    notes = data.get('notes', '')
     key = generate_license_key()
-    created = datetime.datetime.now().isoformat()
-    expires = (datetime.datetime.now() + datetime.timedelta(days=days)).isoformat()
+    expires = (datetime.now() + timedelta(days=days)).isoformat()
     
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    try:
-        c.execute("INSERT INTO licenses (license_key, device_id, username, created_at, expires_at) VALUES (?,?,?,?,?)",
-                  (key, device_id, username, created, expires))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.close()
-        return jsonify({"error": "Device already has a license"}), 400
-    conn.close()
-    
+    db['users'][key] = {
+        'created_at': datetime.now().isoformat(),
+        'expires_at': expires,
+        'banned': False,
+        'notes': notes,
+        'device': ''
+    }
+    save_db(db)
     return jsonify({
-        "status": "created",
-        "license_key": key,
-        "device_id": device_id,
-        "username": username,
-        "expires_at": expires
+        'success': True,
+        'license_key': key,
+        'expires_at': expires
     })
 
 @app.route('/admin/ban', methods=['POST'])
 def admin_ban():
-    data = request.json
-    auth = request.headers.get('Authorization', '')
-    if not check_admin_auth(auth):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    key = data.get('license_key', '')
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("UPDATE licenses SET is_banned=1, is_active=0 WHERE license_key=?", (key,))
-    conn.commit()
-    affected = c.rowcount
-    conn.close()
-    
-    if affected:
-        return jsonify({"status": "banned", "license_key": key})
-    return jsonify({"error": "License not found"}), 404
+    key = request.json.get('license_key', '')
+    if key in db['users']:
+        db['users'][key]['banned'] = True
+        save_db(db)
+        return jsonify({'success': True})
+    return jsonify({'success': False})
 
-@app.route('/admin/extend', methods=['POST'])
-def admin_extend():
-    data = request.json
-    auth = request.headers.get('Authorization', '')
-    if not check_admin_auth(auth):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    key = data.get('license_key', '')
-    extra_days = data.get('days', 30)
-    
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT expires_at FROM licenses WHERE license_key=?", (key,))
-    row = c.fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "License not found"}), 404
-    
-    current_expires = datetime.datetime.fromisoformat(row[0])
-    new_expires = max(current_expires, datetime.datetime.now()) + datetime.timedelta(days=extra_days)
-    
-    c.execute("UPDATE licenses SET expires_at=? WHERE license_key=?", (new_expires.isoformat(), key))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({
-        "status": "extended",
-        "license_key": key,
-        "new_expires_at": new_expires.isoformat()
-    })
+@app.route('/admin/unban', methods=['POST'])
+def admin_unban():
+    key = request.json.get('license_key', '')
+    if key in db['users']:
+        db['users'][key]['banned'] = False
+        save_db(db)
+        return jsonify({'success': True})
+    return jsonify({'success': False})
 
-@app.route('/admin/users', methods=['GET'])
-def admin_users():
-    auth = request.headers.get('Authorization', '')
-    if not check_admin_auth(auth):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT license_key, device_id, username, created_at, expires_at, is_active, is_banned FROM licenses")
-    rows = c.fetchall()
-    conn.close()
-    
-    users = []
-    for r in rows:
-        users.append({
-            "license_key": r[0],
-            "device_id": r[1],
-            "username": r[2],
-            "created_at": r[3],
-            "expires_at": r[4],
-            "is_active": bool(r[5]),
-            "is_banned": bool(r[6])
-        })
-    
-    return jsonify({"users": users, "total": len(users)})
+@app.route('/admin/delete', methods=['POST'])
+def admin_delete():
+    key = request.json.get('license_key', '')
+    if key in db['users']:
+        del db['users'][key]
+        save_db(db)
+        return jsonify({'success': True})
+    return jsonify({'success': False})
 
-@app.route('/admin')
-def admin_panel():
-    return render_template_string(ADMIN_HTML)
-
-# ============== Admin Panel HTML ==============
-ADMIN_HTML = """<!DOCTYPE html>
-<html lang="en">
+ADMIN_HTML = '''<!DOCTYPE html>
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ridol FB Tool - Admin Panel v2.0</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;padding:16px}
-.container{max-width:1200px;margin:0 auto}
-h1{color:#58a6ff;font-size:22px;margin-bottom:16px}
-h2{color:#8b949e;font-size:16px;margin:16px 0 8px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:16px}
-.form-group{margin-bottom:12px}
-label{display:block;margin-bottom:4px;color:#8b949e;font-size:13px}
-input,select{width:100%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:14px}
-input:focus{outline:none;border-color:#58a6ff}
-button{background:#238636;color:#fff;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-size:13px;margin-right:8px;margin-bottom:6px}
-button:hover{background:#2ea043}
-button.danger{background:#da3633}
-button.danger:hover{background:#f85149}
-.output{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-top:12px;font-family:'Courier New',monospace;font-size:12px;white-space:pre-wrap;min-height:40px;word-break:break-all}
-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}
-th,td{padding:8px;text-align:left;border-bottom:1px solid #30363d;word-break:break-all}
-th{color:#8b949e;font-weight:600}
-.status-active{color:#3fb950;font-weight:600}
-.status-banned{color:#f85149;font-weight:600}
-.status-expired{color:#d29922;font-weight:600}
-.tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
-.tab{padding:8px 14px;background:#161b22;border:1px solid #30363d;border-radius:6px;cursor:pointer;font-size:13px}
-.tab.active{background:#1f6feb;border-color:#1f6feb}
-.success{color:#3fb950}
-.error{color:#f85149}
-@media(max-width:600px){table{font-size:10px}th,td{padding:4px}}
-</style>
+    <title>Ridol Admin Panel</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family:Arial,sans-serif }
+        body { background:#0a0a1a; color:#fff; padding:20px }
+        .container { max-width:1200px; margin:0 auto }
+        h1 { color:#00ff88; text-align:center; margin-bottom:30px }
+        .card { background:#111; border-radius:8px; padding:20px; margin-bottom:20px; border:1px solid #222 }
+        .card h2 { color:#00ff88; margin-bottom:15px }
+        .form-group { margin-bottom:15px }
+        label { color:#aaa; font-size:13px }
+        input,select { width:100%; padding:10px; background:#1a1a2e; border:1px solid #333; color:#fff; border-radius:4px }
+        button { padding:10px 20px; border:none; border-radius:4px; cursor:pointer; font-weight:bold }
+        .btn-green { background:#00ff88; color:#000 }
+        .btn-red { background:#ff4444; color:#fff }
+        .btn-blue { background:#4488ff; color:#fff }
+        .btn-orange { background:#ff8800; color:#000 }
+        table { width:100%; border-collapse:collapse; margin-top:10px }
+        th,td { padding:8px; text-align:left; border-bottom:1px solid #222; font-size:13px }
+        th { color:#00ff88 }
+        .badge { padding:2px 8px; border-radius:10px; font-size:11px }
+        .badge-active { background:#003311; color:#00ff88 }
+        .badge-expired { background:#330000; color:#ff4444 }
+        .badge-banned { background:#331100; color:#ff8800 }
+        .msg { padding:10px; margin:10px 0; border-radius:4px; display:none }
+        .msg-success { background:#003311; color:#00ff88 }
+        .msg-error { background:#330000; color:#ff4444 }
+        .msg-info { background:#001133; color:#4488ff }
+        .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:15px }
+        .stat-box { text-align:center; padding:15px; background:#1a1a2e; border-radius:5px }
+        .stat-box .number { font-size:28px; font-weight:bold }
+        .stat-box .label { color:#888; font-size:12px; margin-top:5px }
+        .footer { text-align:center; color:#444; margin-top:40px; font-size:12px }
+        .flex { display:flex; gap:10px; flex-wrap:wrap }
+        .flex-grow { flex:1 }
+        code { background:#1a1a2e; padding:2px 6px; border-radius:3px; font-size:12px }
+        .copy-btn { background:#333; color:#fff; padding:5px 10px; border:none; border-radius:3px; cursor:pointer; font-size:11px }
+        .copy-btn:hover { background:#555 }
+    </style>
 </head>
 <body>
 <div class="container">
-<h1>🔑 Ridol FB Tool Admin v2.0</h1>
-
-<div class="card" id="authForm">
-<h2>Admin Login</h2>
-<div class="form-group"><label>Username</label><input type="text" id="adminUser" value="admin"></div>
-<div class="form-group"><label>Password</label><input type="password" id="adminPass" value="admin123"></div>
-<button onclick="login()">Login</button>
-</div>
-
-<div id="mainContent" style="display:none">
-<div class="tabs">
-<div class="tab active" onclick="showTab('generate')">➕ Generate</div>
-<div class="tab" onclick="showTab('manage')">⚙️ Manage</div>
-<div class="tab" onclick="showTab('users')">👥 Users</div>
-<div class="tab" onclick="showTab('logs')">📋 Logs</div>
-</div>
-
-<div id="generate" class="card">
-<h2>Generate License</h2>
-<div class="form-group"><label>Device ID</label><input type="text" id="deviceId" placeholder="Device ID from user..."></div>
-<div class="form-group"><label>Username</label><input type="text" id="username" value="user"></div>
-<div class="form-group"><label>Days</label><input type="number" id="days" value="30" min="1"></div>
-<button onclick="generateLicense()">Generate License</button>
-<div class="output" id="genOut">Waiting...</div>
-</div>
-
-<div id="manage" class="card" style="display:none">
-<h2>Manage License</h2>
-<div class="form-group"><label>License Key</label><input type="text" id="licenseKey" placeholder="License key..."></div>
-<div class="form-group"><label>Extend Days</label><input type="number" id="extendDays" value="30" min="1"></div>
-<button onclick="extendLicense()">📅 Extend</button>
-<button class="danger" onclick="banUser()">🚫 Ban</button>
-<div class="output" id="manageOut">Waiting...</div>
-</div>
-
-<div id="users" class="card" style="display:none">
-<h2>All Users <span id="userCount"></span></h2>
-<button onclick="loadUsers()">🔄 Refresh</button>
-<div id="userTable"></div>
-</div>
-
-<div id="logs" class="card" style="display:none">
-<h2>Usage Logs</h2>
-<p style="color:#8b949e;font-size:13px">Logs available via API: <code>GET /admin/users</code></p>
-</div>
-</div>
+    <h1>🔐 RIDOL FB TOOL ADMIN</h1>
+    <div style="text-align:center;color:#888;margin-bottom:20px">🌐 https://ridol-fb-tool.onrender.com</div>
+    
+    <div id="msg" class="msg"></div>
+    
+    <div class="card">
+        <h2>➕ Create License</h2>
+        <div class="flex">
+            <div class="flex-grow">
+                <div class="form-group">
+                    <label>Expiry Days</label>
+                    <input type="number" id="days" value="30" min="1" max="365">
+                </div>
+            </div>
+            <div class="flex-grow">
+                <div class="form-group">
+                    <label>Notes (User/Client)</label>
+                    <input type="text" id="notes" placeholder="Client name">
+                </div>
+            </div>
+        </div>
+        <button class="btn-green" onclick="createLic()">⚡ Generate Key</button>
+        <div id="new_key" style="margin-top:15px;padding:15px;background:#1a1a2e;border-radius:4px;display:none;border:1px solid #00ff88"></div>
+    </div>
+    
+    <div class="card">
+        <h2>📊 License Statistics</h2>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="number" style="color:#00ff88" id="s_total">0</div>
+                <div class="label">Total Licenses</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" style="color:#00ff88" id="s_active">0</div>
+                <div class="label">Active</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" style="color:#ff8800" id="s_expired">0</div>
+                <div class="label">Expired</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" style="color:#ff4444" id="s_banned">0</div>
+                <div class="label">Banned</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" style="color:#4488ff" id="s_devices">0</div>
+                <div class="label">Registered Devices</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2>👥 License Management</h2>
+        <div class="flex" style="margin-bottom:15px">
+            <input type="text" id="search" placeholder="Search by key or device..." class="flex-grow">
+            <button class="btn-blue" onclick="searchLic()">🔍 Search</button>
+            <button class="btn-orange" onclick="refreshAll()">🔄 Refresh</button>
+        </div>
+        <div style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>License Key</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th>Device</th>
+                    <th>Created</th>
+                    <th>Notes</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+        </div>
+    </div>
+    
+    <div class="footer">Ridol FB Tool License Server v2.0</div>
 </div>
 
 <script>
-let authToken = '';
-function login() {
-    const user = document.getElementById('adminUser').value;
-    const pass = document.getElementById('adminPass').value;
-    authToken = btoa(user + ':' + pass);
-    document.getElementById('authForm').style.display = 'none';
-    document.getElementById('mainContent').style.display = 'block';
+let allUsers = {};
+let filteredUsers = {};
+
+function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg msg-' + type;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 4000);
 }
-function showTab(tab) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    [...document.querySelectorAll('.card')].forEach(c => c.style.display = 'none');
-    document.querySelector(`.tab[onclick*="'${tab}'"]`).classList.add('active');
-    document.getElementById(tab).style.display = 'block';
-}
-async function api(method, endpoint, body) {
+
+async function apiCall(url, method, data) {
     try {
-        const opts = {method, headers:{'Content-Type':'application/json','Authorization':'Basic '+authToken}};
-        if(body) opts.body = JSON.stringify(body);
-        const r = await fetch(endpoint, opts);
-        return await r.json();
-    } catch(e) { return {error:e.message}; }
+        const res = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: data ? JSON.stringify(data) : undefined
+        });
+        return await res.json();
+    } catch (e) {
+        showMsg('Error: ' + e.message, 'error');
+        return null;
+    }
 }
-async function generateLicense() {
-    const out = document.getElementById('genOut');
-    out.textContent = 'Generating...';
-    const r = await api('POST', '/admin/generate', {
-        device_id: document.getElementById('deviceId').value.trim(),
-        username: document.getElementById('username').value.trim(),
-        days: parseInt(document.getElementById('days').value)
+
+async function createLic() {
+    const days = parseInt(document.getElementById('days').value) || 30;
+    const notes = document.getElementById('notes').value || '';
+    const result = await apiCall('/admin/create', 'POST', { days, notes });
+    
+    if (result && result.success) {
+        const key = result.license_key;
+        document.getElementById('new_key').innerHTML = 
+            '<strong style="color:#00ff88">✅ New License Key</strong><br>' +
+            '<code style="font-size:20px;display:block;margin:10px 0;padding:10px;background:#000;border-radius:4px">' + key + '</code>' +
+            '<div class="flex">' +
+            '<button class="btn-blue" onclick="copyKey(\'' + key + '\')">📋 Copy</button>' +
+            '<button class="btn-green" onclick="document.getElementById(\\\'search\\\').value=\\'\' + key + '\\\';searchLic()">🔍 Find</button>' +
+            '</div>';
+        document.getElementById('new_key').style.display = 'block';
+        showMsg('✅ License created successfully!', 'success');
+        refreshAll();
+    } else {
+        showMsg('❌ Failed to create license', 'error');
+    }
+}
+
+function copyKey(key) {
+    navigator.clipboard.writeText(key).then(() => {
+        showMsg('📋 Copied to clipboard!', 'success');
+    }).catch(() => {
+        // Fallback
+        const ta = document.createElement('textarea');
+        ta.value = key;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showMsg('📋 Copied!', 'success');
     });
-    out.textContent = JSON.stringify(r, null, 2);
-    if(r.status === 'created') out.className = 'output success';
 }
-async function extendLicense() {
-    const out = document.getElementById('manageOut');
-    out.textContent = 'Extending...';
-    const r = await api('POST', '/admin/extend', {
-        license_key: document.getElementById('licenseKey').value.trim(),
-        days: parseInt(document.getElementById('extendDays').value)
+
+async function toggleBan(key, isBanned) {
+    const action = isBanned ? 'unban' : 'ban';
+    const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
+    if (result && result.success) {
+        showMsg('✅ License ' + (isBanned ? 'unbanned' : 'banned'), 'success');
+        refreshAll();
+    } else {
+        showMsg('❌ Operation failed', 'error');
+    }
+}
+
+async function deleteLic(key) {
+    if (!confirm('⚠️ Permanently delete license: ' + key + '?')) return;
+    const result = await apiCall('/admin/delete', 'POST', { license_key: key });
+    if (result && result.success) {
+        showMsg('✅ License deleted', 'success');
+        refreshAll();
+    } else {
+        showMsg('❌ Delete failed', 'error');
+    }
+}
+
+function renderTable(users) {
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    const now = new Date();
+    
+    Object.keys(users).forEach(key => {
+        const u = users[key];
+        const expires = u.expires_at ? new Date(u.expires_at) : null;
+        const isExpired = expires && now > expires;
+        const isBanned = u.banned || false;
+        
+        let status = 'Active';
+        let badge = 'badge-active';
+        if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
+        else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = 
+            '<td><code style="font-size:11px">' + key + '</code></td>' +
+            '<td>' + (u.expires_at || 'Never') + '</td>' +
+            '<td><span class="badge ' + badge + '">' + status + '</span></td>' +
+            '<td>' + (u.device || '-') + '</td>' +
+            '<td style="font-size:11px">' + (u.created_at || '-') + '</td>' +
+            '<td style="font-size:11px;color:#888">' + (u.notes || '-') + '</td>' +
+            '<td>' +
+            '<button class="btn-' + (isBanned ? 'green' : 'red') + '" onclick="toggleBan(\'' + key + '\',' + isBanned + ')" style="padding:3px 8px;font-size:11px;margin:2px">' + (isBanned ? 'Unban' : 'Ban') + '</button> ' +
+            '<button class="btn-red" onclick="deleteLic(\'' + key + '\')" style="padding:3px 8px;font-size:11px;margin:2px">✕</button>' +
+            '</td>';
+        tbody.appendChild(tr);
     });
-    out.textContent = JSON.stringify(r, null, 2);
+    
+    if (Object.keys(users).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">No licenses found</td></tr>';
+    }
 }
-async function banUser() {
-    const out = document.getElementById('manageOut');
-    if(!confirm('Ban this user?')) return;
-    out.textContent = 'Banning...';
-    const r = await api('POST', '/admin/ban', {
-        license_key: document.getElementById('licenseKey').value.trim()
+
+async function refreshAll() {
+    const data = await apiCall('/admin/data', 'GET');
+    if (!data) return;
+    
+    allUsers = data.users || {};
+    filteredUsers = allUsers;
+    renderTable(filteredUsers);
+    
+    document.getElementById('s_total').textContent = data.total || 0;
+    document.getElementById('s_active').textContent = data.active || 0;
+    document.getElementById('s_expired').textContent = data.expired || 0;
+    document.getElementById('s_banned').textContent = data.banned || 0;
+    document.getElementById('s_devices').textContent = data.device_count || 0;
+}
+
+function searchLic() {
+    const q = document.getElementById('search').value.toLowerCase().trim();
+    if (!q) {
+        filteredUsers = allUsers;
+        renderTable(filteredUsers);
+        return;
+    }
+    filteredUsers = {};
+    Object.keys(allUsers).forEach(key => {
+        const u = allUsers[key];
+        if (key.toLowerCase().includes(q) || 
+            (u.device && u.device.toLowerCase().includes(q)) ||
+            (u.notes && u.notes.toLowerCase().includes(q))) {
+            filteredUsers[key] = u;
+        }
     });
-    out.textContent = JSON.stringify(r, null, 2);
+    renderTable(filteredUsers);
+    showMsg('🔍 Found ' + Object.keys(filteredUsers).length + ' result(s)', 'info');
 }
-async function loadUsers() {
-    const out = document.getElementById('userTable');
-    out.innerHTML = 'Loading...';
-    const r = await api('GET', '/admin/users', null);
-    if(!r.users) { out.innerHTML = JSON.stringify(r); return; }
-    document.getElementById('userCount').textContent = '('+r.total+')';
-    let html = '<table><tr><th>Key</th><th>Device</th><th>User</th><th>Expires</th><th>Status</th></tr>';
-    r.users.forEach(u => {
-        let cls = 'status-expired', lbl = 'Expired';
-        if(u.is_banned) { cls = 'status-banned'; lbl = 'Banned'; }
-        else if(u.is_active) { cls = 'status-active'; lbl = 'Active'; }
-        html += `<tr><td>${u.license_key}</td><td>${(u.device_id||'').substring(0,12)}...</td><td>${u.username}</td><td>${(u.expires_at||'').substring(0,10)}</td><td class="${cls}">${lbl}</td></tr>`;
-    });
-    html += '</table>';
-    out.innerHTML = html;
-}
+
+// Auto-refresh every 30 seconds
+refreshAll();
+setInterval(refreshAll, 30000);
+
+// Search on Enter key
+document.getElementById('search').addEventListener('keyup', function(e) {
+    if (e.key === 'Enter') searchLic();
+});
 </script>
 </body>
-</html>"""
+</html>'''
 
-# ============== মেইন ==============
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
