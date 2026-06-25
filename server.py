@@ -1,66 +1,170 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Complete API
+Ridol FB Tool License Server v4.0 - MongoDB Atlas Integration
 Author: Ridol Islam
 """
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
-import json
+from flask_cors import CORS
 import os
 import uuid
+import bcrypt
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
+import gridfs
+from pymongo import MongoClient
+from bson import ObjectId
+import io
 
-# Flask-CORS with fallback
+# ==================== MONGODB ATLAS CONNECTION ====================
+MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
+
+# Connect to MongoDB
 try:
-    from flask_cors import CORS
-    cors_available = True
-except ImportError:
-    cors_available = False
+    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+    db = client['ridol_fb_tool']
+    users_collection = db['users']
+    devices_collection = db['devices']
+    sounds_collection = db['sounds']
+    fs = gridfs.GridFS(db)
+    
+    # Test connection
+    client.admin.command('ping')
+    print("[+] MongoDB Atlas Connected Successfully!")
+except Exception as e:
+    print(f"[-] MongoDB Connection Error: {e}")
+    # Fallback to local file storage
+    db = None
+    fs = None
 
 app = Flask(__name__)
-if cors_available:
-    CORS(app)
-
+CORS(app)
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ==================== CONFIG ====================
-DB_FILE = 'licenses.json'
 ADMIN_PASSWORD = 'Ridol123@'
-CUSTOM_SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
-os.makedirs(CUSTOM_SOUNDS_DIR, exist_ok=True)
 
-# ==================== DATABASE ====================
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE) as f:
-                return json.load(f)
-        except:
-            pass
-    return {'users': {}, 'devices': {}}
+# ==================== DATABASE FUNCTIONS ====================
 
-def save_db(db):
-    with open(DB_FILE, 'w') as f:
-        json.dump(db, f, indent=2)
+def get_user(license_key):
+    """Get user by license key from MongoDB"""
+    if db:
+        return users_collection.find_one({'license_key': license_key})
+    return None
 
-db = load_db()
+def get_users():
+    """Get all users from MongoDB"""
+    if db:
+        return list(users_collection.find({}))
+    return []
+
+def get_devices():
+    """Get all devices from MongoDB"""
+    if db:
+        return list(devices_collection.find({}))
+    return []
+
+def get_device(device_serial):
+    """Get device by serial from MongoDB"""
+    if db:
+        return devices_collection.find_one({'device_serial': device_serial})
+    return None
+
+def save_user(user_data):
+    """Save user to MongoDB"""
+    if db:
+        if 'created_at' not in user_data:
+            user_data['created_at'] = datetime.now().isoformat()
+        # Check if exists
+        existing = users_collection.find_one({'license_key': user_data['license_key']})
+        if existing:
+            users_collection.update_one(
+                {'license_key': user_data['license_key']},
+                {'$set': user_data}
+            )
+        else:
+            users_collection.insert_one(user_data)
+        return True
+    return False
+
+def save_device(device_data):
+    """Save device to MongoDB"""
+    if db:
+        if 'created_at' not in device_data:
+            device_data['created_at'] = datetime.now().isoformat()
+        existing = devices_collection.find_one({'device_serial': device_data['device_serial']})
+        if existing:
+            devices_collection.update_one(
+                {'device_serial': device_data['device_serial']},
+                {'$set': device_data}
+            )
+        else:
+            devices_collection.insert_one(device_data)
+        return True
+    return False
+
+def delete_user(license_key):
+    """Delete user from MongoDB"""
+    if db:
+        return users_collection.delete_one({'license_key': license_key})
+    return None
+
+def save_sound_file(file_data, filename):
+    """Save sound file to GridFS"""
+    if fs:
+        # Delete existing sound file
+        existing = fs.find_one({'filename': filename})
+        if existing:
+            fs.delete(existing._id)
+        
+        # Save new file
+        file_id = fs.put(file_data, filename=filename, uploaded_at=datetime.now().isoformat())
+        return file_id
+    return None
+
+def get_sound_file(filename):
+    """Get sound file from GridFS"""
+    if fs:
+        return fs.find_one({'filename': filename})
+    return None
+
+def delete_sound_file(filename):
+    """Delete sound file from GridFS"""
+    if fs:
+        existing = fs.find_one({'filename': filename})
+        if existing:
+            fs.delete(existing._id)
+            return True
+    return False
+
+def get_all_sound_files():
+    """Get all sound files from GridFS"""
+    if fs:
+        sounds = []
+        for f in fs.find({}):
+            sounds.append({
+                'name': f.filename,
+                'size': f.length,
+                'size_mb': round(f.length / (1024 * 1024), 2),
+                'uploaded_at': f.uploaded_at if hasattr(f, 'uploaded_at') else 'N/A'
+            })
+        return sounds
+    return []
+
+# ==================== LICENSE FUNCTIONS ====================
 
 def generate_license_key():
     return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
 def validate_license(key, device_serial):
-    user = db['users'].get(key)
+    user = get_user(key)
     if not user:
         return {'valid': False, 'message': 'Invalid license key'}
+    
     if user.get('banned', False):
         return {'valid': False, 'message': 'License is banned'}
+    
     expires_str = user.get('expires_at', '')
     if expires_str:
         try:
@@ -68,13 +172,15 @@ def validate_license(key, device_serial):
                 return {'valid': False, 'message': 'License has expired'}
         except:
             pass
+    
     if device_serial:
-        db['devices'][device_serial] = {
+        device_data = {
+            'device_serial': device_serial,
             'license_key': key,
-            'last_seen': datetime.now().isoformat(),
-            'created_at': user.get('created_at', datetime.now().isoformat())
+            'last_seen': datetime.now().isoformat()
         }
-        save_db(db)
+        save_device(device_data)
+    
     return {
         'valid': True,
         'message': 'License active',
@@ -92,88 +198,77 @@ def login_required(f):
 
 # ==================== API ENDPOINTS ====================
 
-# -------- Connection Test --------
 @app.route('/api/v1/ping')
 def ping():
-    """Test connection between tool and server"""
     return jsonify({
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': 'v4.0',
-        'server': 'Ridol FB Tool Server'
+        'database': 'MongoDB Atlas' if db else 'Local File Storage'
     })
 
 @app.route('/api/v1/status')
 def api_status():
-    """Full server status"""
+    users = get_users() if db else []
+    devices = get_devices() if db else []
+    sound_files = get_all_sound_files()
+    
     return jsonify({
         'status': 'online',
         'version': 'v4.0',
         'timestamp': datetime.now().isoformat(),
-        'license_count': len(db.get('users', {})),
-        'device_count': len(db.get('devices', {})),
-        'sound_exists': os.path.exists(os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav'))
+        'license_count': len(users),
+        'device_count': len(devices),
+        'sound_files': [f['name'] for f in sound_files],
+        'sound_exists': len(sound_files) > 0,
+        'database': 'MongoDB Atlas' if db else 'Local File Storage'
     })
 
-# -------- License API --------
-@app.route('/api/v1/license/verify', methods=['POST'])
-def api_verify_license():
-    """Verify license key"""
-    data = request.json
-    key = data.get('license_key', '')
-    device = data.get('device_serial', '')
-    return jsonify(validate_license(key, device))
-
-@app.route('/api/v1/license/status/<license_key>')
-def api_license_status(license_key):
-    """Get license status"""
-    user = db['users'].get(license_key)
-    if not user:
-        return jsonify({'exists': False, 'message': 'License not found'})
-    return jsonify({
-        'exists': True,
-        'valid': not user.get('banned', False),
-        'expires_at': user.get('expires_at', 'Never'),
-        'device': user.get('device', ''),
-        'notes': user.get('notes', '')
-    })
-
-# -------- Sound API --------
 @app.route('/api/v1/sound/status')
 def api_sound_status():
-    """Check if sound exists on server"""
-    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-    if os.path.exists(filepath):
-        size = os.path.getsize(filepath)
-        return jsonify({
-            'exists': True,
-            'size': size,
-            'size_mb': round(size / (1024 * 1024), 2),
-            'url': '/api/v1/sound/download',
-            'last_modified': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
-        })
+    sound_files = get_all_sound_files()
     return jsonify({
-        'exists': False,
-        'message': 'No sound uploaded'
+        'exists': len(sound_files) > 0,
+        'sounds': sound_files,
+        'count': len(sound_files)
     })
 
+@app.route('/api/v1/sound/download/<filename>')
+def api_download_sound(filename):
+    try:
+        if not filename.endswith(('.mp3', '.wav', '.ogg')):
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        sound_file = get_sound_file(filename)
+        if sound_file:
+            data = sound_file.read()
+            return send_file(
+                io.BytesIO(data),
+                as_attachment=True,
+                download_name=filename,
+                mimetype='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+            )
+        return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/v1/sound/download')
-def api_download_sound():
-    """Download background sound"""
-    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-    if os.path.exists(filepath):
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name='background.wav',
-            mimetype='audio/wav'
-        )
-    return jsonify({'error': 'No sound found'}), 404
+def api_download_sound_default():
+    try:
+        sound_files = get_all_sound_files()
+        if sound_files:
+            # Prefer MP3
+            for f in sound_files:
+                if f['name'].endswith('.mp3'):
+                    return api_download_sound(f['name'])
+            return api_download_sound(sound_files[0]['name'])
+        return jsonify({'error': 'No sound found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/sound/upload', methods=['POST'])
 @login_required
 def api_upload_sound():
-    """Upload background sound"""
     try:
         if 'file' not in request.files:
             return jsonify({'success': False, 'message': 'No file uploaded'})
@@ -182,35 +277,63 @@ def api_upload_sound():
         if file.filename == '':
             return jsonify({'success': False, 'message': 'No file selected'})
         
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-        file.save(filepath)
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ['.mp3', '.wav', '.ogg']:
+            return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
         
-        return jsonify({
-            'success': True,
-            'message': 'Sound uploaded successfully',
-            'filename': 'background.wav',
-            'size': os.path.getsize(filepath)
-        })
+        filename = f'background{ext}'
+        file_data = file.read()
+        
+        file_id = save_sound_file(file_data, filename)
+        if file_id:
+            return jsonify({
+                'success': True,
+                'message': f'✅ Sound uploaded successfully!',
+                'filename': filename,
+                'original_name': file.filename,
+                'size': len(file_data),
+                'download_url': f'/api/v1/sound/download/{filename}'
+            })
+        return jsonify({'success': False, 'message': 'Failed to save to database'})
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
 @login_required
 def api_delete_sound():
-    """Delete background sound"""
     try:
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            return jsonify({'success': True, 'message': 'Sound deleted'})
-        return jsonify({'success': False, 'message': 'Sound not found'})
+        filename = request.json.get('filename', '')
+        if not filename:
+            return jsonify({'success': False, 'message': 'No filename provided'})
+        
+        if delete_sound_file(filename):
+            return jsonify({'success': True, 'message': '✅ Sound deleted'})
+        return jsonify({'success': False, 'message': 'File not found'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
-# -------- Device API --------
+@app.route('/api/v1/license/verify', methods=['POST'])
+def api_verify_license():
+    data = request.json
+    return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
+
+@app.route('/api/v1/license/status/<license_key>')
+def api_license_status(license_key):
+    user = get_user(license_key)
+    if not user:
+        return jsonify({'exists': False, 'message': 'License not found'})
+    
+    return jsonify({
+        'exists': True,
+        'valid': not user.get('banned', False),
+        'expires_at': user.get('expires_at', 'Never'),
+        'device': user.get('device', ''),
+        'notes': user.get('notes', ''),
+        'created_at': user.get('created_at', '')
+    })
+
 @app.route('/api/v1/device/register', methods=['POST'])
 def api_register_device():
-    """Register a device"""
     data = request.json
     device_serial = data.get('device_serial', '')
     license_key = data.get('license_key', '')
@@ -218,20 +341,20 @@ def api_register_device():
     if not device_serial:
         return jsonify({'success': False, 'message': 'No device serial'})
     
-    db['devices'][device_serial] = {
+    device_data = {
+        'device_serial': device_serial,
         'license_key': license_key,
-        'last_seen': datetime.now().isoformat(),
-        'created_at': datetime.now().isoformat()
+        'last_seen': datetime.now().isoformat()
     }
-    save_db(db)
+    save_device(device_data)
     return jsonify({'success': True, 'device_serial': device_serial})
 
 @app.route('/api/v1/device/status/<device_serial>')
 def api_device_status(device_serial):
-    """Get device status"""
-    device = db['devices'].get(device_serial)
+    device = get_device(device_serial)
     if not device:
         return jsonify({'exists': False, 'message': 'Device not found'})
+    
     return jsonify({
         'exists': True,
         'license_key': device.get('license_key', ''),
@@ -239,147 +362,26 @@ def api_device_status(device_serial):
         'created_at': device.get('created_at', '')
     })
 
-# -------- Admin API (Protected) --------
-@app.route('/api/v1/admin/licenses')
-@login_required
-def api_list_licenses():
-    """List all licenses"""
-    return jsonify({
-        'licenses': db.get('users', {}),
-        'total': len(db.get('users', {}))
-    })
+# ==================== ADMIN ROUTES ====================
 
-@app.route('/api/v1/admin/license/create', methods=['POST'])
-@login_required
-def api_create_license():
-    """Create a new license"""
-    try:
-        data = request.json
-        days = int(data.get('days', 30))
-        notes = data.get('notes', '').strip()
-        
-        if days < 1 or days > 365:
-            return jsonify({'success': False, 'message': 'Days must be 1-365'})
-        
-        key = generate_license_key()
-        expires = (datetime.now() + timedelta(days=days)).isoformat()
-        
-        db['users'][key] = {
-            'created_at': datetime.now().isoformat(),
-            'expires_at': expires,
-            'banned': False,
-            'notes': notes if notes else 'No notes',
-            'device': ''
-        }
-        save_db(db)
-        
-        return jsonify({
-            'success': True,
-            'license_key': key,
-            'expires_at': expires
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-# -------- Compatibility Endpoints (Legacy) --------
-@app.route('/api/test')
-def test():
-    return jsonify({
-        'status': 'online',
-        'message': 'Server is reachable!',
-        'timestamp': datetime.now().isoformat(),
-        'version': 'v4.0'
-    })
-
-@app.route('/api/sounds/status')
-def sound_status():
-    return api_sound_status()
-
-@app.route('/api/sounds/download/background.wav')
-def download_background():
-    return api_download_sound()
-
-@app.route('/api/sounds/upload', methods=['POST'])
-@login_required
-def upload_sound():
-    return api_upload_sound()
-
-@app.route('/api/sounds/list')
-@login_required
-def list_sounds():
-    sounds = []
-    if os.path.exists(CUSTOM_SOUNDS_DIR):
-        for f in os.listdir(CUSTOM_SOUNDS_DIR):
-            if f.endswith(('.mp3', '.wav', '.ogg')):
-                size = os.path.getsize(os.path.join(CUSTOM_SOUNDS_DIR, f))
-                sounds.append({
-                    'name': f,
-                    'size': size,
-                    'size_mb': round(size / (1024 * 1024), 2)
-                })
-    return jsonify({'sounds': sounds})
-
-@app.route('/api/sounds/delete', methods=['POST'])
-@login_required
-def delete_sound():
-    try:
-        filename = request.json.get('filename', 'background.wav')
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            return jsonify({'success': True, 'message': 'Deleted'})
-        return jsonify({'success': False, 'message': 'Not found'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/sounds/play', methods=['POST'])
-@login_required
-def play_sound():
-    try:
-        filename = request.json.get('filename', 'background.wav')
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            return send_file(filepath, as_attachment=False)
-        return jsonify({'success': False, 'message': 'Not found'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-# ==================== WEB ROUTES ====================
 @app.route('/')
 def home():
     return jsonify({
         'server': 'Ridol FB Tool License Server',
         'version': 'v4.0',
         'status': 'online',
+        'database': 'MongoDB Atlas' if db else 'Local File Storage',
         'api_endpoints': {
             'ping': '/api/v1/ping',
             'status': '/api/v1/status',
-            'license_verify': '/api/v1/license/verify',
             'sound_status': '/api/v1/sound/status',
             'sound_download': '/api/v1/sound/download',
+            'sound_upload': '/api/v1/sound/upload',
+            'license_verify': '/api/v1/license/verify',
             'device_register': '/api/v1/device/register',
             'admin': '/admin'
         }
     })
-
-@app.route('/verify', methods=['POST'])
-def verify():
-    data = request.json
-    return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
-
-@app.route('/register_device', methods=['POST'])
-def register_device():
-    data = request.json
-    device_serial = data.get('device_serial', '')
-    if device_serial:
-        db['devices'][device_serial] = {
-            'license_key': '',
-            'last_seen': datetime.now().isoformat(),
-            'created_at': datetime.now().isoformat()
-        }
-        save_db(db)
-        return jsonify({'success': True, 'device_serial': device_serial})
-    return jsonify({'success': False, 'message': 'No device serial'})
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -404,16 +406,17 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = db.get('users', {})
-    devices = db.get('devices', {})
+    users = get_users() if db else []
+    devices = get_devices() if db else []
+    
     now = datetime.now()
     total = len(users)
     active = 0
     expired = 0
     banned = 0
     
-    for key, user in users.items():
-        if user.get('banned'):
+    for user in users:
+        if user.get('banned', False):
             banned += 1
         elif user.get('expires_at', ''):
             try:
@@ -427,8 +430,8 @@ def admin_data():
             active += 1
     
     return jsonify({
-        'users': users,
-        'devices': devices,
+        'users': {u['license_key']: u for u in users},
+        'devices': {d['device_serial']: d for d in devices},
         'total': total,
         'active': active,
         'expired': expired,
@@ -450,53 +453,76 @@ def admin_create():
         key = generate_license_key()
         expires = (datetime.now() + timedelta(days=days)).isoformat()
         
-        db['users'][key] = {
+        user_data = {
+            'license_key': key,
             'created_at': datetime.now().isoformat(),
             'expires_at': expires,
             'banned': False,
             'notes': notes if notes else 'No notes',
             'device': ''
         }
-        save_db(db)
         
-        return jsonify({
-            'success': True,
-            'message': f'License created! Valid for {days} days.',
-            'license_key': key,
-            'expires_at': expires
-        })
+        if save_user(user_data):
+            return jsonify({
+                'success': True,
+                'message': f'✅ License created! Valid for {days} days.',
+                'license_key': key,
+                'expires_at': expires
+            })
+        return jsonify({'success': False, 'message': 'Failed to save to database'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/ban', methods=['POST'])
 @login_required
 def admin_ban():
-    key = request.json.get('license_key', '')
-    if key in db['users']:
-        db['users'][key]['banned'] = True
-        save_db(db)
-        return jsonify({'success': True, 'message': 'License banned'})
-    return jsonify({'success': False, 'message': 'License not found'})
+    try:
+        key = request.json.get('license_key', '')
+        if not key:
+            return jsonify({'success': False, 'message': 'No license key'})
+        
+        user = get_user(key)
+        if not user:
+            return jsonify({'success': False, 'message': 'License not found'})
+        
+        user['banned'] = True
+        save_user(user)
+        return jsonify({'success': True, 'message': '✅ License banned'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/unban', methods=['POST'])
 @login_required
 def admin_unban():
-    key = request.json.get('license_key', '')
-    if key in db['users']:
-        db['users'][key]['banned'] = False
-        save_db(db)
-        return jsonify({'success': True, 'message': 'License unbanned'})
-    return jsonify({'success': False, 'message': 'License not found'})
+    try:
+        key = request.json.get('license_key', '')
+        if not key:
+            return jsonify({'success': False, 'message': 'No license key'})
+        
+        user = get_user(key)
+        if not user:
+            return jsonify({'success': False, 'message': 'License not found'})
+        
+        user['banned'] = False
+        save_user(user)
+        return jsonify({'success': True, 'message': '✅ License unbanned'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/delete', methods=['POST'])
 @login_required
 def admin_delete():
-    key = request.json.get('license_key', '')
-    if key in db['users']:
-        del db['users'][key]
-        save_db(db)
-        return jsonify({'success': True, 'message': 'License deleted'})
-    return jsonify({'success': False, 'message': 'License not found'})
+    try:
+        key = request.json.get('license_key', '')
+        if not key:
+            return jsonify({'success': False, 'message': 'No license key'})
+        
+        result = delete_user(key)
+        if result and result.deleted_count > 0:
+            return jsonify({'success': True, 'message': '✅ License deleted'})
+        return jsonify({'success': False, 'message': 'License not found'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/logout')
 @login_required
@@ -505,12 +531,13 @@ def admin_logout():
     return redirect(url_for('admin_login'))
 
 # ==================== HTML TEMPLATES ====================
+
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Login</title>
+    <title>🔐 Admin Login - MongoDB</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
@@ -528,12 +555,14 @@ LOGIN_HTML = '''<!DOCTYPE html>
         .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
         .footer .brand { color: #00ff88; }
+        .db-badge { background: #003311; color: #00ff88; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="login-container">
         <h1>🔐 RIDOL FB TOOL</h1>
         <div class="subtitle">Admin Authentication • v4.0</div>
+        <div style="text-align:center"><span class="db-badge">🍃 MongoDB Atlas</span></div>
         {% if error %}
         <div class="error-msg">{{ error }}</div>
         {% endif %}
@@ -555,7 +584,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Panel</title>
+    <title>🔐 Admin Panel - MongoDB</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
@@ -563,6 +592,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         .header h1 { color: #00ff88; font-size: 20px; }
         .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .header .db-badge { background: #003311; color: #00ff88; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #00ff88; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
         .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
@@ -607,6 +637,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .upload-area p { color: #666; font-size: 13px; }
         .upload-area .supported { color: #444; font-size: 11px; margin-top: 5px; }
         .sound-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #1a1a2e; border-radius: 8px; margin-bottom: 8px; }
+        .sound-item .type { background: #222; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
         .search-box { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
         .search-box input { flex: 1; min-width: 180px; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 13px; outline: none; }
         .search-box input:focus { border-color: #00ff88; }
@@ -621,7 +652,9 @@ ADMIN_HTML = '''<!DOCTYPE html>
         <div class="header">
             <div>
                 <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
-                <div style="color:#666;font-size:12px;margin-top:3px">Admin Panel • License Management</div>
+                <div style="color:#666;font-size:12px;margin-top:3px">
+                    Admin Panel • <span class="db-badge">🍃 MongoDB Atlas</span>
+                </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
                 <span class="badge">👑 ADMIN</span>
@@ -633,20 +666,20 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <!-- API Info -->
         <div class="card">
-            <h2>🔌 API Endpoints</h2>
+            <h2>🔌 MongoDB API Endpoints</h2>
             <div class="api-info">
-                <code>/api/v1/ping</code> - Test connection<br>
-                <code>/api/v1/status</code> - Server status<br>
-                <code>/api/v1/license/verify</code> - Verify license<br>
-                <code>/api/v1/sound/status</code> - Sound status<br>
+                <code>/api/v1/sound/status</code> - Check sound status<br>
                 <code>/api/v1/sound/download</code> - Download sound<br>
+                <code>/api/v1/sound/upload</code> - Upload MP3/WAV<br>
+                <code>/api/v1/sound/delete</code> - Delete sound<br>
+                <code>/api/v1/license/verify</code> - Verify license<br>
                 <code>/api/v1/device/register</code> - Register device
             </div>
         </div>
         
         <!-- SOUND UPLOAD -->
         <div class="card">
-            <h2>🎵 Custom Background Sound</h2>
+            <h2>🎵 Custom Sound Upload (MP3 / WAV / OGG)</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
                 <span class="icon">📤</span>
                 <p>Drop your MP3 / WAV / OGG file here</p>
@@ -718,11 +751,10 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <div class="footer">✦ RIDOL FB TOOL v4.0 • LICENSE SERVER ✦</div>
+        <div class="footer">✦ RIDOL FB TOOL v4.0 • MongoDB Atlas ✦</div>
     </div>
     
     <script>
-        // ==================== SCRIPT ====================
         let allUsers = {};
         let lastCreatedKey = '';
         
@@ -759,7 +791,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const res = await fetch('/api/v1/ping');
                 const data = await res.json();
                 if (data.status === 'online') {
-                    showMsg('✅ Server reachable! Version: ' + data.version, 'success');
+                    showMsg('✅ Server reachable! DB: ' + data.database, 'success');
                 } else {
                     showMsg('❌ Server error', 'error');
                 }
@@ -790,11 +822,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
             const formData = new FormData();
             formData.append('file', file);
             try {
-                showMsg('⏳ Uploading...', 'info');
+                showMsg('⏳ Uploading to MongoDB...', 'info');
                 const res = await fetch('/api/v1/sound/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.success) {
-                    showMsg('✅ ' + data.message, 'success');
+                    showMsg('✅ ' + data.message + ' (' + file.name + ')', 'success');
                     loadSounds();
                     checkSoundStatus();
                 } else {
@@ -805,48 +837,58 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function loadSounds() {
             try {
-                const res = await fetch('/api/sounds/list');
+                const res = await fetch('/api/v1/sound/status');
                 const data = await res.json();
                 const list = document.getElementById('soundList');
                 if (data.sounds && data.sounds.length > 0) {
-                    let html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS:</div>';
+                    let html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (MongoDB):</div>';
                     data.sounds.forEach(s => {
+                        const ext = s.name.split('.').pop().toUpperCase();
                         html += `<div class="sound-item">
                             <span>🎵 ${s.name}</span>
-                            <span style="color:#666;font-size:11px">${s.size_mb} MB</span>
+                            <span class="type">${ext}</span>
+                            <span class="size">${s.size_mb} MB</span>
                             <div style="display:flex;gap:6px">
                                 <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶</button>
+                                <button class="btn btn-green btn-sm" onclick="copySingleLink('${s.name}')">📋</button>
                                 <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
                             </div>
                         </div>`;
                     });
                     list.innerHTML = html;
                 } else {
-                    list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No custom sounds uploaded</div>';
+                    list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in MongoDB</div>';
                 }
             } catch (e) {}
         }
         
         async function playSound(filename) {
             try {
-                const res = await fetch('/api/sounds/play', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename })
-                });
-                if (res.ok) {
-                    const blob = await res.blob();
-                    const audio = new Audio(URL.createObjectURL(blob));
-                    audio.play();
-                    showMsg('▶ Playing: ' + filename, 'info');
-                }
-            } catch (e) { showMsg('❌ Play failed', 'error'); }
+                const url = window.location.origin + '/api/v1/sound/download/' + filename;
+                const audio = new Audio(url);
+                audio.play();
+                showMsg('▶ Playing: ' + filename, 'info');
+            } catch (e) { showMsg('❌ Play failed: ' + e.message, 'error'); }
+        }
+        
+        function copySingleLink(filename) {
+            const url = window.location.origin + '/api/v1/sound/download/' + filename;
+            navigator.clipboard.writeText(url).then(() => showMsg('📋 Link copied!', 'success'))
+            .catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showMsg('📋 Link copied!', 'success');
+            });
         }
         
         async function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
             try {
-                const res = await fetch('/api/sounds/delete', {
+                const res = await fetch('/api/v1/sound/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename })
@@ -859,7 +901,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         function copyDownloadLink() {
             const url = window.location.origin + '/api/v1/sound/download';
-            navigator.clipboard.writeText(url).then(() => showMsg('📋 API link copied!', 'success'))
+            navigator.clipboard.writeText(url).then(() => showMsg('📋 Download link copied!', 'success'))
             .catch(() => {
                 const ta = document.createElement('textarea');
                 ta.value = url;
@@ -876,9 +918,9 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const res = await fetch('/api/v1/sound/status');
                 const data = await res.json();
                 if (data.exists) {
-                    showMsg('✅ Sound exists! Size: ' + data.size_mb + ' MB', 'success');
+                    showMsg('✅ Sound exists in MongoDB! ' + data.count + ' file(s)', 'success');
                 } else {
-                    showMsg('❌ No sound uploaded', 'error');
+                    showMsg('❌ No sound in MongoDB', 'error');
                 }
             } catch (e) { showMsg('❌ Status check failed', 'error'); }
         }
