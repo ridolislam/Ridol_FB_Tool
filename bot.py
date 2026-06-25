@@ -255,6 +255,39 @@ class AudioEngine:
             except:
                 return False
     
+    # ===== PLAY SOUND METHOD (FIXED) =====
+    def play_sound(self, filename, gain='-5', sound_dir=None):
+        """Play a sound file asynchronously"""
+        if not self.sound_available:
+            return
+        
+        if sound_dir is None:
+            sound_dir = self.sound_dir
+        
+        # Check multiple locations
+        filepath = os.path.join(sound_dir, filename)
+        if not os.path.exists(filepath):
+            filepath = os.path.join(self.sound_dir, filename)
+            if not os.path.exists(filepath):
+                return
+        
+        try:
+            subprocess.Popen(['play', '-q', filepath, 'gain', gain],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except:
+            try:
+                subprocess.Popen(['mpv', '--no-video', '--really-quiet', filepath],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except:
+                pass
+    
+    # ===== SHORTCUT METHODS =====
+    def play_startup(self): self.play_sound('startup.wav', '-3')
+    def play_click(self): self.play_sound('click.wav', '-8')
+    def play_success(self): self.play_sound('success.wav', '-5')
+    def play_fail(self): self.play_sound('fail.wav', '-5')
+    def play_done(self): self.play_sound('done.wav', '-3')
+    
     def download_background_sound(self):
         """Download sound using API"""
         return APIManager.download_sound()
@@ -307,12 +340,6 @@ class AudioEngine:
             subprocess.run(['pkill', '-f', 'mpv.*binary_rain'], capture_output=True)
         except:
             pass
-    
-    def play_startup(self): self.play_sound_async('startup.wav', '-3')
-    def play_click(self): self.play_sound_async('click.wav', '-8')
-    def play_success(self): self.play_sound_async('success.wav', '-5')
-    def play_fail(self): self.play_sound_async('fail.wav', '-5')
-    def play_done(self): self.play_sound_async('done.wav', '-3')
     
     def speak(self, text, priority='normal'):
         if not self.voice_available:
@@ -524,6 +551,57 @@ class FacebookBot:
         for code in sorted(cm.keys(), key=len, reverse=True):
             if phone.startswith(code): return cm[code]
         return 'XX'
+
+# ==================== ANIMATION ====================
+class Animation:
+    @staticmethod
+    def typing(text, delay=0.03, color=Color.CYAN):
+        for char in text:
+            print(f'{color}{char}{Color.RESET}', end='', flush=True)
+            time.sleep(delay)
+        print()
+    
+    @staticmethod
+    def spinner(duration=2, message=''):
+        spin = ['-', '\\', '|', '/']
+        end_time = time.time() + duration
+        i = 0
+        while time.time() < end_time:
+            print(f'\r{Color.CYAN}{spin[i % len(spin)]}{Color.RESET} {message}', end='', flush=True)
+            i += 1
+            time.sleep(0.1)
+        print()
+    
+    @staticmethod
+    def progress_bar(duration=3, message='Loading'):
+        for i in range(21):
+            progress = '#' * i + '-' * (20 - i)
+            percent = i * 5
+            print(f'\r{Color.CYAN}{message}: [{progress}] {percent}%{Color.RESET}', end='', flush=True)
+            time.sleep(duration / 20)
+        print()
+    
+    @staticmethod
+    def matrix_effect(duration=2):
+        chars = '01'
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            line = ''.join(random.choice(chars) if random.random() < 0.7 else ' ' for _ in range(40))
+            print(f'\r{Color.GREEN}{line}{Color.RESET}')
+            time.sleep(0.05)
+    
+    @staticmethod
+    def ending_animation():
+        print(f'\n{Color.CYAN}')
+        print('    +--------------------------------------+')
+        print('    |     Thank you for using Ridol FB Tool    |')
+        print(f'    |     {Color.YELLOW}Stay Secure!{Color.CYAN}                      |')
+        print('    +--------------------------------------+')
+        print(f'{Color.RESET}')
+        for i in range(3):
+            print(f'\r{Color.DIM}Shutting down{"." * (i+1)}{" " * (3-i)}{Color.RESET}', end='', flush=True)
+            time.sleep(0.5)
+        print()
 
 # ==================== MAIN MENU ====================
 class MainMenu:
@@ -822,7 +900,7 @@ class MainMenu:
                 print(f'\n  {Color.CYAN}Testing sounds...{Color.RESET}')
                 for sound in ['click.wav', 'success.wav', 'fail.wav', 'done.wav']:
                     print(f'    Playing: {sound}')
-                    self.audio.play_sound_async(sound)
+                    self.audio.play_sound(sound)
                     time.sleep(1)
                 press_enter()
             elif choice == '2':
@@ -923,57 +1001,6 @@ class MainMenu:
         time.sleep(1)
         print(f'\n{Color.GREEN}Goodbye!{Color.RESET}')
         sys.exit(0)
-
-# ==================== ANIMATION ====================
-class Animation:
-    @staticmethod
-    def typing(text, delay=0.03, color=Color.CYAN):
-        for char in text:
-            print(f'{color}{char}{Color.RESET}', end='', flush=True)
-            time.sleep(delay)
-        print()
-    
-    @staticmethod
-    def spinner(duration=2, message=''):
-        spin = ['-', '\\', '|', '/']
-        end_time = time.time() + duration
-        i = 0
-        while time.time() < end_time:
-            print(f'\r{Color.CYAN}{spin[i % len(spin)]}{Color.RESET} {message}', end='', flush=True)
-            i += 1
-            time.sleep(0.1)
-        print()
-    
-    @staticmethod
-    def progress_bar(duration=3, message='Loading'):
-        for i in range(21):
-            progress = '#' * i + '-' * (20 - i)
-            percent = i * 5
-            print(f'\r{Color.CYAN}{message}: [{progress}] {percent}%{Color.RESET}', end='', flush=True)
-            time.sleep(duration / 20)
-        print()
-    
-    @staticmethod
-    def matrix_effect(duration=2):
-        chars = '01'
-        end_time = time.time() + duration
-        while time.time() < end_time:
-            line = ''.join(random.choice(chars) if random.random() < 0.7 else ' ' for _ in range(40))
-            print(f'\r{Color.GREEN}{line}{Color.RESET}')
-            time.sleep(0.05)
-    
-    @staticmethod
-    def ending_animation():
-        print(f'\n{Color.CYAN}')
-        print('    +--------------------------------------+')
-        print('    |     Thank you for using Ridol FB Tool    |')
-        print(f'    |     {Color.YELLOW}Stay Secure!{Color.CYAN}                      |')
-        print('    +--------------------------------------+')
-        print(f'{Color.RESET}')
-        for i in range(3):
-            print(f'\r{Color.DIM}Shutting down{"." * (i+1)}{" " * (3-i)}{Color.RESET}', end='', flush=True)
-            time.sleep(0.5)
-        print()
 
 # ==================== MAIN ====================
 if __name__ == '__main__':
