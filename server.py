@@ -17,7 +17,6 @@ import io
 # ==================== MONGODB ATLAS CONNECTION ====================
 MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
 
-# MongoDB connection variables
 db = None
 fs = None
 client = None
@@ -32,7 +31,6 @@ except ImportError:
     MONGO_AVAILABLE = False
     print("[-] pymongo not installed. Install: pip install pymongo")
 
-# Connect to MongoDB
 if MONGO_AVAILABLE:
     try:
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
@@ -41,7 +39,6 @@ if MONGO_AVAILABLE:
         devices_collection = db['devices']
         fs = gridfs.GridFS(db)
         
-        # Test connection
         client.admin.command('ping')
         print("[+] MongoDB Atlas Connected Successfully!")
         print(f"[+] Database: {db.name}")
@@ -118,15 +115,23 @@ def delete_user(license_key):
 
 def save_sound_file(file_data, filename):
     if fs is not None:
-        existing = fs.find_one({'filename': filename})
-        if existing:
-            fs.delete(existing._id)
-        file_id = fs.put(
-            file_data, 
-            filename=filename, 
-            uploaded_at=datetime.now().isoformat()
-        )
-        return file_id
+        try:
+            # Delete existing
+            existing = fs.find_one({'filename': filename})
+            if existing:
+                fs.delete(existing._id)
+            
+            # Save new file
+            file_id = fs.put(
+                file_data,
+                filename=filename,
+                uploaded_at=datetime.now().isoformat(),
+                content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+            )
+            return str(file_id)
+        except Exception as e:
+            print(f"[-] GridFS Save Error: {e}")
+            return None
     return None
 
 def get_sound_file(filename):
@@ -283,22 +288,37 @@ def api_download_sound_default():
 @login_required
 def api_upload_sound():
     try:
+        print("[+] Upload request received")
+        
         if 'file' not in request.files:
+            print("[-] No file in request")
             return jsonify({'success': False, 'message': 'No file uploaded'})
         
         file = request.files['file']
         if file.filename == '':
+            print("[-] Empty filename")
             return jsonify({'success': False, 'message': 'No file selected'})
+        
+        print(f"[+] Filename: {file.filename}")
+        print(f"[+] Content Type: {file.content_type}")
         
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ['.mp3', '.wav', '.ogg']:
+            print(f"[-] Invalid extension: {ext}")
             return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
         
         filename = f'background{ext}'
         file_data = file.read()
         
+        print(f"[+] File size: {len(file_data)} bytes")
+        
+        if fs is None:
+            print("[-] GridFS not available")
+            return jsonify({'success': False, 'message': 'Database not available'})
+        
         file_id = save_sound_file(file_data, filename)
         if file_id:
+            print(f"[+] File saved with ID: {file_id}")
             return jsonify({
                 'success': True,
                 'message': 'Sound uploaded successfully!',
@@ -307,8 +327,12 @@ def api_upload_sound():
                 'size': len(file_data),
                 'download_url': f'/api/v1/sound/download/{filename}'
             })
-        return jsonify({'success': False, 'message': 'Failed to save to database'})
+        else:
+            print("[-] Failed to save file")
+            return jsonify({'success': False, 'message': 'Failed to save to database'})
+            
     except Exception as e:
+        print(f"[-] Upload error: {e}")
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
@@ -525,7 +549,7 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ==================== HTML TEMPLATES (SIMPLIFIED) ====================
+# ==================== HTML TEMPLATES ====================
 
 LOGIN_HTML = """
 <!DOCTYPE html>
@@ -823,7 +847,7 @@ ADMIN_HTML = """
                         showMsg(data.message, 'error');
                     }
                 })
-                .catch(function(e) { showMsg('Upload failed', 'error'); });
+                .catch(function(e) { showMsg('Upload failed: ' + e.message, 'error'); });
         }
         
         function loadSounds() {
