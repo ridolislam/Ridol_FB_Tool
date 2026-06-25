@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0
+Ridol FB Tool License Server v4.0 - Complete
 Author: Ridol Islam
 """
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
+from flask_cors import CORS
 import json
 import os
 import uuid
 from datetime import datetime, timedelta
 from functools import wraps
+import logging
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['CORS_HEADERS'] = 'Content-Type'
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 DB_FILE = 'licenses.json'
 ADMIN_PASSWORD = 'Ridol123@'
@@ -73,12 +81,177 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# ============ TEST ENDPOINT ============
+@app.route('/api/test')
+def test():
+    """Test endpoint to check if server is reachable"""
+    return jsonify({
+        'status': 'online',
+        'message': 'Server is reachable!',
+        'timestamp': datetime.now().isoformat(),
+        'version': 'v4.0'
+    })
+
+@app.route('/api/sounds/test')
+def test_sound():
+    """Test if sound endpoint is working"""
+    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+    return jsonify({
+        'sound_exists': os.path.exists(filepath),
+        'path': filepath,
+        'custom_sounds_dir': CUSTOM_SOUNDS_DIR,
+        'files': os.listdir(CUSTOM_SOUNDS_DIR) if os.path.exists(CUSTOM_SOUNDS_DIR) else []
+    })
+
+# ============ SOUND ROUTES ============
+
+@app.route('/api/sounds/status')
+def sound_status():
+    """Check if sound exists on server"""
+    try:
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+        logger.info(f"Checking sound at: {filepath}")
+        
+        if os.path.exists(filepath):
+            size = os.path.getsize(filepath)
+            return jsonify({
+                'exists': True,
+                'size': size,
+                'size_mb': round(size / (1024 * 1024), 2),
+                'url': f'/api/sounds/download/background.wav',
+                'path': filepath
+            })
+        else:
+            return jsonify({
+                'exists': False,
+                'message': 'No sound file found',
+                'directory': CUSTOM_SOUNDS_DIR,
+                'files': os.listdir(CUSTOM_SOUNDS_DIR) if os.path.exists(CUSTOM_SOUNDS_DIR) else []
+            })
+    except Exception as e:
+        logger.error(f"Status check error: {e}")
+        return jsonify({'exists': False, 'error': str(e)})
+
+@app.route('/api/sounds/download/background.wav')
+def download_background():
+    """Direct download endpoint for background sound"""
+    try:
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+        logger.info(f"Download requested for: {filepath}")
+        
+        if os.path.exists(filepath):
+            return send_file(
+                filepath, 
+                as_attachment=True, 
+                download_name='background.wav',
+                mimetype='audio/wav'
+            )
+        else:
+            logger.warning(f"File not found: {filepath}")
+            return jsonify({'error': 'No sound file found'}), 404
+    except Exception as e:
+        logger.error(f"Download error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sounds/list')
+@login_required
+def list_sounds():
+    try:
+        sounds = []
+        if os.path.exists(CUSTOM_SOUNDS_DIR):
+            for f in os.listdir(CUSTOM_SOUNDS_DIR):
+                if f.endswith(('.mp3', '.wav', '.ogg')):
+                    size = os.path.getsize(os.path.join(CUSTOM_SOUNDS_DIR, f))
+                    sounds.append({
+                        'name': f,
+                        'size': size,
+                        'size_mb': round(size / (1024 * 1024), 2)
+                    })
+        return jsonify({'sounds': sounds, 'count': len(sounds)})
+    except Exception as e:
+        logger.error(f"List error: {e}")
+        return jsonify({'sounds': [], 'error': str(e)})
+
+@app.route('/api/sounds/upload', methods=['POST'])
+@login_required
+def upload_sound():
+    try:
+        logger.info("Upload request received")
+        logger.info(f"Files: {request.files}")
+        logger.info(f"Form: {request.form}")
+        logger.info(f"Headers: {request.headers}")
+        
+        if 'file' not in request.files:
+            logger.warning("No file in request")
+            return jsonify({'success': False, 'message': '❌ No file uploaded'})
+        
+        file = request.files['file']
+        if file.filename == '':
+            logger.warning("Empty filename")
+            return jsonify({'success': False, 'message': '❌ No file selected'})
+        
+        logger.info(f"Filename: {file.filename}")
+        logger.info(f"Content-Type: {file.content_type}")
+        
+        # Save as background.wav
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+        file.save(filepath)
+        logger.info(f"File saved to: {filepath}")
+        
+        return jsonify({
+            'success': True,
+            'message': '✅ Sound uploaded successfully!',
+            'filename': 'background.wav',
+            'original_name': file.filename,
+            'size': os.path.getsize(filepath),
+            'download_url': '/api/sounds/download/background.wav'
+        })
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+
+@app.route('/api/sounds/delete', methods=['POST'])
+@login_required
+def delete_sound():
+    try:
+        filename = request.json.get('filename', 'background.wav')
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            logger.info(f"Deleted: {filepath}")
+            return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
+        return jsonify({'success': False, 'message': 'File not found'})
+    except Exception as e:
+        logger.error(f"Delete error: {e}")
+        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+
+@app.route('/api/sounds/play', methods=['POST'])
+@login_required
+def play_sound():
+    try:
+        filename = request.json.get('filename', 'background.wav')
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
+        if os.path.exists(filepath):
+            return send_file(filepath, as_attachment=False)
+        return jsonify({'success': False, 'message': 'File not found'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+
+# ============ LICENSE ROUTES ============
+
 @app.route('/')
 def home():
     return jsonify({
         'server': 'Ridol FB Tool License Server',
         'version': 'v4.0',
-        'status': 'online'
+        'status': 'online',
+        'endpoints': {
+            'test': '/api/test',
+            'status': '/api/sounds/status',
+            'download': '/api/sounds/download/background.wav',
+            'upload': '/api/sounds/upload',
+            'admin': '/admin'
+        }
     })
 
 @app.route('/verify', methods=['POST'])
@@ -99,97 +272,6 @@ def register_device():
         save_db(db)
         return jsonify({'success': True, 'device_serial': device_serial})
     return jsonify({'success': False, 'message': 'No device serial'})
-
-# ============ SOUND ROUTES ============
-
-@app.route('/api/sounds/status')
-def sound_status():
-    """Check if sound exists on server"""
-    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-    if os.path.exists(filepath):
-        size = os.path.getsize(filepath)
-        return jsonify({
-            'exists': True,
-            'size': size,
-            'size_mb': round(size / (1024 * 1024), 2),
-            'url': f'/api/sounds/download/background.wav'
-        })
-    return jsonify({'exists': False})
-
-@app.route('/api/sounds/download/background.wav')
-def download_background():
-    """Direct download endpoint for background sound"""
-    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-    if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True, download_name='background.wav')
-    return jsonify({'error': 'No sound file found'}), 404
-
-@app.route('/api/sounds/list')
-@login_required
-def list_sounds():
-    sounds = []
-    for f in os.listdir(CUSTOM_SOUNDS_DIR):
-        if f.endswith(('.mp3', '.wav', '.ogg')):
-            size = os.path.getsize(os.path.join(CUSTOM_SOUNDS_DIR, f))
-            sounds.append({
-                'name': f,
-                'size': size,
-                'size_mb': round(size / (1024 * 1024), 2)
-            })
-    return jsonify({'sounds': sounds})
-
-@app.route('/api/sounds/upload', methods=['POST'])
-@login_required
-def upload_sound():
-    try:
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'message': 'No file uploaded'})
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'message': 'No file selected'})
-        
-        # Save as background.wav
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
-        file.save(filepath)
-        
-        return jsonify({
-            'success': True,
-            'message': '✅ Sound uploaded successfully!',
-            'filename': 'background.wav',
-            'original_name': file.filename,
-            'size': os.path.getsize(filepath),
-            'download_url': '/api/sounds/download/background.wav'
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
-
-@app.route('/api/sounds/delete', methods=['POST'])
-@login_required
-def delete_sound():
-    try:
-        filename = request.json.get('filename', 'background.wav')
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
-        return jsonify({'success': False, 'message': 'File not found'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
-
-@app.route('/api/sounds/play', methods=['POST'])
-@login_required
-def play_sound():
-    try:
-        filename = request.json.get('filename', 'background.wav')
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            return send_file(filepath, as_attachment=False)
-        return jsonify({'success': False, 'message': 'File not found'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
-
-# ============ ADMIN ROUTES ============
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -314,7 +396,8 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ============ LOGIN HTML ============
+# ============ HTML TEMPLATES ============
+
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
@@ -337,27 +420,11 @@ LOGIN_HTML = '''<!DOCTYPE html>
             border: 1px solid #1a1a2e;
             max-width: 400px;
             width: 100%;
-            box-shadow: 0 25px 60px rgba(0,0,0,0.8);
         }
-        .login-container h1 {
-            color: #00ff88;
-            text-align: center;
-            font-size: 24px;
-            margin-bottom: 5px;
-        }
-        .login-container .subtitle {
-            text-align: center;
-            color: #666;
-            font-size: 13px;
-            margin-bottom: 30px;
-        }
+        .login-container h1 { color: #00ff88; text-align: center; font-size: 24px; }
+        .login-container .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
         .form-group { margin-bottom: 20px; }
-        .form-group label {
-            color: #aaa;
-            font-size: 13px;
-            display: block;
-            margin-bottom: 6px;
-        }
+        .form-group label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
         .form-group input {
             width: 100%;
             padding: 12px 16px;
@@ -368,9 +435,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
             font-size: 14px;
             outline: none;
         }
-        .form-group input:focus {
-            border-color: #00ff88;
-        }
+        .form-group input:focus { border-color: #00ff88; }
         .btn-login {
             width: 100%;
             padding: 14px;
@@ -393,24 +458,9 @@ LOGIN_HTML = '''<!DOCTYPE html>
             margin-bottom: 20px;
             text-align: center;
         }
-        .hint {
-            text-align: center;
-            color: #333;
-            font-size: 12px;
-            margin-top: 15px;
-        }
-        .hint span {
-            background: #1a1a2e;
-            padding: 2px 10px;
-            border-radius: 4px;
-            color: #666;
-        }
-        .footer {
-            text-align: center;
-            color: #333;
-            font-size: 11px;
-            margin-top: 20px;
-        }
+        .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
+        .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
+        .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
         .footer .brand { color: #00ff88; }
     </style>
 </head>
@@ -418,11 +468,9 @@ LOGIN_HTML = '''<!DOCTYPE html>
     <div class="login-container">
         <h1>🔐 RIDOL FB TOOL</h1>
         <div class="subtitle">Admin Authentication • v4.0</div>
-        
         {% if error %}
         <div class="error-msg">{{ error }}</div>
         {% endif %}
-        
         <form method="POST" action="/admin">
             <div class="form-group">
                 <label>🔑 Admin Password</label>
@@ -430,14 +478,12 @@ LOGIN_HTML = '''<!DOCTYPE html>
             </div>
             <button type="submit" class="btn-login">🚀 Access Panel</button>
         </form>
-        
         <div class="hint"><span>🔑 Hint: Admin Password</span></div>
         <div class="footer"><span class="brand">RIDOL FB TOOL</span> • v4.0</div>
     </div>
 </body>
 </html>'''
 
-# ============ ADMIN HTML ============
 ADMIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
@@ -448,7 +494,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
-        
         .header {
             display: flex;
             justify-content: space-between;
@@ -465,7 +510,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
-        
         .card {
             background: #111;
             border-radius: 12px;
@@ -474,10 +518,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
             border: 1px solid #1a1a2e;
         }
         .card h2 { color: #00ff88; font-size: 16px; margin-bottom: 15px; }
-        
         .flex { display: flex; gap: 15px; flex-wrap: wrap; }
         .flex-grow { flex: 1; min-width: 200px; }
-        
         .form-group { margin-bottom: 15px; }
         .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
         .form-group input, .form-group select {
@@ -491,7 +533,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             outline: none;
         }
         .form-group input:focus { border-color: #00ff88; }
-        
         .btn {
             padding: 10px 20px;
             border: none;
@@ -507,7 +548,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .btn-orange { background: #ff8800; color: #fff; }
         .btn-purple { background: #aa44ff; color: #fff; }
         .btn-sm { padding: 6px 12px; font-size: 11px; }
-        
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -521,7 +561,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         }
         .stat-box .number { font-size: 28px; font-weight: bold; }
         .stat-box .label { color: #888; font-size: 11px; margin-top: 5px; }
-        
         .table-wrapper { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
@@ -531,7 +570,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .badge-active { background: #003311; color: #00ff88; }
         .badge-expired { background: #330000; color: #ff4444; }
         .badge-banned { background: #331100; color: #ff8800; }
-        
         .msg {
             padding: 12px 16px;
             border-radius: 8px;
@@ -542,7 +580,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .msg-success { background: #003311; color: #00ff88; border: 1px solid #00ff88; }
         .msg-error { background: #330000; color: #ff4444; border: 1px solid #ff4444; }
         .msg-info { background: #001133; color: #4488ff; border: 1px solid #4488ff; }
-        
         .new-key-box {
             margin-top: 15px;
             padding: 20px;
@@ -562,19 +599,19 @@ ADMIN_HTML = '''<!DOCTYPE html>
             border-radius: 6px;
             word-break: break-all;
         }
-        
         .upload-area {
             border: 2px dashed #1a1a2e;
             border-radius: 12px;
             padding: 30px;
             text-align: center;
             cursor: pointer;
+            transition: all 0.3s;
         }
         .upload-area:hover { border-color: #00ff88; background: rgba(0,255,136,0.02); }
+        .upload-area.dragover { border-color: #00ff88; background: rgba(0,255,136,0.05); }
         .upload-area .icon { font-size: 32px; display: block; margin-bottom: 10px; }
         .upload-area p { color: #666; font-size: 13px; }
         .upload-area .supported { color: #444; font-size: 11px; margin-top: 5px; }
-        
         .sound-item {
             display: flex;
             justify-content: space-between;
@@ -584,9 +621,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             border-radius: 8px;
             margin-bottom: 8px;
         }
-        .sound-item .name { font-size: 13px; }
-        .sound-item .size { color: #666; font-size: 11px; }
-        
         .search-box {
             display: flex;
             gap: 10px;
@@ -605,14 +639,21 @@ ADMIN_HTML = '''<!DOCTYPE html>
             outline: none;
         }
         .search-box input:focus { border-color: #00ff88; }
-        
         .footer {
             text-align: center;
             color: #333;
             font-size: 11px;
             margin-top: 30px;
         }
-        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+        .status-badge.online { background: #003311; color: #00ff88; }
+        .status-badge.offline { background: #330000; color: #ff4444; }
         @media (max-width: 600px) {
             .header { flex-direction: column; align-items: flex-start; }
             .stats { grid-template-columns: repeat(2, 1fr); }
@@ -624,7 +665,10 @@ ADMIN_HTML = '''<!DOCTYPE html>
         <div class="header">
             <div>
                 <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
-                <div style="color:#666;font-size:12px;margin-top:3px">Admin Panel • License Management</div>
+                <div style="color:#666;font-size:12px;margin-top:3px">
+                    Admin Panel • License Management
+                    <span class="status-badge online" id="serverStatus">● ONLINE</span>
+                </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
                 <span class="badge">👑 ADMIN</span>
@@ -648,6 +692,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
                 <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Download Link</button>
                 <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Check Status</button>
+                <button class="btn btn-green" onclick="testConnection()">🔌 Test Connection</button>
             </div>
         </div>
         
@@ -735,44 +780,76 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 }
                 return await res.json();
             } catch (e) {
-                showMsg('❌ Network Error', 'error');
+                showMsg('❌ Network Error: ' + e.message, 'error');
                 return null;
+            }
+        }
+        
+        // ===== CONNECTION TEST =====
+        async function testConnection() {
+            showMsg('🔌 Testing connection...', 'info');
+            try {
+                const res = await fetch('/api/test');
+                const data = await res.json();
+                if (data.status === 'online') {
+                    showMsg('✅ Server reachable! Version: ' + data.version, 'success');
+                } else {
+                    showMsg('❌ Server returned: ' + JSON.stringify(data), 'error');
+                }
+            } catch (e) {
+                showMsg('❌ Connection failed: ' + e.message, 'error');
             }
         }
         
         // ===== SOUND =====
         const dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#00ff88'; });
-        dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#1a1a2e'; });
+        dropZone.addEventListener('dragover', e => { 
+            e.preventDefault(); 
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => { 
+            dropZone.classList.remove('dragover');
+        });
         dropZone.addEventListener('drop', e => {
             e.preventDefault();
-            dropZone.style.borderColor = '#1a1a2e';
+            dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
         });
         
         async function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file', 'error'); return; }
             const file = files[0];
+            
             if (!file.name.match(/\.(mp3|wav|ogg)$/i)) {
                 showMsg('❌ Only MP3, WAV, OGG allowed', 'error');
                 return;
             }
-            if (file.size > 50*1024*1024) { showMsg('❌ Max 50MB', 'error'); return; }
+            if (file.size > 50*1024*1024) { 
+                showMsg('❌ Max 50MB', 'error'); 
+                return;
+            }
             
             const formData = new FormData();
             formData.append('file', file);
+            
             try {
-                showMsg('⏳ Uploading...', 'info');
-                const res = await fetch('/api/sounds/upload', { method: 'POST', body: formData });
+                showMsg('⏳ Uploading ' + file.name + '...', 'info');
+                const res = await fetch('/api/sounds/upload', { 
+                    method: 'POST', 
+                    body: formData 
+                });
                 const data = await res.json();
+                
                 if (data.success) {
-                    showMsg('✅ ' + data.message, 'success');
+                    showMsg('✅ ' + data.message + ' (' + data.original_name + ')', 'success');
                     loadSounds();
                     checkSoundStatus();
                 } else {
                     showMsg('❌ ' + data.message, 'error');
                 }
-            } catch (e) { showMsg('❌ Upload failed', 'error'); }
+            } catch (e) {
+                showMsg('❌ Upload failed: ' + e.message, 'error');
+            }
         }
         
         async function loadSounds() {
@@ -780,13 +857,14 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const res = await fetch('/api/sounds/list');
                 const data = await res.json();
                 const list = document.getElementById('soundList');
+                
                 if (data.sounds && data.sounds.length > 0) {
                     let html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS:</div>';
                     data.sounds.forEach(s => {
                         html += `
                             <div class="sound-item">
-                                <span class="name">🎵 ${s.name}</span>
-                                <span class="size">${s.size_mb} MB</span>
+                                <span>🎵 ${s.name}</span>
+                                <span style="color:#666;font-size:11px">${s.size_mb} MB</span>
                                 <div style="display:flex;gap:6px">
                                     <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶</button>
                                     <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
@@ -798,7 +876,9 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 } else {
                     list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No custom sounds uploaded</div>';
                 }
-            } catch (e) {}
+            } catch (e) {
+                showMsg('❌ Failed to load sounds', 'error');
+            }
         }
         
         async function playSound(filename) {
@@ -819,14 +899,21 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
-            const res = await fetch('/api/sounds/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename })
-            });
-            const data = await res.json();
-            if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
-            else { showMsg('❌ ' + data.message, 'error'); }
+            try {
+                const res = await fetch('/api/sounds/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showMsg('✅ ' + data.message, 'success');
+                    loadSounds();
+                    checkSoundStatus();
+                } else {
+                    showMsg('❌ ' + data.message, 'error');
+                }
+            } catch (e) { showMsg('❌ Delete failed', 'error'); }
         }
         
         function copyDownloadLink() {
@@ -846,14 +933,22 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function checkSoundStatus() {
             try {
+                showMsg('📊 Checking sound status...', 'info');
                 const res = await fetch('/api/sounds/status');
                 const data = await res.json();
+                
                 if (data.exists) {
                     showMsg('✅ Sound exists! Size: ' + data.size_mb + ' MB\nURL: ' + data.url, 'success');
                 } else {
-                    showMsg('❌ No sound uploaded yet. Upload one above.', 'error');
+                    let msg = '❌ No sound uploaded yet.';
+                    if (data.files && data.files.length > 0) {
+                        msg += ' Files in directory: ' + data.files.join(', ');
+                    }
+                    showMsg(msg, 'error');
                 }
-            } catch (e) { showMsg('❌ Status check failed', 'error'); }
+            } catch (e) {
+                showMsg('❌ Status check failed: ' + e.message, 'error');
+            }
         }
         
         async function refreshSounds() {
@@ -907,15 +1002,23 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function toggleBan(key, isBanned) {
             const action = isBanned ? 'unban' : 'ban';
             const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            if (result && result.success) {
+                showMsg('✅ ' + result.message, 'success');
+                refreshAll();
+            } else {
+                showMsg(result ? result.message : '❌ Failed', 'error');
+            }
         }
         
         async function deleteLic(key) {
             if (!confirm('Delete ' + key + '?')) return;
             const result = await apiCall('/admin/delete', 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            if (result && result.success) {
+                showMsg('✅ ' + result.message, 'success');
+                refreshAll();
+            } else {
+                showMsg(result ? result.message : '❌ Failed', 'error');
+            }
         }
         
         function renderTable(users) {
@@ -923,18 +1026,22 @@ ADMIN_HTML = '''<!DOCTYPE html>
             tbody.innerHTML = '';
             const now = new Date();
             const keys = Object.keys(users);
+            
             if (keys.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#444;padding:30px">No licenses</td></tr>';
                 return;
             }
+            
             keys.forEach(key => {
                 const u = users[key];
                 const expires = u.expires_at ? new Date(u.expires_at) : null;
                 const isExpired = expires && now > expires;
                 const isBanned = u.banned || false;
+                
                 let status = 'Active', badge = 'badge-active';
                 if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
                 else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
+                
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><code>${key}</code></td>
@@ -957,6 +1064,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">❌ Failed</td></tr>';
                 return;
             }
+            
             allUsers = data.users || {};
             renderTable(allUsers);
             document.getElementById('s_total').textContent = data.total || 0;
@@ -969,10 +1077,13 @@ ADMIN_HTML = '''<!DOCTYPE html>
         function searchLic() {
             const q = document.getElementById('search').value.toLowerCase().trim();
             if (!q) { renderTable(allUsers); return; }
+            
             const filtered = {};
             Object.keys(allUsers).forEach(key => {
                 const u = allUsers[key];
-                if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
+                if (key.toLowerCase().includes(q) || 
+                    (u.device && u.device.toLowerCase().includes(q)) || 
+                    (u.notes && u.notes.toLowerCase().includes(q))) {
                     filtered[key] = u;
                 }
             });
@@ -983,8 +1094,30 @@ ADMIN_HTML = '''<!DOCTYPE html>
         // ===== INIT =====
         refreshAll();
         loadSounds();
-        checkSoundStatus();
+        setTimeout(checkSoundStatus, 1000);
         setInterval(refreshAll, 30000);
+        
+        // Server status check
+        async function checkServerStatus() {
+            try {
+                const res = await fetch('/api/test');
+                const data = await res.json();
+                const badge = document.getElementById('serverStatus');
+                if (data.status === 'online') {
+                    badge.className = 'status-badge online';
+                    badge.textContent = '● ONLINE';
+                } else {
+                    badge.className = 'status-badge offline';
+                    badge.textContent = '● OFFLINE';
+                }
+            } catch (e) {
+                const badge = document.getElementById('serverStatus');
+                badge.className = 'status-badge offline';
+                badge.textContent = '● OFFLINE';
+            }
+        }
+        checkServerStatus();
+        setInterval(checkServerStatus, 10000);
     </script>
 </body>
 </html>'''
