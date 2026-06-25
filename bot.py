@@ -26,9 +26,12 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
+CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
 LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v4.0'
+
+os.makedirs(CUSTOM_SOUND_DIR, exist_ok=True)
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -43,15 +46,121 @@ class Color:
     DIM = '\033[2m'
     RESET = '\033[0m'
     CLEAR = '\033[2J\033[H'
+    
+    # 3D Colors
+    GOLD = '\033[38;5;214m'
+    PINK = '\033[38;5;206m'
+    ORANGE = '\033[38;5;208m'
+    PURPLE = '\033[38;5;141m'
+
+# ==================== 3D TITLE WITH WRITING EFFECT ====================
+class TitleAnimation:
+    @staticmethod
+    def writing_effect(text, delay=0.08, color=Color.GREEN):
+        """Display text with writing/typing effect"""
+        for char in text:
+            print(f'{color}{char}{Color.RESET}', end='', flush=True)
+            time.sleep(delay)
+        print()
+    
+    @staticmethod
+    def big_3d_title():
+        """Display 3D big title with writing effect"""
+        os.system('clear')
+        
+        # 3D Shadow Effect
+        shadow_lines = [
+            f"{Color.DIM}    ╔══════════════════════════════════════════════════════════════╗{Color.RESET}",
+            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
+            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
+            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
+            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
+            f"{Color.DIM}    ╚══════════════════════════════════════════════════════════════════╝{Color.RESET}"
+        ]
+        
+        # Main Box
+        box_lines = [
+            f"{Color.CYAN}    ╔══════════════════════════════════════════════════════════════╗{Color.RESET}",
+            f"{Color.CYAN}    ║{Color.RESET}  {Color.GOLD}★{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}★{Color.RESET}  {Color.DIM}Termux Edition{Color.RESET}  {Color.CYAN}║{Color.RESET}",
+            f"{Color.CYAN}    ║{Color.RESET}  {Color.DIM}Complete Audio Experience{Color.RESET}  {Color.CYAN}║{Color.RESET}",
+            f"{Color.CYAN}    ║{Color.RESET}                                                                  {Color.CYAN}║{Color.RESET}",
+            f"{Color.CYAN}    ║{Color.RESET}  {Color.GREEN}●{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {Color.CYAN}║{Color.RESET}",
+            f"{Color.CYAN}    ║{Color.RESET}  {Color.CYAN}🌐{Color.RESET} Server: {Color.DIM}https://ridol-fb-tool.onrender.com{Color.RESET}  {Color.CYAN}║{Color.RESET}",
+            f"{Color.CYAN}    ╚══════════════════════════════════════════════════════════════════╝{Color.RESET}"
+        ]
+        
+        # Print shadow
+        for line in shadow_lines:
+            print(line)
+            time.sleep(0.05)
+        
+        # Print main box with writing effect for title
+        for line in box_lines:
+            if "RIDOL FB TOOL" in line:
+                # Writing effect for title
+                prefix = line[:line.find('RIDOL FB TOOL')]
+                suffix = line[line.find('RIDOL FB TOOL') + len('RIDOL FB TOOL'):]
+                print(prefix, end='', flush=True)
+                
+                # Rainbow colors for title
+                colors = [Color.GOLD, Color.ORANGE, Color.PINK, Color.PURPLE, Color.CYAN, Color.GREEN]
+                for i, char in enumerate('RIDOL FB TOOL'):
+                    color = colors[i % len(colors)]
+                    print(f'{color}{Color.BOLD}{char}{Color.RESET}', end='', flush=True)
+                    time.sleep(0.05)
+                print(suffix)
+            else:
+                print(line)
+                time.sleep(0.05)
+        
+        print()
+        time.sleep(0.5)
+    
+    @staticmethod
+    def animated_banner():
+        """Display animated banner with 3D effect"""
+        os.system('clear')
+        
+        banner = f"""
+{Color.CYAN}╔══════════════════════════════════════════════════════════════════╗{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.WHITE}{Color.BOLD}█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.GREEN}▌{Color.RESET}  {Color.WHITE}{Color.BOLD}█▀▀ █▀▀ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ ▄▀▀▄ █▀▀{Color.RESET}  {Color.GREEN}▐{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.GREEN}▌{Color.RESET}  {Color.WHITE}{Color.BOLD}█▀▀ █▀▀ █▄▄█ █▀▀▄ █▀▀  █▄▄█ █▄▄█ █▀▀{Color.RESET}  {Color.GREEN}▐{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.GREEN}▌{Color.RESET}  {Color.WHITE}{Color.BOLD}▀▀▀ ▀▀▀ ▀  ▀ ▀▀▀  ▀▀▀▀ ▀  ▀ ▀▀▀ ▀▀▀{Color.RESET}  {Color.GREEN}▐{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.DIM}▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}╚══════════════════════════════════════════════════════════════════╝{Color.RESET}
+        """
+        
+        # Print with animation
+        for line in banner.split('\n'):
+            print(line)
+            time.sleep(0.03)
+        
+        # Glowing effect animation
+        for _ in range(3):
+            print(f'\r{Color.GOLD}✦{Color.RESET}  {Color.WHITE}Loading System{Color.RESET}', end='', flush=True)
+            time.sleep(0.3)
+            print(f'\r{Color.GOLD}✦✦{Color.RESET}  {Color.WHITE}Loading System.{Color.RESET}', end='', flush=True)
+            time.sleep(0.3)
+            print(f'\r{Color.GOLD}✦✦✦{Color.RESET}  {Color.WHITE}Loading System..{Color.RESET}', end='', flush=True)
+            time.sleep(0.3)
+            print(f'\r{Color.GOLD}✦✦✦✦{Color.RESET}  {Color.WHITE}Loading System...{Color.RESET}', end='', flush=True)
+            time.sleep(0.3)
+        
+        print('\n' + ' ' * 30 + f'{Color.GREEN}✅ System Ready!{Color.RESET}\n')
+        time.sleep(0.5)
 
 # ==================== AUDIO ENGINE ====================
 class AudioEngine:
     def __init__(self):
         self.sound_dir = SOUND_DIR
+        self.custom_sound_dir = CUSTOM_SOUND_DIR
         self.voice_available = self._check_voice()
         self.sound_available = self._check_sound()
         self.bg_playing = False
+        self.bg_thread = None
         os.makedirs(self.sound_dir, exist_ok=True)
+        os.makedirs(self.custom_sound_dir, exist_ok=True)
     
     def _check_voice(self):
         try:
@@ -71,12 +180,19 @@ class AudioEngine:
             except:
                 return False
     
-    def play_sound_async(self, filename, gain='-5'):
+    def play_sound_async(self, filename, gain='-5', sound_dir=None):
         if not self.sound_available:
             return
-        filepath = os.path.join(self.sound_dir, filename)
+        
+        if sound_dir is None:
+            sound_dir = self.sound_dir
+        
+        filepath = os.path.join(sound_dir, filename)
         if not os.path.exists(filepath):
-            return
+            filepath = os.path.join(self.sound_dir, filename)
+            if not os.path.exists(filepath):
+                return
+        
         try:
             subprocess.Popen(['play', '-q', filepath, 'gain', gain],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -87,17 +203,47 @@ class AudioEngine:
             except:
                 pass
     
-    def play_binary_rain(self):
-        self.play_sound_async('binary_rain.wav', '-3')
+    def play_background_loop(self):
+        if not self.sound_available:
+            return
+        
+        custom_bg = os.path.join(self.custom_sound_dir, 'background.wav')
+        default_bg = os.path.join(self.sound_dir, 'binary_rain.wav')
+        bg_file = custom_bg if os.path.exists(custom_bg) else default_bg
+        
+        if not os.path.exists(bg_file):
+            return
+        
         self.bg_playing = True
+        while self.bg_playing:
+            try:
+                subprocess.run(['play', '-q', bg_file, 'gain', '-3', 'repeat', '999'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+            except subprocess.TimeoutExpired:
+                continue
+            except:
+                try:
+                    subprocess.run(['mpv', '--no-video', '--really-quiet', '--loop=inf', bg_file],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                except:
+                    break
+    
+    def play_background(self):
+        if self.bg_playing:
+            return
+        self.bg_thread = threading.Thread(target=self.play_background_loop, daemon=True)
+        self.bg_thread.start()
+        time.sleep(0.5)
     
     def stop_background_sound(self):
+        self.bg_playing = False
         try:
+            subprocess.run(['pkill', '-f', 'play.*background'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'mpv.*background'], capture_output=True)
             subprocess.run(['pkill', '-f', 'play.*binary_rain'], capture_output=True)
             subprocess.run(['pkill', '-f', 'mpv.*binary_rain'], capture_output=True)
         except:
             pass
-        self.bg_playing = False
     
     def play_startup(self): self.play_sound_async('startup.wav', '-3')
     def play_click(self): self.play_sound_async('click.wav', '-8')
@@ -169,19 +315,9 @@ class Animation:
             time.sleep(0.05)
     
     @staticmethod
-    def logo_animation():
-        logo = [
-            f"{Color.DIM}    ╔══════════════════════════════════════════╗{Color.RESET}",
-            f"{Color.CYAN}    ║{' '*42}║{Color.RESET}",
-            f"{Color.CYAN}    ║     {Color.WHITE}{Color.BOLD}Ridol FB Tool {APP_VERSION}{Color.RESET}{Color.CYAN}              ║{Color.RESET}",
-            f"{Color.CYAN}    ║     {Color.DIM}Termux Edition{Color.RESET}{Color.CYAN}                     ║{Color.RESET}",
-            f"{Color.CYAN}    ║{' '*42}║{Color.RESET}",
-            f"{Color.CYAN}    ║{' '*42}║{Color.RESET}",
-            f"{Color.GREEN}    ╚══════════════════════════════════════════╝{Color.RESET}"
-        ]
-        for line in logo:
-            print(line)
-            time.sleep(0.15)
+    def logo_with_writing():
+        """Display logo with writing effect"""
+        TitleAnimation.big_3d_title()
     
     @staticmethod
     def ending_animation():
@@ -397,8 +533,10 @@ class MainMenu:
     
     def show_header(self):
         clear_screen()
-        Animation.logo_animation()
+        # Show 3D title with writing effect
+        TitleAnimation.big_3d_title()
         devices = self.adb.get_devices()
+        # Update device and license status in the header
         print(f' {Color.GREEN}●{Color.RESET} Device: {Color.WHITE}{"connected" if devices else "No device"}{Color.RESET}')
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}●{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
@@ -406,14 +544,19 @@ class MainMenu:
     
     def welcome_screen(self):
         clear_screen()
-        print(f'{Color.CLEAR}    {Color.CYAN}Starting System...{Color.RESET}')
+        # Show animated banner with 3D title
+        TitleAnimation.animated_banner()
+        
+        # Start audio
         self.audio.play_startup()
-        self.audio.play_binary_rain()
+        self.audio.play_background()
         threading.Thread(target=self.audio.speak_welcome, daemon=True).start()
         time.sleep(1)
+        
+        # Show main menu after welcome
         clear_screen()
-        Animation.logo_animation()
-        time.sleep(1)
+        TitleAnimation.big_3d_title()
+        time.sleep(0.5)
     
     def menu_main(self):
         self.welcome_screen()
@@ -669,7 +812,7 @@ class MainMenu:
                     self.audio.stop_background_sound()
                     print(f'  {Color.YELLOW}[!] Background audio stopped{Color.RESET}')
                 else:
-                    self.audio.play_binary_rain()
+                    self.audio.play_background()
                     print(f'  {Color.GREEN}[✓] Background audio started{Color.RESET}')
                 press_enter()
             elif choice == '4':
@@ -717,7 +860,7 @@ class MainMenu:
             Animation.progress_bar(3, 'Demo Progress')
             press_enter()
         elif choice == '5':
-            Animation.typing('This is a typing effect demo!', 0.05)
+            TitleAnimation.writing_effect('This is a typing effect demo!', 0.05, Color.GOLD)
             press_enter()
         elif choice == '0': pass
         else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
