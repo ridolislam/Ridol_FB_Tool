@@ -47,108 +47,66 @@ class Color:
     RESET = '\033[0m'
     CLEAR = '\033[2J\033[H'
     
-    # 3D Colors
     GOLD = '\033[38;5;214m'
     PINK = '\033[38;5;206m'
     ORANGE = '\033[38;5;208m'
     PURPLE = '\033[38;5;141m'
+    NEON_GREEN = '\033[38;5;46m'
+    NEON_BLUE = '\033[38;5;45m'
 
-# ==================== 3D TITLE WITH WRITING EFFECT ====================
+# ==================== 3D TITLE (TERMUX FRIENDLY) ====================
 class TitleAnimation:
     @staticmethod
-    def writing_effect(text, delay=0.08, color=Color.GREEN):
-        """Display text with writing/typing effect"""
-        for char in text:
-            print(f'{color}{char}{Color.RESET}', end='', flush=True)
-            time.sleep(delay)
-        print()
-    
-    @staticmethod
     def big_3d_title():
-        """Display 3D big title with writing effect"""
+        """Display 3D title using simple ASCII characters (Termux friendly)"""
         os.system('clear')
         
-        # 3D Shadow Effect
-        shadow_lines = [
-            f"{Color.DIM}    ╔══════════════════════════════════════════════════════════════╗{Color.RESET}",
-            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
-            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
-            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
-            f"{Color.DIM}    ║                                                                  ║{Color.RESET}",
-            f"{Color.DIM}    ╚══════════════════════════════════════════════════════════════════╝{Color.RESET}"
-        ]
+        # Simple border using + - and |
+        border_top = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
+        border_bottom = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
         
-        # Main Box
-        box_lines = [
-            f"{Color.CYAN}    ╔══════════════════════════════════════════════════════════════╗{Color.RESET}",
-            f"{Color.CYAN}    ║{Color.RESET}  {Color.GOLD}★{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}★{Color.RESET}  {Color.DIM}Termux Edition{Color.RESET}  {Color.CYAN}║{Color.RESET}",
-            f"{Color.CYAN}    ║{Color.RESET}  {Color.DIM}Complete Audio Experience{Color.RESET}  {Color.CYAN}║{Color.RESET}",
-            f"{Color.CYAN}    ║{Color.RESET}                                                                  {Color.CYAN}║{Color.RESET}",
-            f"{Color.CYAN}    ║{Color.RESET}  {Color.GREEN}●{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {Color.CYAN}║{Color.RESET}",
-            f"{Color.CYAN}    ║{Color.RESET}  {Color.CYAN}🌐{Color.RESET} Server: {Color.DIM}https://ridol-fb-tool.onrender.com{Color.RESET}  {Color.CYAN}║{Color.RESET}",
-            f"{Color.CYAN}    ╚══════════════════════════════════════════════════════════════════╝{Color.RESET}"
-        ]
+        print(border_top)
+        print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
         
-        # Print shadow
-        for line in shadow_lines:
-            print(line)
-            time.sleep(0.05)
+        # Title with colors
+        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}Termux Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(title_line1)
         
-        # Print main box with writing effect for title
-        for line in box_lines:
-            if "RIDOL FB TOOL" in line:
-                # Writing effect for title
-                prefix = line[:line.find('RIDOL FB TOOL')]
-                suffix = line[line.find('RIDOL FB TOOL') + len('RIDOL FB TOOL'):]
-                print(prefix, end='', flush=True)
-                
-                # Rainbow colors for title
-                colors = [Color.GOLD, Color.ORANGE, Color.PINK, Color.PURPLE, Color.CYAN, Color.GREEN]
-                for i, char in enumerate('RIDOL FB TOOL'):
-                    color = colors[i % len(colors)]
-                    print(f'{color}{Color.BOLD}{char}{Color.RESET}', end='', flush=True)
-                    time.sleep(0.05)
-                print(suffix)
-            else:
-                print(line)
-                time.sleep(0.05)
+        subtitle = f"{Color.CYAN}|{Color.RESET}  {Color.DIM}Complete Audio Experience{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(subtitle)
         
+        print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
+        
+        # Status line
+        status_line = f"{Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(status_line)
+        
+        # Server status
+        server_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}@ {Color.RESET}Server: {Color.GREEN}ACTIVE{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(server_line)
+        
+        print(border_bottom)
         print()
         time.sleep(0.5)
     
     @staticmethod
     def animated_banner():
-        """Display animated banner with 3D effect"""
+        """Display animated banner with loading effect"""
         os.system('clear')
         
-        banner = f"""
-{Color.CYAN}╔══════════════════════════════════════════════════════════════════╗{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.WHITE}{Color.BOLD}█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.GREEN}▌{Color.RESET}  {Color.WHITE}{Color.BOLD}█▀▀ █▀▀ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ ▄▀▀▄ █▀▀{Color.RESET}  {Color.GREEN}▐{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.GREEN}▌{Color.RESET}  {Color.WHITE}{Color.BOLD}█▀▀ █▀▀ █▄▄█ █▀▀▄ █▀▀  █▄▄█ █▄▄█ █▀▀{Color.RESET}  {Color.GREEN}▐{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.GREEN}▌{Color.RESET}  {Color.WHITE}{Color.BOLD}▀▀▀ ▀▀▀ ▀  ▀ ▀▀▀  ▀▀▀▀ ▀  ▀ ▀▀▀ ▀▀▀{Color.RESET}  {Color.GREEN}▐{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.DIM}▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█{Color.RESET}  {Color.GOLD}█{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}╚══════════════════════════════════════════════════════════════════╝{Color.RESET}
-        """
+        print(f"{Color.CYAN}+{'-' * 70}+{Color.RESET}")
+        print(f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}Initializing Ridol FB Tool System{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.CYAN}|{Color.RESET}")
+        print(f"{Color.CYAN}+{'-' * 70}+{Color.RESET}")
         
-        # Print with animation
-        for line in banner.split('\n'):
-            print(line)
-            time.sleep(0.03)
-        
-        # Glowing effect animation
-        for _ in range(3):
-            print(f'\r{Color.GOLD}✦{Color.RESET}  {Color.WHITE}Loading System{Color.RESET}', end='', flush=True)
-            time.sleep(0.3)
-            print(f'\r{Color.GOLD}✦✦{Color.RESET}  {Color.WHITE}Loading System.{Color.RESET}', end='', flush=True)
-            time.sleep(0.3)
-            print(f'\r{Color.GOLD}✦✦✦{Color.RESET}  {Color.WHITE}Loading System..{Color.RESET}', end='', flush=True)
-            time.sleep(0.3)
-            print(f'\r{Color.GOLD}✦✦✦✦{Color.RESET}  {Color.WHITE}Loading System...{Color.RESET}', end='', flush=True)
-            time.sleep(0.3)
-        
-        print('\n' + ' ' * 30 + f'{Color.GREEN}✅ System Ready!{Color.RESET}\n')
+        # Loading animation
+        for i in range(10):
+            bar = '#' * i + '-' * (10 - i)
+            print(f'\r{Color.CYAN}    Loading: [{bar}] {i*10}%{Color.RESET}', end='', flush=True)
+            time.sleep(0.1)
+        print()
         time.sleep(0.5)
+        
+        TitleAnimation.big_3d_title()
 
 # ==================== AUDIO ENGINE ====================
 class AudioEngine:
@@ -272,9 +230,9 @@ class AudioEngine:
     def speak_account_created(self): self.speak('Account created')
     
     def get_status(self):
-        return f""" {Color.GREEN}●{Color.RESET} Voice: {'Active' if self.voice_available else 'Not available'}
- {Color.GREEN}●{Color.RESET} Sound: {'Active' if self.sound_available else 'Not available'}
- {Color.GREEN}●{Color.RESET} Background: {'Playing' if self.bg_playing else 'Stopped'}"""
+        return f""" {Color.GREEN}*{Color.RESET} Voice: {'Active' if self.voice_available else 'Not available'}
+ {Color.GREEN}*{Color.RESET} Sound: {'Active' if self.sound_available else 'Not available'}
+ {Color.GREEN}*{Color.RESET} Background: {'Playing' if self.bg_playing else 'Stopped'}"""
 
 # ==================== ANIMATION ENGINE ====================
 class Animation:
@@ -287,7 +245,7 @@ class Animation:
     
     @staticmethod
     def spinner(duration=2, message=''):
-        spin = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        spin = ['-', '\\', '|', '/']
         end_time = time.time() + duration
         i = 0
         while time.time() < end_time:
@@ -299,7 +257,7 @@ class Animation:
     @staticmethod
     def progress_bar(duration=3, message='Loading'):
         for i in range(21):
-            progress = '█' * i + '░' * (20 - i)
+            progress = '#' * i + '-' * (20 - i)
             percent = i * 5
             print(f'\r{Color.CYAN}{message}: [{progress}] {percent}%{Color.RESET}', end='', flush=True)
             time.sleep(duration / 20)
@@ -307,7 +265,7 @@ class Animation:
     
     @staticmethod
     def matrix_effect(duration=2):
-        chars = '01アイウエオカキクケコサシスセソタチツテト'
+        chars = '01'
         end_time = time.time() + duration
         while time.time() < end_time:
             line = ''.join(random.choice(chars) if random.random() < 0.7 else ' ' for _ in range(40))
@@ -316,16 +274,15 @@ class Animation:
     
     @staticmethod
     def logo_with_writing():
-        """Display logo with writing effect"""
         TitleAnimation.big_3d_title()
     
     @staticmethod
     def ending_animation():
         print(f'\n{Color.CYAN}')
-        print('    ╔══════════════════════════════════════════╗')
-        print('    ║     Thank you for using Ridol FB Tool    ║')
-        print(f'    ║     {Color.YELLOW}Stay Secure!{Color.CYAN}                      ║')
-        print('    ╚══════════════════════════════════════════╝')
+        print('    +--------------------------------------+')
+        print('    |     Thank you for using Ridol FB Tool    |')
+        print(f'    |     {Color.YELLOW}Stay Secure!{Color.CYAN}                      |')
+        print('    +--------------------------------------+')
         print(f'{Color.RESET}')
         for i in range(3):
             print(f'\r{Color.DIM}Shutting down{"." * (i+1)}{" " * (3-i)}{Color.RESET}', end='', flush=True)
@@ -439,14 +396,14 @@ class LicenseManager:
             }, timeout=15)
             data = r.json()
             if data.get('valid'):
-                print(f'  {Color.GREEN}[✓] License Active! Expires: {data.get("expires_at", "N/A")}{Color.RESET}')
+                print(f'  {Color.GREEN}[+] License Active! Expires: {data.get("expires_at", "N/A")}{Color.RESET}')
                 self.set_license_key(key)
                 return True, data
             else:
-                print(f'  {Color.RED}[✗] {data.get("message", "Invalid license")}{Color.RESET}')
+                print(f'  {Color.RED}[-] {data.get("message", "Invalid license")}{Color.RESET}')
                 return False, data
         except Exception as e:
-            print(f'  {Color.RED}[✗] Error: {e}{Color.RESET}')
+            print(f'  {Color.RED}[-] Error: {e}{Color.RESET}')
             return False, {}
     
     def register_device(self, device_serial):
@@ -477,11 +434,11 @@ class FacebookBot:
     
     def run_bot(self, workers=1):
         if not self.numbers:
-            print(f'\n{Color.RED}[✗] No numbers found in numbers.txt{Color.RESET}')
+            print(f'\n{Color.RED}[-] No numbers found in numbers.txt{Color.RESET}')
             return
         self.running = True
         self.stats = {'success': 0, 'failed': 0, 'total': 0}
-        print(f'\n{Color.GREEN}[✓] Starting bot with {workers} worker(s)...{Color.RESET}')
+        print(f'\n{Color.GREEN}[+] Starting bot with {workers} worker(s)...{Color.RESET}')
         print(f'{Color.CYAN}Total numbers: {len(self.numbers)}{Color.RESET}\n')
         
         for idx, number in enumerate(self.numbers):
@@ -493,12 +450,12 @@ class FacebookBot:
             success = random.random() < 0.8
             if success:
                 self.stats['success'] += 1
-                print(f'  {Color.GREEN}✓ Account Created{Color.RESET}')
+                print(f'  {Color.GREEN}+ Account Created{Color.RESET}')
                 self.audio.play_success()
                 self.audio.speak_account_created()
             else:
                 self.stats['failed'] += 1
-                print(f'  {Color.RED}✗ OTP Failed{Color.RESET}')
+                print(f'  {Color.RED}- OTP Failed{Color.RESET}')
                 self.audio.play_fail()
                 self.audio.speak_otp_fail()
             self.stats['total'] += 1
@@ -510,7 +467,7 @@ class FacebookBot:
                     time.sleep(1)
         
         self.running = False
-        print(f'\n\n{Color.GREEN}✅ ALL TASKS COMPLETE — Success: {self.stats["success"]} | Failed: {self.stats["failed"]}{Color.RESET}')
+        print(f'\n\n{Color.GREEN}[+] ALL TASKS COMPLETE -- Success: {self.stats["success"]} | Failed: {self.stats["failed"]}{Color.RESET}')
         self.audio.play_done()
         self.audio.speak_bot_complete()
     
@@ -533,27 +490,20 @@ class MainMenu:
     
     def show_header(self):
         clear_screen()
-        # Show 3D title with writing effect
         TitleAnimation.big_3d_title()
         devices = self.adb.get_devices()
-        # Update device and license status in the header
-        print(f' {Color.GREEN}●{Color.RESET} Device: {Color.WHITE}{"connected" if devices else "No device"}{Color.RESET}')
+        print(f' {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}{"connected" if devices else "No device"}{Color.RESET}')
         lic_key = self.license.get_license_key()
-        print(f' {Color.GREEN}●{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
-        print(f' {Color.CYAN}🌐{Color.RESET} Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}\n')
+        print(f' {Color.GREEN}*{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
+        print(f' {Color.CYAN}@{Color.RESET} Server: {Color.GREEN}ACTIVE{Color.RESET}\n')
     
     def welcome_screen(self):
         clear_screen()
-        # Show animated banner with 3D title
         TitleAnimation.animated_banner()
-        
-        # Start audio
         self.audio.play_startup()
         self.audio.play_background()
         threading.Thread(target=self.audio.speak_welcome, daemon=True).start()
         time.sleep(1)
-        
-        # Show main menu after welcome
         clear_screen()
         TitleAnimation.big_3d_title()
         time.sleep(0.5)
@@ -562,19 +512,19 @@ class MainMenu:
         self.welcome_screen()
         while True:
             self.show_header()
-            print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU{Color.RESET}{Color.CYAN}                              │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} 🔍 Device Management              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} 🔑 License Management              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} 📂 Data Folder                     {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} 🚀 Start Bot                        {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} 📊 Status                           {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[6]{Color.RESET} 🔊 Audio Settings                    {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[7]{Color.RESET} 🎬 Demo                             {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[8]{Color.RESET} ❓ Help                              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} ❌ Exit                               {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+            print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU{Color.RESET}{Color.CYAN}                              |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Device Management              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} License Management              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Data Folder                     {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Start Bot                        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Status                           {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[6]{Color.RESET} Audio Settings                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[7]{Color.RESET} Demo                             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[8]{Color.RESET} Help                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1': self.menu_device()
@@ -591,49 +541,49 @@ class MainMenu:
     def menu_device(self):
         while True:
             self.show_header()
-            print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}DEVICE MANAGEMENT{Color.RESET}{Color.CYAN}                     │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Check ADB Status                {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} List Connected Devices           {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Connect WiFi Device              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Disconnect All                   {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Get Device ID                    {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+            print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}DEVICE MANAGEMENT{Color.RESET}{Color.CYAN}                     |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Check ADB Status                {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} List Connected Devices           {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Connect WiFi Device              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Disconnect All                   {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Get Device ID                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
-                print(f'\n  {Color.GREEN}[✓] ADB: {"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}')
+                print(f'\n  {Color.GREEN}[+] ADB: {"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}')
                 press_enter()
             elif choice == '2':
                 devices = self.adb.get_devices()
                 if devices:
-                    print(f'\n  {Color.GREEN}[✓] Devices found:{Color.RESET}')
-                    for d in devices: print(f'    • {d}')
+                    print(f'\n  {Color.GREEN}[+] Devices found:{Color.RESET}')
+                    for d in devices: print(f'    - {d}')
                 else:
-                    print(f'\n  {Color.RED}[✗] No devices connected{Color.RESET}')
+                    print(f'\n  {Color.RED}[-] No devices connected{Color.RESET}')
                 press_enter()
             elif choice == '3':
                 ip = input(f'  {Color.CYAN}Enter device IP: {Color.RESET}').strip()
                 if ip:
                     success, msg = self.adb.connect_wifi(ip)
                     if success:
-                        print(f'  {Color.GREEN}[✓] {msg}{Color.RESET}')
+                        print(f'  {Color.GREEN}[+] {msg}{Color.RESET}')
                         self.audio.speak_device_connected()
                     else:
-                        print(f'  {Color.RED}[✗] {msg}{Color.RESET}')
+                        print(f'  {Color.RED}[-] {msg}{Color.RESET}')
                 press_enter()
             elif choice == '4':
                 if self.adb.disconnect_all():
-                    print(f'  {Color.GREEN}[✓] All disconnected{Color.RESET}')
+                    print(f'  {Color.GREEN}[+] All disconnected{Color.RESET}')
                 else:
-                    print(f'  {Color.RED}[✗] Failed to disconnect{Color.RESET}')
+                    print(f'  {Color.RED}[-] Failed to disconnect{Color.RESET}')
                 press_enter()
             elif choice == '5':
                 serial = input(f'  {Color.CYAN}Enter device serial (or blank for default): {Color.RESET}').strip()
                 device_id = self.adb.get_device_id(serial)
-                print(f'  {Color.GREEN}[✓] Device ID: {device_id}{Color.RESET}')
+                print(f'  {Color.GREEN}[+] Device ID: {device_id}{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -641,15 +591,15 @@ class MainMenu:
     def menu_license(self):
         while True:
             self.show_header()
-            print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}LICENSE MANAGEMENT{Color.RESET}{Color.CYAN}                     │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+            print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}LICENSE MANAGEMENT{Color.RESET}{Color.CYAN}                     |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
@@ -662,7 +612,7 @@ class MainMenu:
                 key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
                 if key:
                     self.license.set_license_key(key)
-                    print(f'  {Color.GREEN}[✓] License key saved{Color.RESET}')
+                    print(f'  {Color.GREEN}[+] License key saved{Color.RESET}')
                 press_enter()
             elif choice == '3':
                 key = self.license.get_license_key()
@@ -678,9 +628,9 @@ class MainMenu:
                     self.license.set_device_serial(serial)
                     result = self.license.register_device(serial)
                     if result and result.get('success'):
-                        print(f'  {Color.GREEN}[✓] Device registered{Color.RESET}')
+                        print(f'  {Color.GREEN}[+] Device registered{Color.RESET}')
                     else:
-                        print(f'  {Color.RED}[✗] Registration failed{Color.RESET}')
+                        print(f'  {Color.RED}[-] Registration failed{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -688,15 +638,15 @@ class MainMenu:
     def menu_folder(self):
         while True:
             self.show_header()
-            print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}DATA FOLDER{Color.RESET}{Color.CYAN}                             │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Current Path: {Color.DIM}{self.data_dir}{Color.RESET}        {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Set New Path                   {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Create Required Files          {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} View File Contents             {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+            print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}DATA FOLDER{Color.RESET}{Color.CYAN}                             |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Current Path: {Color.DIM}{self.data_dir}{Color.RESET}        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Set New Path                   {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Create Required Files          {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} View File Contents             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
@@ -709,7 +659,7 @@ class MainMenu:
                     self.data_dir = new_path
                     self.config['data_dir'] = new_path
                     save_json(CONFIG_FILE, self.config)
-                    print(f'  {Color.GREEN}[✓] Data directory updated{Color.RESET}')
+                    print(f'  {Color.GREEN}[+] Data directory updated{Color.RESET}')
                 press_enter()
             elif choice == '3':
                 os.makedirs(self.data_dir, exist_ok=True)
@@ -718,7 +668,7 @@ class MainMenu:
                     if not os.path.exists(fpath):
                         with open(fpath, 'w') as f:
                             f.write(f'# {fname} - Add your data here\n')
-                print(f'  {Color.GREEN}[✓] Required files created in {self.data_dir}{Color.RESET}')
+                print(f'  {Color.GREEN}[+] Required files created in {self.data_dir}{Color.RESET}')
                 press_enter()
             elif choice == '4':
                 files = ['numbers.txt', 'names.txt', 'proxies.txt']
@@ -738,16 +688,16 @@ class MainMenu:
     
     def menu_start_bot(self):
         self.show_header()
-        print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT{Color.RESET}{Color.CYAN}                              │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  Numbers: {len(load_file_lines(os.path.join(self.data_dir, "numbers.txt")))}                      {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}           │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  Device: {Color.DIM}{self.license.get_device_serial() or "Not set"}{Color.RESET}{Color.CYAN}          │{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+        print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT{Color.RESET}{Color.CYAN}                              |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  Numbers: {len(load_file_lines(os.path.join(self.data_dir, "numbers.txt")))}                      {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}           |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  Device: {Color.DIM}{self.license.get_device_serial() or "Not set"}{Color.RESET}{Color.CYAN}          |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         
         if not self.license.get_license_key():
-            print(f'\n{Color.RED}[✗] No license key set! Please set license first.{Color.RESET}')
+            print(f'\n{Color.RED}[-] No license key set! Please set license first.{Color.RESET}')
             press_enter()
             return
         
@@ -769,15 +719,15 @@ class MainMenu:
     
     def menu_status(self):
         self.show_header()
-        print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}SYSTEM STATUS{Color.RESET}{Color.CYAN}                           │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}''')
-        print(f''' {Color.CYAN}│{Color.RESET}  {Color.GREEN}●{Color.RESET} ADB: {Color.WHITE}{"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}{Color.CYAN}             │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}●{Color.RESET} Devices: {Color.WHITE}{len(self.adb.get_devices())}{Color.RESET}{Color.CYAN}                          │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}            │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {self.audio.get_status()}{Color.CYAN}       │{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+        print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}SYSTEM STATUS{Color.RESET}{Color.CYAN}                           |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
+        print(f''' {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} ADB: {Color.WHITE}{"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}{Color.CYAN}             |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Devices: {Color.WHITE}{len(self.adb.get_devices())}{Color.RESET}{Color.CYAN}                          |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}            |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {self.audio.get_status()}{Color.CYAN}       |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         if self.bot:
             print(self.bot.get_status())
         press_enter()
@@ -785,15 +735,15 @@ class MainMenu:
     def menu_audio(self):
         while True:
             self.show_header()
-            print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}AUDIO SETTINGS{Color.RESET}{Color.CYAN}                          │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Test Sound Effects              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Test Voice Feedback             {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Toggle Background Audio         {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Audio Status                    {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+            print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}AUDIO SETTINGS{Color.RESET}{Color.CYAN}                          |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Test Sound Effects              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Test Voice Feedback             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Toggle Background Audio         {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Audio Status                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
@@ -805,7 +755,7 @@ class MainMenu:
                 press_enter()
             elif choice == '2':
                 self.audio.speak('This is a voice test message', 'high')
-                print(f'  {Color.GREEN}[✓] Voice test completed{Color.RESET}')
+                print(f'  {Color.GREEN}[+] Voice test completed{Color.RESET}')
                 press_enter()
             elif choice == '3':
                 if self.audio.bg_playing:
@@ -813,7 +763,7 @@ class MainMenu:
                     print(f'  {Color.YELLOW}[!] Background audio stopped{Color.RESET}')
                 else:
                     self.audio.play_background()
-                    print(f'  {Color.GREEN}[✓] Background audio started{Color.RESET}')
+                    print(f'  {Color.GREEN}[+] Background audio started{Color.RESET}')
                 press_enter()
             elif choice == '4':
                 print(f'\n{self.audio.get_status()}')
@@ -823,16 +773,16 @@ class MainMenu:
     
     def menu_demo(self):
         self.show_header()
-        print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}DEMO{Color.RESET}{Color.CYAN}                                    │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Matrix Rain Animation            {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Sound Effects Demo              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Voice Messages Demo             {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Progress Bar Demo               {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Typing Effect Demo              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+        print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}DEMO{Color.RESET}{Color.CYAN}                                    |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Matrix Rain Animation            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Sound Effects Demo              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Voice Messages Demo             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Progress Bar Demo               {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Typing Effect Demo              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
         self.audio.play_click()
         if choice == '1':
@@ -860,29 +810,29 @@ class MainMenu:
             Animation.progress_bar(3, 'Demo Progress')
             press_enter()
         elif choice == '5':
-            TitleAnimation.writing_effect('This is a typing effect demo!', 0.05, Color.GOLD)
+            Animation.typing('This is a typing effect demo!', 0.05, Color.GOLD)
             press_enter()
         elif choice == '0': pass
         else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
     
     def menu_help(self):
         self.show_header()
-        print(f''' {Color.CYAN}┌──────────────────────────────────────┐{Color.RESET}
- {Color.CYAN}│{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP{Color.RESET}{Color.CYAN}                                   │{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  📋 {Color.WHITE}How to Use{Color.RESET}{Color.CYAN}                       │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  1. Set up your data folder (Option 3)          {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  2. Add phone numbers to numbers.txt            {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  3. Enter your license key (Option 2)           {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  4. Connect your device (Option 1)              {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  5. Start the bot (Option 4)                    {Color.CYAN}│{Color.RESET}
- {Color.CYAN}├──────────────────────────────────────┤{Color.RESET}
- {Color.CYAN}│{Color.RESET}  🔧 {Color.WHITE}Troubleshooting{Color.RESET}{Color.CYAN}                   │{Color.RESET}
- {Color.CYAN}│{Color.RESET}  • Ensure ADB is installed and running         {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  • Enable USB Debugging on your device         {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  • Check internet connection for license       {Color.CYAN}│{Color.RESET}
- {Color.CYAN}│{Color.RESET}  • Install sox and espeak for audio            {Color.CYAN}│{Color.RESET}
- {Color.CYAN}└──────────────────────────────────────┘{Color.RESET}''')
+        print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP{Color.RESET}{Color.CYAN}                                   |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  [?] {Color.WHITE}How to Use{Color.RESET}{Color.CYAN}                       |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  1. Set up your data folder (Option 3)          {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  2. Add phone numbers to numbers.txt            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  3. Enter your license key (Option 2)           {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  4. Connect your device (Option 1)              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  5. Start the bot (Option 4)                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Troubleshooting{Color.RESET}{Color.CYAN}                   |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Ensure ADB is installed and running         {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Enable USB Debugging on your device         {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Check internet connection for license       {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Install sox and espeak for audio            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         press_enter()
     
     def menu_exit(self):
@@ -890,7 +840,7 @@ class MainMenu:
         Animation.ending_animation()
         threading.Thread(target=self.audio.speak_goodbye, daemon=True).start()
         time.sleep(1)
-        print(f'\n{Color.GREEN}👋 Goodbye!{Color.RESET}')
+        print(f'\n{Color.GREEN}Goodbye!{Color.RESET}')
         sys.exit(0)
 
 # ==================== MAIN ====================
@@ -902,5 +852,5 @@ if __name__ == '__main__':
         print(f'\n\n{Color.YELLOW}[!] Interrupted by user{Color.RESET}')
         sys.exit(0)
     except Exception as e:
-        print(f'\n{Color.RED}[✗] Error: {e}{Color.RESET}')
+        print(f'\n{Color.RED}[-] Error: {e}{Color.RESET}')
         sys.exit(1)
