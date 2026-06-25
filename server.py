@@ -119,6 +119,17 @@ def list_sounds():
             })
     return jsonify({'sounds': sounds})
 
+@app.route('/api/sounds/download/<filename>')
+def download_sound(filename):
+    """Download sound file - No login required for tool access"""
+    try:
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
+        if os.path.exists(filepath):
+            return send_file(filepath, as_attachment=True)
+        return jsonify({'success': False, 'message': 'File not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/sounds/upload', methods=['POST'])
 @login_required
 def upload_sound():
@@ -130,17 +141,30 @@ def upload_sound():
         if file.filename == '':
             return jsonify({'success': False, 'message': 'No file selected'})
         
+        # Allow only specific extensions
         if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg')):
             return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG files allowed'})
         
+        # Save as background.wav for tool compatibility
         filename = 'background.wav'
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         file.save(filepath)
         
+        # Also keep original filename for display
+        info_file = os.path.join(CUSTOM_SOUNDS_DIR, 'sound_info.json')
+        info = {
+            'original_name': file.filename,
+            'uploaded_at': datetime.now().isoformat(),
+            'size': os.path.getsize(filepath)
+        }
+        with open(info_file, 'w') as f:
+            json.dump(info, f)
+        
         return jsonify({
             'success': True,
             'message': f'✅ Sound uploaded successfully!',
-            'filename': filename,
+            'filename': 'background.wav',
+            'original_name': file.filename,
             'size': os.path.getsize(filepath)
         })
     except Exception as e:
@@ -158,6 +182,10 @@ def delete_sound():
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         if os.path.exists(filepath):
             os.remove(filepath)
+            # Also remove info file
+            info_file = os.path.join(CUSTOM_SOUNDS_DIR, 'sound_info.json')
+            if os.path.exists(info_file):
+                os.remove(info_file)
             return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
         return jsonify({'success': False, 'message': 'File not found'})
     except Exception as e:
@@ -328,9 +356,8 @@ def admin_logout():
     return redirect(url_for('admin_login'))
 
 # ============================================================
-# ============ LOGIN HTML (Fixed Regex Warning) ============
+# ============ LOGIN HTML (Complete) ============
 # ============================================================
-
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
@@ -818,9 +845,8 @@ LOGIN_HTML = '''<!DOCTYPE html>
 </html>'''
 
 # ============================================================
-# ============ ADMIN HTML (Fixed Regex Warning) ============
+# ============ ADMIN HTML (Complete) ============
 # ============================================================
-
 ADMIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
@@ -1268,7 +1294,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <div id="msg" class="msg"></div>
         
-        <!-- Sound Upload -->
+        <!-- ===== SOUND UPLOAD SECTION ===== -->
         <div class="card">
             <h2><span class="icon">🎵</span> Custom Background Sound</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
@@ -1278,9 +1304,13 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 <input type="file" id="fileInput" accept=".mp3,.wav,.ogg" style="display:none" onchange="uploadSound(this.files)">
             </div>
             <div style="margin-top:15px" id="soundList"></div>
+            <div style="margin-top:10px">
+                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh Sound List</button>
+                <button class="btn btn-purple" onclick="showDownloadInfo()">📋 Show Download Info</button>
+            </div>
         </div>
         
-        <!-- Create License -->
+        <!-- ===== LICENSE SECTION ===== -->
         <div class="card">
             <h2><span class="icon">➕</span> Create License</h2>
             <div class="flex">
@@ -1308,7 +1338,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- Statistics -->
+        <!-- ===== STATISTICS ===== -->
         <div class="card">
             <h2><span class="icon">📊</span> Statistics</h2>
             <div class="stats">
@@ -1320,7 +1350,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- License List -->
+        <!-- ===== LICENSE LIST ===== -->
         <div class="card">
             <h2><span class="icon">👥</span> License Management</h2>
             <div class="search-box">
@@ -1382,7 +1412,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        // ===== SOUND FUNCTIONS (FIXED REGEX) =====
+        // ===== SOUND FUNCTIONS =====
         const dropZone = document.getElementById('dropZone');
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
         dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
@@ -1395,7 +1425,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
             const file = files[0];
-            // FIXED: Using proper regex without escape issues
             if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { 
                 showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); 
                 return; 
@@ -1408,8 +1437,12 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 showMsg('⏳ Uploading...', 'info');
                 const res = await fetch('/api/sounds/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); }
-                else { showMsg('❌ ' + data.message, 'error'); }
+                if (data.success) {
+                    showMsg('✅ ' + data.message + ' (Original: ' + data.original_name + ')', 'success');
+                    loadSounds();
+                } else {
+                    showMsg('❌ ' + data.message, 'error');
+                }
             } catch (e) { showMsg('❌ Upload failed', 'error'); }
         }
         
@@ -1423,9 +1456,14 @@ ADMIN_HTML = '''<!DOCTYPE html>
                     data.sounds.forEach(s => {
                         html += `
                             <div class="sound-list-item">
-                                <div class="info"><span style="font-size:18px">🎵</span><span class="name">${s.name}</span><span class="size">${s.size_mb} MB</span></div>
+                                <div class="info">
+                                    <span style="font-size:18px">🎵</span>
+                                    <span class="name">${s.name}</span>
+                                    <span class="size">${s.size_mb} MB</span>
+                                </div>
                                 <div style="display:flex;gap:8px">
                                     <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶ PLAY</button>
+                                    <button class="btn btn-purple btn-sm" onclick="copyDownloadLink('${s.name}')">🔗 COPY</button>
                                     <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
                                 </div>
                             </div>
@@ -1440,7 +1478,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function playSound(filename) {
             try {
-                const res = await fetch('/api/sounds/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
+                const res = await fetch('/api/sounds/play', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ filename }) 
+                });
                 if (res.ok) {
                     const blob = await res.blob();
                     const audio = new Audio(URL.createObjectURL(blob));
@@ -1450,14 +1492,45 @@ ADMIN_HTML = '''<!DOCTYPE html>
             } catch (e) { showMsg('❌ Play failed', 'error'); }
         }
         
+        function copyDownloadLink(filename) {
+            const url = window.location.origin + '/api/sounds/download/' + filename;
+            navigator.clipboard.writeText(url).then(() => {
+                showMsg('📋 Download link copied! Share with tool users.', 'success');
+            }).catch(() => {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showMsg('📋 Link copied to clipboard!', 'success');
+            });
+        }
+        
+        function showDownloadInfo() {
+            const url = window.location.origin + '/api/sounds/download/background.wav';
+            showMsg('📥 Tool will auto-download from: ' + url, 'info');
+        }
+        
         async function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
             try {
-                const res = await fetch('/api/sounds/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
+                const res = await fetch('/api/sounds/delete', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ filename }) 
+                });
                 const data = await res.json();
                 if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); }
                 else { showMsg('❌ ' + data.message, 'error'); }
             } catch (e) { showMsg('❌ Delete failed', 'error'); }
+        }
+        
+        async function refreshSounds() {
+            showMsg('🔄 Refreshing sound list...', 'info');
+            await loadSounds();
+            showMsg('✅ Sound list refreshed!', 'success');
         }
         
         // ===== LICENSE FUNCTIONS =====
@@ -1583,6 +1656,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             showMsg('🔍 Found ' + Object.keys(filteredUsers).length + ' result(s)', 'info');
         }
         
+        // ===== INIT =====
         refreshAll();
         loadSounds();
         setInterval(refreshAll, 30000);
