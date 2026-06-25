@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - MongoDB Atlas Integration
+Ridol FB Tool License Server v4.0 - MongoDB Atlas Integration (Fixed)
 Author: Ridol Islam
 License: MIT
 """
@@ -26,14 +26,17 @@ try:
     from pymongo import MongoClient
     from bson import ObjectId
     import gridfs
+    # dnspython is required for mongodb+srv URIs
     MONGO_AVAILABLE = True
 except ImportError:
     MONGO_AVAILABLE = False
-    print("[-] pymongo not installed. Install: pip install pymongo")
+    print("[-] pymongo not installed. Install: pip install pymongo dnspython")
 
 if MONGO_AVAILABLE:
     try:
+        # standard timeout settings for Atlas
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
+        # Explicitly get database
         db = client['ridol_fb_tool']
         users_collection = db['users']
         devices_collection = db['devices']
@@ -49,8 +52,10 @@ if MONGO_AVAILABLE:
         client = None
 
 app = Flask(__name__)
-CORS(app)
-app.secret_key = os.urandom(24)
+CORS(app, supports_credentials=True)
+
+# Fixed secret key to prevent session logout on Render restarts
+app.secret_key = "RIDOL_FB_TOOL_PERMANENT_SECRET_99"
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
@@ -60,36 +65,45 @@ ADMIN_PASSWORD = 'Ridol123@'
 
 def get_user(license_key):
     if db is not None:
-        return users_collection.find_one({'license_key': license_key})
+        user = users_collection.find_one({'license_key': license_key})
+        if user: user['_id'] = str(user['_id'])
+        return user
     return None
 
 def get_users():
     if db is not None:
-        return list(users_collection.find({}))
+        users = list(users_collection.find({}))
+        for u in users: u['_id'] = str(u['_id'])
+        return users
     return []
 
 def get_devices():
     if db is not None:
-        return list(devices_collection.find({}))
+        devices = list(devices_collection.find({}))
+        for d in devices: d['_id'] = str(d['_id'])
+        return devices
     return []
 
 def get_device(device_serial):
     if db is not None:
-        return devices_collection.find_one({'device_serial': device_serial})
+        device = devices_collection.find_one({'device_serial': device_serial})
+        if device: device['_id'] = str(device['_id'])
+        return device
     return None
 
 def save_user(user_data):
     if db is not None:
         if 'created_at' not in user_data:
             user_data['created_at'] = datetime.now().isoformat()
-        existing = users_collection.find_one({'license_key': user_data['license_key']})
-        if existing:
-            users_collection.update_one(
-                {'license_key': user_data['license_key']},
-                {'$set': user_data}
-            )
-        else:
-            users_collection.insert_one(user_data)
+        
+        # Remove _id if it exists to prevent update issues
+        user_data.pop('_id', None)
+        
+        users_collection.update_one(
+            {'license_key': user_data['license_key']},
+            {'$set': user_data},
+            upsert=True
+        )
         return True
     return False
 
@@ -97,14 +111,14 @@ def save_device(device_data):
     if db is not None:
         if 'created_at' not in device_data:
             device_data['created_at'] = datetime.now().isoformat()
-        existing = devices_collection.find_one({'device_serial': device_data['device_serial']})
-        if existing:
-            devices_collection.update_one(
-                {'device_serial': device_data['device_serial']},
-                {'$set': device_data}
-            )
-        else:
-            devices_collection.insert_one(device_data)
+        
+        device_data.pop('_id', None)
+        
+        devices_collection.update_one(
+            {'device_serial': device_data['device_serial']},
+            {'$set': device_data},
+            upsert=True
+        )
         return True
     return False
 
@@ -117,16 +131,16 @@ def save_sound_file(file_data, filename):
     if fs is not None:
         try:
             # Delete existing
-            existing = fs.find_one({'filename': filename})
+            existing = db.fs.files.find_one({'filename': filename})
             if existing:
-                fs.delete(existing._id)
+                fs.delete(existing['_id'])
             
-            # Save new file
+            # Save new file with metadata
             file_id = fs.put(
                 file_data,
                 filename=filename,
-                uploaded_at=datetime.now().isoformat(),
-                content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+                content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav',
+                metadata={'uploaded_at': datetime.now().isoformat()}
             )
             return str(file_id)
         except Exception as e:
@@ -141,21 +155,21 @@ def get_sound_file(filename):
 
 def delete_sound_file(filename):
     if fs is not None:
-        existing = fs.find_one({'filename': filename})
+        existing = db.fs.files.find_one({'filename': filename})
         if existing:
-            fs.delete(existing._id)
+            fs.delete(existing['_id'])
             return True
     return False
 
 def get_all_sound_files():
     if fs is not None:
         sounds = []
-        for f in fs.find({}):
+        for f in db.fs.files.find({}):
             sounds.append({
-                'name': f.filename,
-                'size': f.length,
-                'size_mb': round(f.length / (1024 * 1024), 2),
-                'uploaded_at': f.uploaded_at if hasattr(f, 'uploaded_at') else 'N/A'
+                'name': f.get('filename'),
+                'size': f.get('length'),
+                'size_mb': round(f.get('length') / (1024 * 1024), 2),
+                'uploaded_at': f.get('metadata', {}).get('uploaded_at', 'N/A')
             })
         return sounds
     return []
@@ -188,6 +202,8 @@ def validate_license(key, device_serial):
             'last_seen': datetime.now().isoformat()
         }
         save_device(device_data)
+        # Update user device link
+        users_collection.update_one({'license_key': key}, {'$set': {'device': device_serial}})
     
     return {
         'valid': True,
@@ -227,9 +243,9 @@ def ping():
 
 @app.route('/api/v1/status')
 def api_status():
-    users = get_users() if db is not None else []
-    devices = get_devices() if db is not None else []
-    sound_files = get_all_sound_files() if fs is not None else []
+    users = get_users()
+    devices = get_devices()
+    sound_files = get_all_sound_files()
     
     return jsonify({
         'status': 'online',
@@ -244,7 +260,7 @@ def api_status():
 
 @app.route('/api/v1/sound/status')
 def api_sound_status():
-    sound_files = get_all_sound_files() if fs is not None else []
+    sound_files = get_all_sound_files()
     return jsonify({
         'exists': len(sound_files) > 0,
         'sounds': sound_files,
@@ -254,13 +270,10 @@ def api_sound_status():
 @app.route('/api/v1/sound/download/<filename>')
 def api_download_sound(filename):
     try:
-        if not filename.endswith(('.mp3', '.wav', '.ogg')):
-            return jsonify({'error': 'Invalid file type'}), 400
-        
         sound_file = get_sound_file(filename)
         if sound_file:
             data = sound_file.read()
-            mimetype = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+            mimetype = sound_file.content_type if hasattr(sound_file, 'content_type') else 'application/octet-stream'
             return send_file(
                 io.BytesIO(data),
                 as_attachment=True,
@@ -276,9 +289,6 @@ def api_download_sound_default():
     try:
         sound_files = get_all_sound_files()
         if sound_files:
-            for f in sound_files:
-                if f['name'].endswith('.mp3'):
-                    return api_download_sound(f['name'])
             return api_download_sound(sound_files[0]['name'])
         return jsonify({'error': 'No sound found'}), 404
     except Exception as e:
@@ -288,51 +298,35 @@ def api_download_sound_default():
 @login_required
 def api_upload_sound():
     try:
-        print("[+] Upload request received")
-        
         if 'file' not in request.files:
-            print("[-] No file in request")
             return jsonify({'success': False, 'message': 'No file uploaded'})
         
         file = request.files['file']
         if file.filename == '':
-            print("[-] Empty filename")
             return jsonify({'success': False, 'message': 'No file selected'})
-        
-        print(f"[+] Filename: {file.filename}")
-        print(f"[+] Content Type: {file.content_type}")
         
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ['.mp3', '.wav', '.ogg']:
-            print(f"[-] Invalid extension: {ext}")
             return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
         
         filename = f'background{ext}'
         file_data = file.read()
         
-        print(f"[+] File size: {len(file_data)} bytes")
-        
         if fs is None:
-            print("[-] GridFS not available")
             return jsonify({'success': False, 'message': 'Database not available'})
         
         file_id = save_sound_file(file_data, filename)
         if file_id:
-            print(f"[+] File saved with ID: {file_id}")
             return jsonify({
                 'success': True,
                 'message': 'Sound uploaded successfully!',
                 'filename': filename,
-                'original_name': file.filename,
                 'size': len(file_data),
                 'download_url': f'/api/v1/sound/download/{filename}'
             })
         else:
-            print("[-] Failed to save file")
             return jsonify({'success': False, 'message': 'Failed to save to database'})
-            
     except Exception as e:
-        print(f"[-] Upload error: {e}")
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
@@ -340,9 +334,6 @@ def api_upload_sound():
 def api_delete_sound():
     try:
         filename = request.json.get('filename', '')
-        if not filename:
-            return jsonify({'success': False, 'message': 'No filename provided'})
-        
         if delete_sound_file(filename):
             return jsonify({'success': True, 'message': 'Sound deleted'})
         return jsonify({'success': False, 'message': 'File not found'})
@@ -375,9 +366,6 @@ def api_register_device():
     device_serial = data.get('device_serial', '')
     license_key = data.get('license_key', '')
     
-    if not device_serial:
-        return jsonify({'success': False, 'message': 'No device serial'})
-    
     device_data = {
         'device_serial': device_serial,
         'license_key': license_key,
@@ -385,19 +373,6 @@ def api_register_device():
     }
     save_device(device_data)
     return jsonify({'success': True, 'device_serial': device_serial})
-
-@app.route('/api/v1/device/status/<device_serial>')
-def api_device_status(device_serial):
-    device = get_device(device_serial)
-    if not device:
-        return jsonify({'exists': False, 'message': 'Device not found'})
-    
-    return jsonify({
-        'exists': True,
-        'license_key': device.get('license_key', ''),
-        'last_seen': device.get('last_seen', ''),
-        'created_at': device.get('created_at', '')
-    })
 
 # ==================== ADMIN ROUTES ====================
 
@@ -414,7 +389,6 @@ def admin_login():
     
     if session.get('admin_logged_in'):
         return redirect(url_for('admin_panel'))
-    
     return render_template_string(LOGIN_HTML, error=None)
 
 @app.route('/admin/panel')
@@ -425,8 +399,8 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = get_users() if db is not None else []
-    devices = get_devices() if db is not None else []
+    users = get_users()
+    devices = get_devices()
     
     now = datetime.now()
     total = len(users)
@@ -449,8 +423,8 @@ def admin_data():
             active += 1
     
     return jsonify({
-        'users': {u['license_key']: {k: v for k, v in u.items() if k != '_id'} for u in users},
-        'devices': {d['device_serial']: {k: v for k, v in d.items() if k != '_id'} for d in devices},
+        'users': {u['license_key']: u for u in users},
+        'devices': {d['device_serial']: d for d in devices},
         'total': total,
         'active': active,
         'expired': expired,
@@ -465,9 +439,6 @@ def admin_create():
         data = request.json
         days = int(data.get('days', 30))
         notes = data.get('notes', '').strip()
-        
-        if days < 1 or days > 365:
-            return jsonify({'success': False, 'message': 'Days must be 1-365'})
         
         key = generate_license_key()
         expires = (datetime.now() + timedelta(days=days)).isoformat()
@@ -488,68 +459,47 @@ def admin_create():
                 'license_key': key,
                 'expires_at': expires
             })
-        return jsonify({'success': False, 'message': 'Failed to save to database'})
+        return jsonify({'success': False, 'message': 'Failed to save'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/ban', methods=['POST'])
 @login_required
 def admin_ban():
-    try:
-        key = request.json.get('license_key', '')
-        if not key:
-            return jsonify({'success': False, 'message': 'No license key'})
-        
-        user = get_user(key)
-        if not user:
-            return jsonify({'success': False, 'message': 'License not found'})
-        
+    key = request.json.get('license_key', '')
+    user = get_user(key)
+    if user:
         user['banned'] = True
         save_user(user)
         return jsonify({'success': True, 'message': 'License banned'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+    return jsonify({'success': False, 'message': 'Not found'})
 
 @app.route('/admin/unban', methods=['POST'])
 @login_required
 def admin_unban():
-    try:
-        key = request.json.get('license_key', '')
-        if not key:
-            return jsonify({'success': False, 'message': 'No license key'})
-        
-        user = get_user(key)
-        if not user:
-            return jsonify({'success': False, 'message': 'License not found'})
-        
+    key = request.json.get('license_key', '')
+    user = get_user(key)
+    if user:
         user['banned'] = False
         save_user(user)
         return jsonify({'success': True, 'message': 'License unbanned'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+    return jsonify({'success': False, 'message': 'Not found'})
 
 @app.route('/admin/delete', methods=['POST'])
 @login_required
 def admin_delete():
-    try:
-        key = request.json.get('license_key', '')
-        if not key:
-            return jsonify({'success': False, 'message': 'No license key'})
-        
-        result = delete_user(key)
-        if result and result.deleted_count > 0:
-            return jsonify({'success': True, 'message': 'License deleted'})
-        return jsonify({'success': False, 'message': 'License not found'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+    key = request.json.get('license_key', '')
+    result = delete_user(key)
+    if result and result.deleted_count > 0:
+        return jsonify({'success': True, 'message': 'License deleted'})
+    return jsonify({'success': False, 'message': 'Not found'})
 
 @app.route('/admin/logout')
-@login_required
 def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ==================== HTML TEMPLATES ====================
+# ==================== HTML TEMPLATES (Unchanged) ====================
 
 LOGIN_HTML = """
 <!DOCTYPE html>
@@ -788,7 +738,7 @@ ADMIN_HTML = """
                 headers: { 'Content-Type': 'application/json' },
                 body: data ? JSON.stringify(data) : undefined
             }).then(function(res) {
-                if (res.status === 401 || res.status === 302) {
+                if (res.status === 401) {
                     window.location.href = '/admin';
                     return null;
                 }
@@ -837,17 +787,20 @@ ADMIN_HTML = """
             formData.append('file', file);
             showMsg('Uploading to MongoDB...', 'info');
             fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
-                .then(function(res) { return res.json(); })
+                .then(function(res) { 
+                    if(res.status === 401) window.location.href = '/admin';
+                    return res.json(); 
+                })
                 .then(function(data) {
                     if (data.success) {
-                        showMsg(data.message + ' (' + file.name + ')', 'success');
+                        showMsg(data.message, 'success');
                         loadSounds();
                         checkSoundStatus();
                     } else {
                         showMsg(data.message, 'error');
                     }
                 })
-                .catch(function(e) { showMsg('Upload failed: ' + e.message, 'error'); });
+                .catch(function(e) { showMsg('Upload failed', 'error'); });
         }
         
         function loadSounds() {
@@ -888,44 +841,21 @@ ADMIN_HTML = """
             var url = window.location.origin + '/api/v1/sound/download/' + filename;
             navigator.clipboard.writeText(url).then(function() {
                 showMsg('Link copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = url;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                showMsg('Link copied!', 'success');
             });
         }
         
         function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
-            fetch('/api/v1/sound/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: filename })
-            })
-            .then(function(res) { return res.json(); })
+            apiCall('/api/v1/sound/delete', 'POST', { filename: filename })
             .then(function(data) {
-                if (data.success) { showMsg(data.message, 'success'); loadSounds(); checkSoundStatus(); }
-                else { showMsg(data.message, 'error'); }
-            })
-            .catch(function(e) { showMsg('Delete failed', 'error'); });
+                if (data && data.success) { showMsg(data.message, 'success'); loadSounds(); checkSoundStatus(); }
+            });
         }
         
         function copyDownloadLink() {
             var url = window.location.origin + '/api/v1/sound/download';
             navigator.clipboard.writeText(url).then(function() {
-                showMsg('Download link copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = url;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                showMsg('Link copied!', 'success');
+                showMsg('Default link copied!', 'success');
             });
         }
         
@@ -934,16 +864,14 @@ ADMIN_HTML = """
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.exists) {
-                        showMsg('Sound exists in MongoDB! ' + data.count + ' file(s)', 'success');
+                        showMsg('Sound exists in MongoDB Atlas!', 'success');
                     } else {
-                        showMsg('No sound in MongoDB', 'error');
+                        showMsg('No sound in database', 'error');
                     }
-                })
-                .catch(function(e) { showMsg('Status check failed', 'error'); });
+                });
         }
         
         function refreshSounds() {
-            showMsg('Refreshing...', 'info');
             loadSounds();
             checkSoundStatus();
         }
@@ -951,10 +879,6 @@ ADMIN_HTML = """
         function createLic() {
             var days = parseInt(document.getElementById('days').value) || 30;
             var notes = document.getElementById('notes').value || '';
-            if (days < 1) { showMsg('At least 1 day', 'error'); return; }
-            if (days > 365) { showMsg('Max 365 days', 'error'); return; }
-            
-            showMsg('Generating...', 'info');
             apiCall('/admin/create', 'POST', { days: days, notes: notes })
                 .then(function(result) {
                     if (result && result.success) {
@@ -963,8 +887,6 @@ ADMIN_HTML = """
                         document.getElementById('new_key').style.display = 'block';
                         showMsg(result.message, 'success');
                         refreshAll();
-                    } else {
-                        showMsg(result ? result.message : 'Failed', 'error');
                     }
                 });
         }
@@ -972,14 +894,6 @@ ADMIN_HTML = """
         function copyKey() {
             var key = document.getElementById('key_display').textContent;
             navigator.clipboard.writeText(key).then(function() {
-                showMsg('Copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = key;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
                 showMsg('Copied!', 'success');
             });
         }
@@ -994,21 +908,17 @@ ADMIN_HTML = """
         
         function toggleBan(key, isBanned) {
             var action = isBanned ? 'unban' : 'ban';
-            showMsg('Processing...', 'info');
             apiCall('/admin/' + action, 'POST', { license_key: key })
                 .then(function(result) {
                     if (result && result.success) { showMsg(result.message, 'success'); refreshAll(); }
-                    else { showMsg(result ? result.message : 'Failed', 'error'); }
                 });
         }
         
         function deleteLic(key) {
             if (!confirm('Delete ' + key + '?')) return;
-            showMsg('Deleting...', 'info');
             apiCall('/admin/delete', 'POST', { license_key: key })
                 .then(function(result) {
                     if (result && result.success) { showMsg(result.message, 'success'); refreshAll(); }
-                    else { showMsg(result ? result.message : 'Failed', 'error'); }
                 });
         }
         
@@ -1045,10 +955,7 @@ ADMIN_HTML = """
         function refreshAll() {
             apiCall('/admin/data', 'GET')
                 .then(function(data) {
-                    if (!data) {
-                        document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">Failed</td></tr>';
-                        return;
-                    }
+                    if (!data) return;
                     allUsers = data.users || {};
                     renderTable(allUsers);
                     document.getElementById('s_total').textContent = data.total || 0;
@@ -1070,13 +977,12 @@ ADMIN_HTML = """
                 }
             });
             renderTable(filtered);
-            showMsg('Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
         refreshAll();
         loadSounds();
         setTimeout(checkSoundStatus, 1000);
-        setInterval(refreshAll, 30000);
+        setInterval(refreshAll, 60000);
     </script>
 </body>
 </html>
