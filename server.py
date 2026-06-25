@@ -2,7 +2,6 @@
 """
 Ridol FB Tool License Server v4.0
 Author: Ridol Islam
-License: MIT
 """
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
@@ -79,16 +78,13 @@ def home():
     return jsonify({
         'server': 'Ridol FB Tool License Server',
         'version': 'v4.0',
-        'status': 'online',
-        'endpoints': ['/verify', '/register_device', '/admin']
+        'status': 'online'
     })
 
 @app.route('/verify', methods=['POST'])
 def verify():
     data = request.json
-    license_key = data.get('license_key', '')
-    device_serial = data.get('device_serial', '')
-    return jsonify(validate_license(license_key, device_serial))
+    return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
 
 @app.route('/register_device', methods=['POST'])
 def register_device():
@@ -104,7 +100,30 @@ def register_device():
         return jsonify({'success': True, 'device_serial': device_serial})
     return jsonify({'success': False, 'message': 'No device serial'})
 
-# ============ CUSTOM SOUND ROUTES ============
+# ============ SOUND ROUTES ============
+
+@app.route('/api/sounds/status')
+def sound_status():
+    """Check if sound exists on server"""
+    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+    if os.path.exists(filepath):
+        size = os.path.getsize(filepath)
+        return jsonify({
+            'exists': True,
+            'size': size,
+            'size_mb': round(size / (1024 * 1024), 2),
+            'url': f'/api/sounds/download/background.wav'
+        })
+    return jsonify({'exists': False})
+
+@app.route('/api/sounds/download/background.wav')
+def download_background():
+    """Direct download endpoint for background sound"""
+    filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
+    if os.path.exists(filepath):
+        return send_file(filepath, as_attachment=True, download_name='background.wav')
+    return jsonify({'error': 'No sound file found'}), 404
+
 @app.route('/api/sounds/list')
 @login_required
 def list_sounds():
@@ -119,17 +138,6 @@ def list_sounds():
             })
     return jsonify({'sounds': sounds})
 
-@app.route('/api/sounds/download/<filename>')
-def download_sound(filename):
-    """Download sound file - No login required for tool access"""
-    try:
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            return send_file(filepath, as_attachment=True)
-        return jsonify({'success': False, 'message': 'File not found'}), 404
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
 @app.route('/api/sounds/upload', methods=['POST'])
 @login_required
 def upload_sound():
@@ -141,31 +149,17 @@ def upload_sound():
         if file.filename == '':
             return jsonify({'success': False, 'message': 'No file selected'})
         
-        # Allow only specific extensions
-        if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg')):
-            return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG files allowed'})
-        
-        # Save as background.wav for tool compatibility
-        filename = 'background.wav'
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
+        # Save as background.wav
+        filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
         file.save(filepath)
-        
-        # Also keep original filename for display
-        info_file = os.path.join(CUSTOM_SOUNDS_DIR, 'sound_info.json')
-        info = {
-            'original_name': file.filename,
-            'uploaded_at': datetime.now().isoformat(),
-            'size': os.path.getsize(filepath)
-        }
-        with open(info_file, 'w') as f:
-            json.dump(info, f)
         
         return jsonify({
             'success': True,
-            'message': f'✅ Sound uploaded successfully!',
+            'message': '✅ Sound uploaded successfully!',
             'filename': 'background.wav',
             'original_name': file.filename,
-            'size': os.path.getsize(filepath)
+            'size': os.path.getsize(filepath),
+            'download_url': '/api/sounds/download/background.wav'
         })
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
@@ -174,18 +168,10 @@ def upload_sound():
 @login_required
 def delete_sound():
     try:
-        data = request.json
-        filename = data.get('filename', '')
-        if not filename:
-            return jsonify({'success': False, 'message': 'No filename provided'})
-        
+        filename = request.json.get('filename', 'background.wav')
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         if os.path.exists(filepath):
             os.remove(filepath)
-            # Also remove info file
-            info_file = os.path.join(CUSTOM_SOUNDS_DIR, 'sound_info.json')
-            if os.path.exists(info_file):
-                os.remove(info_file)
             return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
         return jsonify({'success': False, 'message': 'File not found'})
     except Exception as e:
@@ -195,11 +181,7 @@ def delete_sound():
 @login_required
 def play_sound():
     try:
-        data = request.json
-        filename = data.get('filename', '')
-        if not filename:
-            return jsonify({'success': False, 'message': 'No filename provided'})
-        
+        filename = request.json.get('filename', 'background.wav')
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         if os.path.exists(filepath):
             return send_file(filepath, as_attachment=False)
@@ -207,7 +189,8 @@ def play_sound():
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
 
-# ============ LICENSE ROUTES ============
+# ============ ADMIN ROUTES ============
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
@@ -216,7 +199,7 @@ def admin_login():
             session['admin_logged_in'] = True
             return redirect(url_for('admin_panel'))
         else:
-            return render_template_string(LOGIN_HTML, error='❌ Incorrect password! Please try again.')
+            return render_template_string(LOGIN_HTML, error='❌ Incorrect password!')
     
     if session.get('admin_logged_in'):
         return redirect(url_for('admin_panel'))
@@ -227,11 +210,6 @@ def admin_login():
 @login_required
 def admin_panel():
     return render_template_string(ADMIN_HTML)
-
-@app.route('/admin/check')
-@login_required
-def admin_check():
-    return jsonify({'authenticated': True})
 
 @app.route('/admin/data')
 @login_required
@@ -276,10 +254,8 @@ def admin_create():
         days = int(data.get('days', 30))
         notes = data.get('notes', '').strip()
         
-        if days < 1:
-            return jsonify({'success': False, 'message': '❌ Expiry days must be at least 1'})
-        if days > 365:
-            return jsonify({'success': False, 'message': '❌ Expiry days cannot exceed 365'})
+        if days < 1 or days > 365:
+            return jsonify({'success': False, 'message': '❌ Days must be between 1 and 365'})
         
         key = generate_license_key()
         expires = (datetime.now() + timedelta(days=days)).isoformat()
@@ -295,59 +271,42 @@ def admin_create():
         
         return jsonify({
             'success': True,
-            'message': f'✅ License created successfully! Valid for {days} days.',
+            'message': f'✅ License created! Valid for {days} days.',
             'license_key': key,
             'expires_at': expires
         })
-    except ValueError:
-        return jsonify({'success': False, 'message': '❌ Invalid input! Please enter a valid number for days.'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
 
 @app.route('/admin/ban', methods=['POST'])
 @login_required
 def admin_ban():
-    try:
-        key = request.json.get('license_key', '')
-        if not key:
-            return jsonify({'success': False, 'message': '❌ No license key provided'})
-        if key not in db['users']:
-            return jsonify({'success': False, 'message': '❌ License key not found'})
+    key = request.json.get('license_key', '')
+    if key in db['users']:
         db['users'][key]['banned'] = True
         save_db(db)
-        return jsonify({'success': True, 'message': '✅ License banned successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': True, 'message': '✅ License banned'})
+    return jsonify({'success': False, 'message': '❌ License not found'})
 
 @app.route('/admin/unban', methods=['POST'])
 @login_required
 def admin_unban():
-    try:
-        key = request.json.get('license_key', '')
-        if not key:
-            return jsonify({'success': False, 'message': '❌ No license key provided'})
-        if key not in db['users']:
-            return jsonify({'success': False, 'message': '❌ License key not found'})
+    key = request.json.get('license_key', '')
+    if key in db['users']:
         db['users'][key]['banned'] = False
         save_db(db)
-        return jsonify({'success': True, 'message': '✅ License unbanned successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': True, 'message': '✅ License unbanned'})
+    return jsonify({'success': False, 'message': '❌ License not found'})
 
 @app.route('/admin/delete', methods=['POST'])
 @login_required
 def admin_delete():
-    try:
-        key = request.json.get('license_key', '')
-        if not key:
-            return jsonify({'success': False, 'message': '❌ No license key provided'})
-        if key not in db['users']:
-            return jsonify({'success': False, 'message': '❌ License key not found'})
+    key = request.json.get('license_key', '')
+    if key in db['users']:
         del db['users'][key]
         save_db(db)
-        return jsonify({'success': True, 'message': '✅ License deleted successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': True, 'message': '✅ License deleted'})
+    return jsonify({'success': False, 'message': '❌ License not found'})
 
 @app.route('/admin/logout')
 @login_required
@@ -355,414 +314,110 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ============================================================
-# ============ LOGIN HTML (Complete) ============
-# ============================================================
+# ============ LOGIN HTML ============
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Login - Ridol FB Tool</title>
+    <title>🔐 Admin Login</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body {
             background: #0a0a1a;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: 'Orbitron', sans-serif;
-            overflow: hidden;
-            perspective: 1200px;
         }
-        
-        .bg-animation {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            background: 
-                radial-gradient(ellipse at 20% 50%, rgba(0, 255, 136, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 50%, rgba(0, 255, 136, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 100%, rgba(0, 255, 136, 0.05) 0%, transparent 30%);
-            animation: bgPulse 4s ease-in-out infinite;
-        }
-        
-        @keyframes bgPulse {
-            0%, 100% { opacity: 0.5; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.1); }
-        }
-        
-        .particles {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            overflow: hidden;
-        }
-        
-        .particle {
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background: #00ff88;
-            border-radius: 50%;
-            animation: float linear infinite;
-            opacity: 0.3;
-        }
-        
-        @keyframes float {
-            0% { transform: translateY(100vh) scale(0); opacity: 0; }
-            10% { opacity: 0.3; }
-            90% { opacity: 0.3; }
-            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
-        }
-        
         .login-container {
-            position: relative;
-            z-index: 1;
-            background: rgba(17, 17, 34, 0.85);
-            backdrop-filter: blur(20px);
-            padding: 50px 45px;
-            border-radius: 24px;
-            max-width: 550px;
+            background: #111;
+            padding: 40px;
+            border-radius: 16px;
+            border: 1px solid #1a1a2e;
+            max-width: 400px;
             width: 100%;
-            transform: rotateY(5deg) rotateX(5deg) translateZ(50px);
-            box-shadow: 
-                0 30px 80px rgba(0, 0, 0, 0.8),
-                0 0 40px rgba(0, 255, 136, 0.1),
-                inset 0 1px 0 rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(0, 255, 136, 0.1);
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            animation: float3D 6s ease-in-out infinite;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.8);
         }
-        
-        @keyframes float3D {
-            0%, 100% { transform: rotateY(5deg) rotateX(5deg) translateZ(50px); }
-            50% { transform: rotateY(-3deg) rotateX(-3deg) translateZ(60px); }
-        }
-        
-        .login-container:hover {
-            transform: rotateY(0deg) rotateX(0deg) translateZ(80px);
-            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 60px rgba(0, 255, 136, 0.2);
-        }
-        
-        .title-section {
-            text-align: center;
-            margin-bottom: 35px;
-            position: relative;
-        }
-        
-        .title-section .icon {
-            font-size: 60px;
-            display: block;
-            margin-bottom: 10px;
-            animation: iconPulse 3s ease-in-out infinite;
-            filter: drop-shadow(0 0 40px rgba(0, 255, 136, 0.3));
-        }
-        
-        @keyframes iconPulse {
-            0%, 100% { transform: scale(1) rotate(0deg); }
-            50% { transform: scale(1.15) rotate(5deg); }
-        }
-        
-        .title-3d {
-            font-size: 42px;
-            font-weight: 900;
-            letter-spacing: 6px;
-            display: block;
-            text-align: center;
-            position: relative;
-            min-height: 70px;
-            margin-bottom: 5px;
-            text-shadow: 
-                0 0 10px rgba(0, 255, 136, 0.3),
-                0 0 20px rgba(0, 255, 136, 0.2),
-                0 0 40px rgba(0, 255, 136, 0.1);
-            transform: translateZ(30px);
-        }
-        
-        .cursor {
-            display: inline-block;
-            width: 4px;
-            height: 42px;
-            background: #00ff88;
-            margin-left: 4px;
-            vertical-align: middle;
-            animation: blink 0.8s step-end infinite;
-        }
-        
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-        }
-        
-        .title-text {
-            background: linear-gradient(135deg, #00ff88 0%, #00ff88 30%, #44ffaa 50%, #4488ff 70%, #00ff88 100%);
-            background-size: 300% 300%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradientMove 3s ease-in-out infinite;
-            text-shadow: none;
-            position: relative;
-        }
-        
-        @keyframes gradientMove {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        
-        .title-3d::before {
-            content: 'RIDOL FB TOOL';
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            color: rgba(0, 255, 136, 0.1);
-            z-index: -1;
-            filter: blur(8px);
-            -webkit-text-fill-color: rgba(0, 255, 136, 0.1);
-        }
-        
-        .subtitle-3d {
-            font-size: 12px;
-            letter-spacing: 8px;
-            color: rgba(255, 255, 255, 0.2);
-            margin-top: 5px;
-            font-weight: 400;
-            min-height: 20px;
-        }
-        
-        .subtitle-3d .sub-cursor {
-            display: inline-block;
-            width: 3px;
-            height: 14px;
-            background: rgba(255, 255, 255, 0.2);
-            vertical-align: middle;
-            margin-left: 2px;
-            animation: blink 0.8s step-end infinite;
-        }
-        
-        .version-badge {
-            display: inline-block;
-            background: rgba(0, 255, 136, 0.15);
-            border: 1px solid rgba(0, 255, 136, 0.2);
-            padding: 4px 20px;
-            border-radius: 20px;
+        .login-container h1 {
             color: #00ff88;
-            font-size: 11px;
-            margin-top: 10px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            animation: badgeGlow 2s ease-in-out infinite;
-            transform: translateZ(10px);
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 5px;
         }
-        
-        @keyframes badgeGlow {
-            0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 136, 0.05); }
-            50% { box-shadow: 0 0 40px rgba(0, 255, 136, 0.2); }
+        .login-container .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 30px;
         }
-        
-        .form-group {
-            margin-bottom: 22px;
-            position: relative;
-        }
-        
+        .form-group { margin-bottom: 20px; }
         .form-group label {
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 10px;
+            color: #aaa;
+            font-size: 13px;
             display: block;
-            margin-bottom: 8px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-transform: uppercase;
+            margin-bottom: 6px;
         }
-        
-        .form-group .input-wrapper {
-            position: relative;
-            transform: translateZ(10px);
-        }
-        
-        .form-group .input-wrapper .lock-icon {
-            position: absolute;
-            left: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255, 255, 255, 0.15);
-            font-size: 18px;
-            transition: all 0.3s ease;
-        }
-        
         .form-group input {
             width: 100%;
-            padding: 16px 16px 16px 50px;
-            background: rgba(26, 26, 46, 0.8);
-            border: 2px solid rgba(255, 255, 255, 0.05);
-            border-radius: 14px;
+            padding: 12px 16px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
             color: #fff;
-            font-size: 15px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s ease;
+            font-size: 14px;
             outline: none;
-            backdrop-filter: blur(10px);
         }
-        
         .form-group input:focus {
             border-color: #00ff88;
-            box-shadow: 0 0 40px rgba(0, 255, 136, 0.1), inset 0 0 20px rgba(0, 255, 136, 0.05);
-            transform: translateZ(20px) scale(1.02);
         }
-        
-        .form-group input:focus + .lock-icon,
-        .form-group input:focus ~ .lock-icon {
-            color: #00ff88;
-        }
-        
-        .form-group input::placeholder {
-            color: rgba(255, 255, 255, 0.1);
-            font-size: 12px;
-            letter-spacing: 2px;
-        }
-        
         .btn-login {
             width: 100%;
-            padding: 18px;
-            background: linear-gradient(135deg, #00ff88, #00cc77);
+            padding: 14px;
+            background: #00ff88;
             border: none;
-            border-radius: 14px;
+            border-radius: 8px;
             color: #000;
             font-size: 16px;
-            font-weight: 900;
+            font-weight: bold;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            letter-spacing: 3px;
-            font-family: 'Orbitron', sans-serif;
-            text-transform: uppercase;
-            position: relative;
-            overflow: hidden;
-            transform: translateZ(10px);
         }
-        
-        .btn-login::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-            transform: rotate(45deg);
-            animation: btnShine 3s ease-in-out infinite;
-        }
-        
-        @keyframes btnShine {
-            0% { transform: translateX(-100%) rotate(45deg); }
-            100% { transform: translateX(100%) rotate(45deg); }
-        }
-        
-        .btn-login:hover {
-            transform: translateZ(30px) scale(1.03);
-            box-shadow: 0 20px 60px rgba(0, 255, 136, 0.4);
-        }
-        
-        .btn-login:active {
-            transform: translateZ(5px) scale(0.97);
-        }
-        
+        .btn-login:hover { background: #00cc77; }
         .error-msg {
-            background: rgba(255, 68, 68, 0.1);
-            border: 1px solid rgba(255, 68, 68, 0.2);
+            background: rgba(255,68,68,0.1);
+            border: 1px solid #ff4444;
             color: #ff4444;
-            padding: 14px 18px;
-            border-radius: 12px;
+            padding: 10px;
+            border-radius: 8px;
             font-size: 13px;
             margin-bottom: 20px;
             text-align: center;
-            animation: shake 0.5s ease-in-out;
-            font-weight: 400;
-            letter-spacing: 1px;
         }
-        
-        @keyframes shake {
-            0%, 100% { transform: translateX(0) rotateY(0deg); }
-            25% { transform: translateX(-10px) rotateY(-3deg); }
-            75% { transform: translateX(10px) rotateY(3deg); }
-        }
-        
-        .login-footer {
-            text-align: center;
-            margin-top: 25px;
-            color: rgba(255, 255, 255, 0.05);
-            font-size: 9px;
-            letter-spacing: 5px;
-        }
-        
-        .login-footer .brand {
-            color: rgba(0, 255, 136, 0.2);
-            font-weight: 700;
-        }
-        
         .hint {
             text-align: center;
-            color: rgba(255, 255, 255, 0.05);
-            font-size: 10px;
+            color: #333;
+            font-size: 12px;
             margin-top: 15px;
-            letter-spacing: 3px;
         }
-        
         .hint span {
-            background: rgba(26, 26, 46, 0.3);
-            padding: 4px 14px;
-            border-radius: 6px;
-            font-family: monospace;
-            color: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.03);
+            background: #1a1a2e;
+            padding: 2px 10px;
+            border-radius: 4px;
+            color: #666;
         }
-        
-        @media (max-width: 480px) {
-            .login-container {
-                padding: 30px 20px;
-                margin: 20px;
-                transform: rotateY(0deg) rotateX(0deg) translateZ(0px) !important;
-            }
-            .title-3d { font-size: 26px; letter-spacing: 3px; }
-            .title-3d::before { font-size: 26px; }
-            .cursor { height: 28px; }
-            .login-container:hover {
-                transform: rotateY(0deg) rotateX(0deg) translateZ(0px) !important;
-            }
+        .footer {
+            text-align: center;
+            color: #333;
+            font-size: 11px;
+            margin-top: 20px;
         }
+        .footer .brand { color: #00ff88; }
     </style>
 </head>
 <body>
-    <div class="bg-animation"></div>
-    <div class="particles" id="particles"></div>
-    
     <div class="login-container">
-        <div class="title-section">
-            <span class="icon">🔐</span>
-            
-            <div class="title-3d">
-                <span class="title-text" id="titleText"></span>
-                <span class="cursor" id="cursor"></span>
-            </div>
-            
-            <div class="subtitle-3d">
-                <span id="subText"></span>
-                <span class="sub-cursor" id="subCursor"></span>
-            </div>
-            
-            <span class="version-badge">✦ v4.0 ✦</span>
-        </div>
+        <h1>🔐 RIDOL FB TOOL</h1>
+        <div class="subtitle">Admin Authentication • v4.0</div>
         
         {% if error %}
         <div class="error-msg">{{ error }}</div>
@@ -771,503 +426,195 @@ LOGIN_HTML = '''<!DOCTYPE html>
         <form method="POST" action="/admin">
             <div class="form-group">
                 <label>🔑 Admin Password</label>
-                <div class="input-wrapper">
-                    <span class="lock-icon">🔒</span>
-                    <input type="password" name="password" placeholder="Enter your admin password" required autofocus>
-                </div>
+                <input type="password" name="password" placeholder="Enter admin password" required autofocus>
             </div>
             <button type="submit" class="btn-login">🚀 Access Panel</button>
         </form>
         
-        <div class="hint">
-            <span>🔑 Hint: Admin Password</span>
-        </div>
-        
-        <div class="login-footer">
-            <span class="brand">✦ RIDOL FB TOOL ✦</span> • v4.0
-        </div>
+        <div class="hint"><span>🔑 Hint: Admin Password</span></div>
+        <div class="footer"><span class="brand">RIDOL FB TOOL</span> • v4.0</div>
     </div>
-    
-    <script>
-        // ===== WRITING EFFECT =====
-        const titleText = "RIDOL FB TOOL";
-        const subText = "ADMIN AUTHENTICATION";
-        
-        let titleIndex = 0;
-        let subIndex = 0;
-        let isTitleComplete = false;
-        
-        function typeTitle() {
-            if (titleIndex < titleText.length) {
-                document.getElementById('titleText').textContent += titleText.charAt(titleIndex);
-                titleIndex++;
-                setTimeout(typeTitle, 80 + Math.random() * 40);
-            } else {
-                isTitleComplete = true;
-                document.getElementById('cursor').style.display = 'none';
-                setTimeout(typeSubtitle, 300);
-            }
-        }
-        
-        function typeSubtitle() {
-            if (subIndex < subText.length) {
-                document.getElementById('subText').textContent += subText.charAt(subIndex);
-                subIndex++;
-                setTimeout(typeSubtitle, 50 + Math.random() * 30);
-            } else {
-                document.getElementById('subCursor').style.display = 'none';
-            }
-        }
-        
-        window.onload = function() {
-            document.getElementById('titleText').textContent = '';
-            document.getElementById('subText').textContent = '';
-            setTimeout(typeTitle, 500);
-        };
-        
-        // ===== PARTICLES =====
-        (function createParticles() {
-            const container = document.getElementById('particles');
-            for (let i = 0; i < 50; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.width = (Math.random() * 3 + 2) + 'px';
-                particle.style.height = particle.style.width;
-                particle.style.animationDuration = (Math.random() * 20 + 10) + 's';
-                particle.style.animationDelay = (Math.random() * 10) + 's';
-                particle.style.opacity = Math.random() * 0.3 + 0.1;
-                container.appendChild(particle);
-            }
-        })();
-    </script>
 </body>
 </html>'''
 
-# ============================================================
-# ============ ADMIN HTML (Complete) ============
-# ============================================================
+# ============ ADMIN HTML ============
 ADMIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Panel - Ridol FB Tool</title>
+    <title>🔐 Admin Panel</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            background: #0a0a1a;
-            color: #fff;
-            padding: 20px;
-            min-height: 100vh;
-            font-family: 'Orbitron', sans-serif;
-            perspective: 1200px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background: #0a0a1a; color: #fff; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
         
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
-            padding: 25px 30px;
-            background: rgba(17, 17, 34, 0.85);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            border: 1px solid rgba(0, 255, 136, 0.1);
-            transform: rotateX(2deg) translateZ(20px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-        
-        .header:hover {
-            transform: rotateX(0deg) translateZ(40px);
-            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 40px rgba(0, 255, 136, 0.05);
-        }
-        
-        .header-left h1 {
-            font-size: 22px;
-            font-weight: 900;
-            background: linear-gradient(135deg, #00ff88, #00ff88 40%, #4488ff 70%, #00ff88);
-            background-size: 300% 300%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradientMove 3s ease-in-out infinite;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            letter-spacing: 2px;
-        }
-        
-        @keyframes gradientMove {
-            0%, 100% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-        }
-        
-        .header-left .subtitle {
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 10px;
-            letter-spacing: 4px;
-            margin-top: 5px;
-        }
-        
-        .header-left .version-badge {
-            display: inline-block;
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.15);
-            padding: 2px 14px;
-            border-radius: 20px;
-            color: #00ff88;
-            font-size: 9px;
-            margin-left: 10px;
-            font-weight: 700;
-            letter-spacing: 2px;
-        }
-        
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .header-right .badge {
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.15);
-            padding: 6px 16px;
-            border-radius: 20px;
-            color: #00ff88;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 2px;
-        }
-        
-        .btn-logout {
-            background: rgba(255, 68, 68, 0.1);
-            border: 1px solid rgba(255, 68, 68, 0.2);
-            color: #ff4444;
-            padding: 10px 24px;
+            padding: 20px;
+            background: #111;
             border-radius: 12px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 11px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s ease;
-            letter-spacing: 2px;
+            border: 1px solid #1a1a2e;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
-        
-        .btn-logout:hover {
-            background: rgba(255, 68, 68, 0.2);
-            transform: translateZ(10px);
-            box-shadow: 0 10px 30px rgba(255, 68, 68, 0.1);
-        }
+        .header h1 { color: #00ff88; font-size: 20px; }
+        .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
+        .btn-logout:hover { background: #cc0000; }
         
         .card {
-            background: rgba(17, 17, 34, 0.85);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 28px;
-            margin-bottom: 24px;
-            border: 1px solid rgba(0, 255, 136, 0.05);
-            transform: rotateX(2deg) translateZ(10px);
-            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .card:hover {
-            transform: rotateX(0deg) translateZ(30px);
-            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 255, 136, 0.03);
-            border-color: rgba(0, 255, 136, 0.1);
-        }
-        
-        .card h2 {
-            color: #00ff88;
-            font-size: 15px;
+            background: #111;
+            border-radius: 12px;
+            padding: 20px;
             margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 700;
-            letter-spacing: 3px;
+            border: 1px solid #1a1a2e;
         }
+        .card h2 { color: #00ff88; font-size: 16px; margin-bottom: 15px; }
         
-        .card h2 .icon { font-size: 20px; }
+        .flex { display: flex; gap: 15px; flex-wrap: wrap; }
+        .flex-grow { flex: 1; min-width: 200px; }
+        
+        .form-group { margin-bottom: 15px; }
+        .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+        }
+        .form-group input:focus { border-color: #00ff88; }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .btn:hover { transform: scale(1.02); }
+        .btn-green { background: #00ff88; color: #000; }
+        .btn-red { background: #ff4444; color: #fff; }
+        .btn-blue { background: #4488ff; color: #fff; }
+        .btn-orange { background: #ff8800; color: #fff; }
+        .btn-purple { background: #aa44ff; color: #fff; }
+        .btn-sm { padding: 6px 12px; font-size: 11px; }
         
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 15px;
         }
-        
         .stat-box {
             text-align: center;
-            padding: 20px 15px;
-            background: rgba(26, 26, 46, 0.4);
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.02);
-            transition: all 0.3s ease;
-            transform: translateZ(5px);
+            padding: 15px;
+            background: #1a1a2e;
+            border-radius: 8px;
         }
+        .stat-box .number { font-size: 28px; font-weight: bold; }
+        .stat-box .label { color: #888; font-size: 11px; margin-top: 5px; }
         
-        .stat-box:hover {
-            transform: translateZ(20px);
-            border-color: rgba(0, 255, 136, 0.05);
-        }
-        
-        .stat-box .number {
-            font-size: 28px;
-            font-weight: 900;
-        }
-        
-        .stat-box .label {
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 9px;
-            margin-top: 6px;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }
-        
-        .flex { display: flex; gap: 15px; flex-wrap: wrap; }
-        .flex-grow { flex: 1; min-width: 180px; }
-        
-        .form-group { margin-bottom: 15px; }
-        .form-group label {
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 9px;
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }
-        
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 14px 18px;
-            background: rgba(26, 26, 46, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            color: #fff;
-            font-size: 13px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s ease;
-            outline: none;
-        }
-        
-        .form-group input:focus, .form-group select:focus {
-            border-color: #00ff88;
-            box-shadow: 0 0 30px rgba(0, 255, 136, 0.05);
-            transform: translateZ(10px);
-        }
-        
-        .btn {
-            padding: 14px 28px;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 12px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            letter-spacing: 2px;
-            transform: translateZ(5px);
-        }
-        
-        .btn:hover { transform: translateZ(20px) scale(1.02); }
-        
-        .btn-green { background: linear-gradient(135deg, #00ff88, #00cc77); color: #000; }
-        .btn-green:hover { box-shadow: 0 15px 40px rgba(0, 255, 136, 0.3); }
-        
-        .btn-red { background: linear-gradient(135deg, #ff4444, #cc0000); color: #fff; }
-        .btn-red:hover { box-shadow: 0 15px 40px rgba(255, 68, 68, 0.3); }
-        
-        .btn-blue { background: linear-gradient(135deg, #4488ff, #2255cc); color: #fff; }
-        .btn-blue:hover { box-shadow: 0 15px 40px rgba(68, 136, 255, 0.3); }
-        
-        .btn-orange { background: linear-gradient(135deg, #ff8800, #cc6600); color: #fff; }
-        .btn-orange:hover { box-shadow: 0 15px 40px rgba(255, 136, 0, 0.3); }
-        
-        .btn-purple { background: linear-gradient(135deg, #aa44ff, #7722cc); color: #fff; }
-        .btn-purple:hover { box-shadow: 0 15px 40px rgba(170, 68, 255, 0.3); }
-        
-        .btn-sm { padding: 8px 14px; font-size: 9px; }
+        .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
+        th { color: #00ff88; font-size: 11px; text-transform: uppercase; }
+        td code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+        .badge { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
+        .badge-active { background: #003311; color: #00ff88; }
+        .badge-expired { background: #330000; color: #ff4444; }
+        .badge-banned { background: #331100; color: #ff8800; }
         
         .msg {
-            padding: 16px 22px;
-            border-radius: 14px;
+            padding: 12px 16px;
+            border-radius: 8px;
             margin: 10px 0;
             display: none;
-            font-weight: 700;
-            font-size: 12px;
-            letter-spacing: 2px;
-            transform: translateZ(10px);
+            font-weight: bold;
         }
-        .msg-success { background: rgba(0, 255, 136, 0.08); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.15); }
-        .msg-error { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
-        .msg-info { background: rgba(68, 136, 255, 0.08); color: #4488ff; border: 1px solid rgba(68, 136, 255, 0.15); }
+        .msg-success { background: #003311; color: #00ff88; border: 1px solid #00ff88; }
+        .msg-error { background: #330000; color: #ff4444; border: 1px solid #ff4444; }
+        .msg-info { background: #001133; color: #4488ff; border: 1px solid #4488ff; }
         
         .new-key-box {
-            margin-top: 18px;
-            padding: 24px;
-            background: rgba(0, 255, 136, 0.03);
-            border-radius: 14px;
-            border: 2px solid rgba(0, 255, 136, 0.15);
+            margin-top: 15px;
+            padding: 20px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            border: 2px solid #00ff88;
             display: none;
-            transform: translateZ(10px);
         }
-        
         .new-key-box .key {
-            font-size: 18px;
+            font-size: 20px;
             font-family: monospace;
             color: #00ff88;
             display: block;
-            margin: 12px 0;
-            padding: 16px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
-            word-break: break-all;
-            letter-spacing: 2px;
-        }
-        
-        .table-wrapper { overflow-x: auto; margin-top: 10px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td {
-            padding: 12px 14px;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            font-size: 11px;
-        }
-        th {
-            color: rgba(0, 255, 136, 0.4);
-            font-weight: 700;
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
-        td code {
-            background: rgba(26, 26, 46, 0.3);
-            padding: 2px 10px;
+            margin: 10px 0;
+            padding: 10px;
+            background: #000;
             border-radius: 6px;
-            font-size: 9px;
-            font-family: monospace;
+            word-break: break-all;
         }
         
-        .badge {
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 1px;
+        .upload-area {
+            border: 2px dashed #1a1a2e;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
         }
-        .badge-active { background: rgba(0, 255, 136, 0.08); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.15); }
-        .badge-expired { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
-        .badge-banned { background: rgba(255, 136, 0, 0.08); color: #ff8800; border: 1px solid rgba(255, 136, 0, 0.15); }
+        .upload-area:hover { border-color: #00ff88; background: rgba(0,255,136,0.02); }
+        .upload-area .icon { font-size: 32px; display: block; margin-bottom: 10px; }
+        .upload-area p { color: #666; font-size: 13px; }
+        .upload-area .supported { color: #444; font-size: 11px; margin-top: 5px; }
+        
+        .sound-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .sound-item .name { font-size: 13px; }
+        .sound-item .size { color: #666; font-size: 11px; }
         
         .search-box {
             display: flex;
-            gap: 12px;
-            margin-bottom: 18px;
+            gap: 10px;
+            margin-bottom: 15px;
             flex-wrap: wrap;
         }
         .search-box input {
             flex: 1;
             min-width: 180px;
-            padding: 12px 18px;
-            background: rgba(26, 26, 46, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
+            padding: 10px 14px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
             color: #fff;
-            font-size: 12px;
-            font-family: 'Orbitron', sans-serif;
+            font-size: 13px;
             outline: none;
-            transition: all 0.3s ease;
         }
-        .search-box input:focus {
-            border-color: #00ff88;
-            transform: translateZ(10px);
-        }
-        
-        .upload-area {
-            border: 2px dashed rgba(0, 255, 136, 0.08);
-            border-radius: 14px;
-            padding: 30px;
-            text-align: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        .upload-area:hover {
-            border-color: rgba(0, 255, 136, 0.2);
-            background: rgba(0, 255, 136, 0.02);
-        }
-        .upload-area.dragover {
-            border-color: #00ff88;
-            background: rgba(0, 255, 136, 0.05);
-        }
-        .upload-area .icon { font-size: 36px; display: block; margin-bottom: 10px; }
-        .upload-area p { color: rgba(255, 255, 255, 0.2); font-size: 11px; letter-spacing: 2px; }
-        .upload-area .supported { color: rgba(255, 255, 255, 0.08); font-size: 9px; margin-top: 5px; }
-        
-        .sound-list-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            background: rgba(26, 26, 46, 0.2);
-            border-radius: 10px;
-            margin-bottom: 8px;
-            transition: all 0.3s ease;
-        }
-        .sound-list-item:hover {
-            background: rgba(26, 26, 46, 0.4);
-            transform: translateZ(10px);
-        }
-        .sound-list-item .info { display: flex; gap: 15px; align-items: center; }
-        .sound-list-item .info .name { font-size: 12px; }
-        .sound-list-item .info .size { color: rgba(255, 255, 255, 0.15); font-size: 9px; }
+        .search-box input:focus { border-color: #00ff88; }
         
         .footer {
             text-align: center;
-            color: rgba(255, 255, 255, 0.03);
-            font-size: 9px;
-            margin-top: 40px;
-            padding: 20px;
-            letter-spacing: 5px;
+            color: #333;
+            font-size: 11px;
+            margin-top: 30px;
         }
         
-        .status-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 8px;
-            animation: pulse 2s infinite;
-        }
-        .status-dot.online { background: #00ff88; }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        
-        @media (max-width: 768px) {
+        @media (max-width: 600px) {
             .header { flex-direction: column; align-items: flex-start; }
-            .header-right { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
-            .card { padding: 20px; }
-            .stat-box .number { font-size: 22px; }
-        }
-        @media (max-width: 480px) {
-            body { padding: 10px; }
-            .header-left h1 { font-size: 16px; }
-            .card { padding: 16px; }
             .stats { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
@@ -1275,18 +622,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="header-left">
-                <h1>
-                    <span>🔐</span>
-                    RIDOL FB TOOL
-                    <span class="version-badge">✦ v4.0 ✦</span>
-                </h1>
-                <div class="subtitle">
-                    <span class="status-dot online"></span>
-                    ADMIN PANEL • LICENSE MANAGEMENT
-                </div>
+            <div>
+                <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
+                <div style="color:#666;font-size:12px;margin-top:3px">Admin Panel • License Management</div>
             </div>
-            <div class="header-right">
+            <div style="display:flex;gap:10px;align-items:center">
                 <span class="badge">👑 ADMIN</span>
                 <a href="/admin/logout"><button class="btn-logout">🚪 LOGOUT</button></a>
             </div>
@@ -1294,9 +634,9 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <div id="msg" class="msg"></div>
         
-        <!-- ===== SOUND UPLOAD SECTION ===== -->
+        <!-- ===== SOUND UPLOAD ===== -->
         <div class="card">
-            <h2><span class="icon">🎵</span> Custom Background Sound</h2>
+            <h2>🎵 Custom Background Sound</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
                 <span class="icon">📤</span>
                 <p>Drop your MP3 / WAV / OGG file here</p>
@@ -1304,15 +644,16 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 <input type="file" id="fileInput" accept=".mp3,.wav,.ogg" style="display:none" onchange="uploadSound(this.files)">
             </div>
             <div style="margin-top:15px" id="soundList"></div>
-            <div style="margin-top:10px">
-                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh Sound List</button>
-                <button class="btn btn-purple" onclick="showDownloadInfo()">📋 Show Download Info</button>
+            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
+                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Download Link</button>
+                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Check Status</button>
             </div>
         </div>
         
-        <!-- ===== LICENSE SECTION ===== -->
+        <!-- ===== LICENSE ===== -->
         <div class="card">
-            <h2><span class="icon">➕</span> Create License</h2>
+            <h2>➕ Create License</h2>
             <div class="flex">
                 <div class="flex-grow">
                     <div class="form-group">
@@ -1322,14 +663,14 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 </div>
                 <div class="flex-grow">
                     <div class="form-group">
-                        <label>📝 Notes (Client Name)</label>
-                        <input type="text" id="notes" placeholder="e.g., John's Device">
+                        <label>📝 Notes</label>
+                        <input type="text" id="notes" placeholder="Client name">
                     </div>
                 </div>
             </div>
             <button class="btn btn-green" onclick="createLic()">⚡ GENERATE LICENSE</button>
             <div id="new_key" class="new-key-box">
-                <strong style="color:#00ff88">✅ License Created Successfully!</strong>
+                <strong style="color:#00ff88">✅ License Created!</strong>
                 <span class="key" id="key_display">RIDOL-XXXX-XXXX-XXXX</span>
                 <div class="flex" style="gap:10px">
                     <button class="btn btn-blue" onclick="copyKey()">📋 COPY</button>
@@ -1340,40 +681,28 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <!-- ===== STATISTICS ===== -->
         <div class="card">
-            <h2><span class="icon">📊</span> Statistics</h2>
+            <h2>📊 Statistics</h2>
             <div class="stats">
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_total">0</div><div class="label">Total</div></div>
-                <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">✅ Active</div></div>
-                <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">⏰ Expired</div></div>
-                <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">🚫 Banned</div></div>
-                <div class="stat-box"><div class="number" style="color:#4488ff" id="s_devices">0</div><div class="label">📱 Devices</div></div>
+                <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">Active</div></div>
+                <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">Expired</div></div>
+                <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">Banned</div></div>
+                <div class="stat-box"><div class="number" style="color:#4488ff" id="s_devices">0</div><div class="label">Devices</div></div>
             </div>
         </div>
         
         <!-- ===== LICENSE LIST ===== -->
         <div class="card">
-            <h2><span class="icon">👥</span> License Management</h2>
+            <h2>👥 License Management</h2>
             <div class="search-box">
-                <input type="text" id="search" placeholder="🔍 Search by key, device, or notes..." onkeyup="if(event.key==='Enter')searchLic()">
+                <input type="text" id="search" placeholder="🔍 Search..." onkeyup="if(event.key==='Enter')searchLic()">
                 <button class="btn btn-blue" onclick="searchLic()">🔍 SEARCH</button>
                 <button class="btn btn-orange" onclick="refreshAll()">🔄 REFRESH</button>
             </div>
             <div class="table-wrapper">
                 <table>
-                    <thead>
-                        <tr>
-                            <th>License Key</th>
-                            <th>Expires</th>
-                            <th>Status</th>
-                            <th>Device</th>
-                            <th>Created</th>
-                            <th>Notes</th>
-                            <th style="text-align:center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tbody">
-                        <tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.1);padding:40px;letter-spacing:2px">Loading licenses...</td></tr>
-                    </tbody>
+                    <thead><tr><th>Key</th><th>Expires</th><th>Status</th><th>Device</th><th>Notes</th><th>Actions</th></tr></thead>
+                    <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:#666;padding:30px">Loading...</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -1383,7 +712,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
     
     <script>
         let allUsers = {};
-        let filteredUsers = {};
         let lastCreatedKey = '';
         
         function showMsg(text, type) {
@@ -1391,7 +719,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             el.textContent = text;
             el.className = 'msg msg-' + type;
             el.style.display = 'block';
-            setTimeout(() => { el.style.display = 'none'; }, 6000);
+            setTimeout(() => el.style.display = 'none', 5000);
         }
         
         async function apiCall(url, method, data) {
@@ -1407,29 +735,29 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 }
                 return await res.json();
             } catch (e) {
-                showMsg('❌ Network Error: ' + e.message, 'error');
+                showMsg('❌ Network Error', 'error');
                 return null;
             }
         }
         
-        // ===== SOUND FUNCTIONS =====
+        // ===== SOUND =====
         const dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
-        dropZone.addEventListener('drop', (e) => {
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#00ff88'; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#1a1a2e'; });
+        dropZone.addEventListener('drop', e => {
             e.preventDefault();
-            dropZone.classList.remove('dragover');
+            dropZone.style.borderColor = '#1a1a2e';
             if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
         });
         
         async function uploadSound(files) {
-            if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
+            if (!files || files.length === 0) { showMsg('❌ No file', 'error'); return; }
             const file = files[0];
-            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { 
-                showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); 
-                return; 
+            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) {
+                showMsg('❌ Only MP3, WAV, OGG allowed', 'error');
+                return;
             }
-            if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
+            if (file.size > 50*1024*1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
             const formData = new FormData();
             formData.append('file', file);
@@ -1438,8 +766,9 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const res = await fetch('/api/sounds/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.success) {
-                    showMsg('✅ ' + data.message + ' (Original: ' + data.original_name + ')', 'success');
+                    showMsg('✅ ' + data.message, 'success');
                     loadSounds();
+                    checkSoundStatus();
                 } else {
                     showMsg('❌ ' + data.message, 'error');
                 }
@@ -1452,18 +781,14 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const data = await res.json();
                 const list = document.getElementById('soundList');
                 if (data.sounds && data.sounds.length > 0) {
-                    let html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS:</strong></div>';
+                    let html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS:</div>';
                     data.sounds.forEach(s => {
                         html += `
-                            <div class="sound-list-item">
-                                <div class="info">
-                                    <span style="font-size:18px">🎵</span>
-                                    <span class="name">${s.name}</span>
-                                    <span class="size">${s.size_mb} MB</span>
-                                </div>
-                                <div style="display:flex;gap:8px">
-                                    <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶ PLAY</button>
-                                    <button class="btn btn-purple btn-sm" onclick="copyDownloadLink('${s.name}')">🔗 COPY</button>
+                            <div class="sound-item">
+                                <span class="name">🎵 ${s.name}</span>
+                                <span class="size">${s.size_mb} MB</span>
+                                <div style="display:flex;gap:6px">
+                                    <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶</button>
                                     <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
                                 </div>
                             </div>
@@ -1471,17 +796,17 @@ ADMIN_HTML = '''<!DOCTYPE html>
                     });
                     list.innerHTML = html;
                 } else {
-                    list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No custom sounds uploaded</div>';
+                    list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No custom sounds uploaded</div>';
                 }
             } catch (e) {}
         }
         
         async function playSound(filename) {
             try {
-                const res = await fetch('/api/sounds/play', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ filename }) 
+                const res = await fetch('/api/sounds/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
                 });
                 if (res.ok) {
                     const blob = await res.blob();
@@ -1492,48 +817,52 @@ ADMIN_HTML = '''<!DOCTYPE html>
             } catch (e) { showMsg('❌ Play failed', 'error'); }
         }
         
-        function copyDownloadLink(filename) {
-            const url = window.location.origin + '/api/sounds/download/' + filename;
+        async function deleteSound(filename) {
+            if (!confirm('Delete ' + filename + '?')) return;
+            const res = await fetch('/api/sounds/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            const data = await res.json();
+            if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
+            else { showMsg('❌ ' + data.message, 'error'); }
+        }
+        
+        function copyDownloadLink() {
+            const url = window.location.origin + '/api/sounds/download/background.wav';
             navigator.clipboard.writeText(url).then(() => {
-                showMsg('📋 Download link copied! Share with tool users.', 'success');
+                showMsg('📋 Download link copied! Use in Termux tool.', 'success');
             }).catch(() => {
-                // Fallback
                 const ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('📋 Link copied to clipboard!', 'success');
+                showMsg('📋 Link copied!', 'success');
             });
         }
         
-        function showDownloadInfo() {
-            const url = window.location.origin + '/api/sounds/download/background.wav';
-            showMsg('📥 Tool will auto-download from: ' + url, 'info');
-        }
-        
-        async function deleteSound(filename) {
-            if (!confirm('Delete ' + filename + '?')) return;
+        async function checkSoundStatus() {
             try {
-                const res = await fetch('/api/sounds/delete', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ filename }) 
-                });
+                const res = await fetch('/api/sounds/status');
                 const data = await res.json();
-                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); }
-                else { showMsg('❌ ' + data.message, 'error'); }
-            } catch (e) { showMsg('❌ Delete failed', 'error'); }
+                if (data.exists) {
+                    showMsg('✅ Sound exists! Size: ' + data.size_mb + ' MB\nURL: ' + data.url, 'success');
+                } else {
+                    showMsg('❌ No sound uploaded yet. Upload one above.', 'error');
+                }
+            } catch (e) { showMsg('❌ Status check failed', 'error'); }
         }
         
         async function refreshSounds() {
-            showMsg('🔄 Refreshing sound list...', 'info');
+            showMsg('🔄 Refreshing...', 'info');
             await loadSounds();
-            showMsg('✅ Sound list refreshed!', 'success');
+            await checkSoundStatus();
         }
         
-        // ===== LICENSE FUNCTIONS =====
+        // ===== LICENSE =====
         async function createLic() {
             const days = parseInt(document.getElementById('days').value) || 30;
             const notes = document.getElementById('notes').value || '';
@@ -1550,7 +879,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 refreshAll();
             } else {
                 showMsg(result ? result.message : '❌ Failed', 'error');
-                document.getElementById('new_key').style.display = 'none';
             }
         }
         
@@ -1578,15 +906,13 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function toggleBan(key, isBanned) {
             const action = isBanned ? 'unban' : 'ban';
-            showMsg('⏳ Processing...', 'info');
             const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
             if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
             else { showMsg(result ? result.message : '❌ Failed', 'error'); }
         }
         
         async function deleteLic(key) {
-            if (!confirm('⚠️ Delete ' + key + '?')) return;
-            showMsg('⏳ Deleting...', 'info');
+            if (!confirm('Delete ' + key + '?')) return;
             const result = await apiCall('/admin/delete', 'POST', { license_key: key });
             if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
             else { showMsg(result ? result.message : '❌ Failed', 'error'); }
@@ -1598,7 +924,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             const now = new Date();
             const keys = Object.keys(users);
             if (keys.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.05);padding:40px;letter-spacing:3px">No licenses found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#444;padding:30px">No licenses</td></tr>';
                 return;
             }
             keys.forEach(key => {
@@ -1612,14 +938,13 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><code>${key}</code></td>
-                    <td style="font-size:10px">${u.expires_at || 'Never'}</td>
+                    <td style="font-size:11px">${u.expires_at || 'Never'}</td>
                     <td><span class="badge ${badge}">${status}</span></td>
-                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.device || '-'}</td>
-                    <td style="font-size:9px;color:rgba(255,255,255,0.1)">${u.created_at || '-'}</td>
-                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.notes || '-'}</td>
-                    <td style="text-align:center;white-space:nowrap">
-                        <button class="btn ${isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="toggleBan('${key}', ${isBanned})" style="margin:2px">${isBanned ? 'UNBAN' : 'BAN'}</button>
-                        <button class="btn btn-red btn-sm" onclick="deleteLic('${key}')" style="margin:2px">✕</button>
+                    <td style="color:#666;font-size:12px">${u.device || '-'}</td>
+                    <td style="color:#666;font-size:12px">${u.notes || '-'}</td>
+                    <td>
+                        <button class="btn ${isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="toggleBan('${key}', ${isBanned})">${isBanned ? 'UNBAN' : 'BAN'}</button>
+                        <button class="btn btn-red btn-sm" onclick="deleteLic('${key}')">✕</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1629,12 +954,11 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function refreshAll() {
             const data = await apiCall('/admin/data', 'GET');
             if (!data) {
-                document.getElementById('tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ff4444;padding:40px">❌ Failed to load</td></tr>';
+                document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">❌ Failed</td></tr>';
                 return;
             }
             allUsers = data.users || {};
-            filteredUsers = allUsers;
-            renderTable(filteredUsers);
+            renderTable(allUsers);
             document.getElementById('s_total').textContent = data.total || 0;
             document.getElementById('s_active').textContent = data.active || 0;
             document.getElementById('s_expired').textContent = data.expired || 0;
@@ -1644,21 +968,22 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         function searchLic() {
             const q = document.getElementById('search').value.toLowerCase().trim();
-            if (!q) { filteredUsers = allUsers; renderTable(filteredUsers); return; }
-            filteredUsers = {};
+            if (!q) { renderTable(allUsers); return; }
+            const filtered = {};
             Object.keys(allUsers).forEach(key => {
                 const u = allUsers[key];
                 if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
-                    filteredUsers[key] = u;
+                    filtered[key] = u;
                 }
             });
-            renderTable(filteredUsers);
-            showMsg('🔍 Found ' + Object.keys(filteredUsers).length + ' result(s)', 'info');
+            renderTable(filtered);
+            showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
         // ===== INIT =====
         refreshAll();
         loadSounds();
+        checkSoundStatus();
         setInterval(refreshAll, 30000);
     </script>
 </body>
