@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Complete
+Ridol FB Tool License Server v4.0
 Author: Ridol Islam
 """
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
-from flask_cors import CORS
 import json
 import os
 import uuid
@@ -13,11 +12,20 @@ from datetime import datetime, timedelta
 from functools import wraps
 import logging
 
+# Flask-CORS import with fallback
+try:
+    from flask_cors import CORS
+    cors_available = True
+except ImportError:
+    cors_available = False
+    print("[!] flask-cors not installed. Install with: pip install flask-cors")
+
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+if cors_available:
+    CORS(app)  # Enable CORS for all routes
+
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-app.config['CORS_HEADERS'] = 'Content-Type'
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -84,7 +92,6 @@ def login_required(f):
 # ============ TEST ENDPOINT ============
 @app.route('/api/test')
 def test():
-    """Test endpoint to check if server is reachable"""
     return jsonify({
         'status': 'online',
         'message': 'Server is reachable!',
@@ -94,7 +101,6 @@ def test():
 
 @app.route('/api/sounds/test')
 def test_sound():
-    """Test if sound endpoint is working"""
     filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
     return jsonify({
         'sound_exists': os.path.exists(filepath),
@@ -107,7 +113,6 @@ def test_sound():
 
 @app.route('/api/sounds/status')
 def sound_status():
-    """Check if sound exists on server"""
     try:
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
         logger.info(f"Checking sound at: {filepath}")
@@ -134,7 +139,6 @@ def sound_status():
 
 @app.route('/api/sounds/download/background.wav')
 def download_background():
-    """Direct download endpoint for background sound"""
     try:
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
         logger.info(f"Download requested for: {filepath}")
@@ -177,21 +181,15 @@ def list_sounds():
 def upload_sound():
     try:
         logger.info("Upload request received")
-        logger.info(f"Files: {request.files}")
-        logger.info(f"Form: {request.form}")
-        logger.info(f"Headers: {request.headers}")
         
         if 'file' not in request.files:
-            logger.warning("No file in request")
             return jsonify({'success': False, 'message': '❌ No file uploaded'})
         
         file = request.files['file']
         if file.filename == '':
-            logger.warning("Empty filename")
             return jsonify({'success': False, 'message': '❌ No file selected'})
         
         logger.info(f"Filename: {file.filename}")
-        logger.info(f"Content-Type: {file.content_type}")
         
         # Save as background.wav
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, 'background.wav')
@@ -218,11 +216,9 @@ def delete_sound():
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         if os.path.exists(filepath):
             os.remove(filepath)
-            logger.info(f"Deleted: {filepath}")
             return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
         return jsonify({'success': False, 'message': 'File not found'})
     except Exception as e:
-        logger.error(f"Delete error: {e}")
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
 
 @app.route('/api/sounds/play', methods=['POST'])
@@ -406,58 +402,17 @@ LOGIN_HTML = '''<!DOCTYPE html>
     <title>🔐 Admin Login</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body {
-            background: #0a0a1a;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .login-container {
-            background: #111;
-            padding: 40px;
-            border-radius: 16px;
-            border: 1px solid #1a1a2e;
-            max-width: 400px;
-            width: 100%;
-        }
+        body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .login-container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
         .login-container h1 { color: #00ff88; text-align: center; font-size: 24px; }
         .login-container .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
         .form-group { margin-bottom: 20px; }
         .form-group label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
-        .form-group input {
-            width: 100%;
-            padding: 12px 16px;
-            background: #1a1a2e;
-            border: 1px solid #333;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 14px;
-            outline: none;
-        }
+        .form-group input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
         .form-group input:focus { border-color: #00ff88; }
-        .btn-login {
-            width: 100%;
-            padding: 14px;
-            background: #00ff88;
-            border: none;
-            border-radius: 8px;
-            color: #000;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-        }
+        .btn-login { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
         .btn-login:hover { background: #00cc77; }
-        .error-msg {
-            background: rgba(255,68,68,0.1);
-            border: 1px solid #ff4444;
-            color: #ff4444;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 13px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
+        .error-msg { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
         .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
         .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
@@ -494,53 +449,20 @@ ADMIN_HTML = '''<!DOCTYPE html>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 20px;
-            background: #111;
-            border-radius: 12px;
-            border: 1px solid #1a1a2e;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         .header h1 { color: #00ff88; font-size: 20px; }
         .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
-        .card {
-            background: #111;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid #1a1a2e;
-        }
+        .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
         .card h2 { color: #00ff88; font-size: 16px; margin-bottom: 15px; }
         .flex { display: flex; gap: 15px; flex-wrap: wrap; }
         .flex-grow { flex: 1; min-width: 200px; }
         .form-group { margin-bottom: 15px; }
         .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 10px 14px;
-            background: #1a1a2e;
-            border: 1px solid #333;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 14px;
-            outline: none;
-        }
+        .form-group input, .form-group select { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
         .form-group input:focus { border-color: #00ff88; }
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 13px;
-        }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; }
         .btn:hover { transform: scale(1.02); }
         .btn-green { background: #00ff88; color: #000; }
         .btn-red { background: #ff4444; color: #fff; }
@@ -548,17 +470,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .btn-orange { background: #ff8800; color: #fff; }
         .btn-purple { background: #aa44ff; color: #fff; }
         .btn-sm { padding: 6px 12px; font-size: 11px; }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 15px;
-        }
-        .stat-box {
-            text-align: center;
-            padding: 15px;
-            background: #1a1a2e;
-            border-radius: 8px;
-        }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; }
+        .stat-box { text-align: center; padding: 15px; background: #1a1a2e; border-radius: 8px; }
         .stat-box .number { font-size: 28px; font-weight: bold; }
         .stat-box .label { color: #888; font-size: 11px; margin-top: 5px; }
         .table-wrapper { overflow-x: auto; }
@@ -570,94 +483,27 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .badge-active { background: #003311; color: #00ff88; }
         .badge-expired { background: #330000; color: #ff4444; }
         .badge-banned { background: #331100; color: #ff8800; }
-        .msg {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin: 10px 0;
-            display: none;
-            font-weight: bold;
-        }
+        .msg { padding: 12px 16px; border-radius: 8px; margin: 10px 0; display: none; font-weight: bold; }
         .msg-success { background: #003311; color: #00ff88; border: 1px solid #00ff88; }
         .msg-error { background: #330000; color: #ff4444; border: 1px solid #ff4444; }
         .msg-info { background: #001133; color: #4488ff; border: 1px solid #4488ff; }
-        .new-key-box {
-            margin-top: 15px;
-            padding: 20px;
-            background: #1a1a2e;
-            border-radius: 8px;
-            border: 2px solid #00ff88;
-            display: none;
-        }
-        .new-key-box .key {
-            font-size: 20px;
-            font-family: monospace;
-            color: #00ff88;
-            display: block;
-            margin: 10px 0;
-            padding: 10px;
-            background: #000;
-            border-radius: 6px;
-            word-break: break-all;
-        }
-        .upload-area {
-            border: 2px dashed #1a1a2e;
-            border-radius: 12px;
-            padding: 30px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
+        .new-key-box { margin-top: 15px; padding: 20px; background: #1a1a2e; border-radius: 8px; border: 2px solid #00ff88; display: none; }
+        .new-key-box .key { font-size: 20px; font-family: monospace; color: #00ff88; display: block; margin: 10px 0; padding: 10px; background: #000; border-radius: 6px; word-break: break-all; }
+        .upload-area { border: 2px dashed #1a1a2e; border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; }
         .upload-area:hover { border-color: #00ff88; background: rgba(0,255,136,0.02); }
         .upload-area.dragover { border-color: #00ff88; background: rgba(0,255,136,0.05); }
         .upload-area .icon { font-size: 32px; display: block; margin-bottom: 10px; }
         .upload-area p { color: #666; font-size: 13px; }
         .upload-area .supported { color: #444; font-size: 11px; margin-top: 5px; }
-        .sound-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 14px;
-            background: #1a1a2e;
-            border-radius: 8px;
-            margin-bottom: 8px;
-        }
-        .search-box {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-        }
-        .search-box input {
-            flex: 1;
-            min-width: 180px;
-            padding: 10px 14px;
-            background: #1a1a2e;
-            border: 1px solid #333;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 13px;
-            outline: none;
-        }
+        .sound-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #1a1a2e; border-radius: 8px; margin-bottom: 8px; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .search-box input { flex: 1; min-width: 180px; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 13px; outline: none; }
         .search-box input:focus { border-color: #00ff88; }
-        .footer {
-            text-align: center;
-            color: #333;
-            font-size: 11px;
-            margin-top: 30px;
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            margin-left: 10px;
-        }
+        .footer { text-align: center; color: #333; font-size: 11px; margin-top: 30px; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; margin-left: 10px; }
         .status-badge.online { background: #003311; color: #00ff88; }
         .status-badge.offline { background: #330000; color: #ff4444; }
-        @media (max-width: 600px) {
-            .header { flex-direction: column; align-items: flex-start; }
-            .stats { grid-template-columns: repeat(2, 1fr); }
-        }
+        @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .stats { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
 <body>
@@ -665,10 +511,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         <div class="header">
             <div>
                 <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
-                <div style="color:#666;font-size:12px;margin-top:3px">
-                    Admin Panel • License Management
-                    <span class="status-badge online" id="serverStatus">● ONLINE</span>
-                </div>
+                <div style="color:#666;font-size:12px;margin-top:3px">Admin Panel • License Management <span class="status-badge online" id="serverStatus">● ONLINE</span></div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
                 <span class="badge">👑 ADMIN</span>
@@ -678,7 +521,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <div id="msg" class="msg"></div>
         
-        <!-- ===== SOUND UPLOAD ===== -->
+        <!-- SOUND UPLOAD -->
         <div class="card">
             <h2>🎵 Custom Background Sound</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
@@ -690,13 +533,13 @@ ADMIN_HTML = '''<!DOCTYPE html>
             <div style="margin-top:15px" id="soundList"></div>
             <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
                 <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
-                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Download Link</button>
-                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Check Status</button>
-                <button class="btn btn-green" onclick="testConnection()">🔌 Test Connection</button>
+                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Link</button>
+                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Status</button>
+                <button class="btn btn-green" onclick="testConnection()">🔌 Test</button>
             </div>
         </div>
         
-        <!-- ===== LICENSE ===== -->
+        <!-- LICENSE -->
         <div class="card">
             <h2>➕ Create License</h2>
             <div class="flex">
@@ -724,7 +567,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- ===== STATISTICS ===== -->
+        <!-- STATISTICS -->
         <div class="card">
             <h2>📊 Statistics</h2>
             <div class="stats">
@@ -736,7 +579,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- ===== LICENSE LIST ===== -->
+        <!-- LICENSE LIST -->
         <div class="card">
             <h2>👥 License Management</h2>
             <div class="search-box">
@@ -780,12 +623,12 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 }
                 return await res.json();
             } catch (e) {
-                showMsg('❌ Network Error: ' + e.message, 'error');
+                showMsg('❌ Network Error', 'error');
                 return null;
             }
         }
         
-        // ===== CONNECTION TEST =====
+        // TEST CONNECTION
         async function testConnection() {
             showMsg('🔌 Testing connection...', 'info');
             try {
@@ -794,22 +637,17 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 if (data.status === 'online') {
                     showMsg('✅ Server reachable! Version: ' + data.version, 'success');
                 } else {
-                    showMsg('❌ Server returned: ' + JSON.stringify(data), 'error');
+                    showMsg('❌ Server error', 'error');
                 }
             } catch (e) {
                 showMsg('❌ Connection failed: ' + e.message, 'error');
             }
         }
         
-        // ===== SOUND =====
+        // SOUND FUNCTIONS
         const dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', e => { 
-            e.preventDefault(); 
-            dropZone.classList.add('dragover');
-        });
-        dropZone.addEventListener('dragleave', () => { 
-            dropZone.classList.remove('dragover');
-        });
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
         dropZone.addEventListener('drop', e => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
@@ -819,37 +657,26 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file', 'error'); return; }
             const file = files[0];
-            
             if (!file.name.match(/\.(mp3|wav|ogg)$/i)) {
                 showMsg('❌ Only MP3, WAV, OGG allowed', 'error');
                 return;
             }
-            if (file.size > 50*1024*1024) { 
-                showMsg('❌ Max 50MB', 'error'); 
-                return;
-            }
+            if (file.size > 50*1024*1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
             const formData = new FormData();
             formData.append('file', file);
-            
             try {
-                showMsg('⏳ Uploading ' + file.name + '...', 'info');
-                const res = await fetch('/api/sounds/upload', { 
-                    method: 'POST', 
-                    body: formData 
-                });
+                showMsg('⏳ Uploading...', 'info');
+                const res = await fetch('/api/sounds/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                
                 if (data.success) {
-                    showMsg('✅ ' + data.message + ' (' + data.original_name + ')', 'success');
+                    showMsg('✅ ' + data.message, 'success');
                     loadSounds();
                     checkSoundStatus();
                 } else {
                     showMsg('❌ ' + data.message, 'error');
                 }
-            } catch (e) {
-                showMsg('❌ Upload failed: ' + e.message, 'error');
-            }
+            } catch (e) { showMsg('❌ Upload failed', 'error'); }
         }
         
         async function loadSounds() {
@@ -857,28 +684,23 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 const res = await fetch('/api/sounds/list');
                 const data = await res.json();
                 const list = document.getElementById('soundList');
-                
                 if (data.sounds && data.sounds.length > 0) {
                     let html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS:</div>';
                     data.sounds.forEach(s => {
-                        html += `
-                            <div class="sound-item">
-                                <span>🎵 ${s.name}</span>
-                                <span style="color:#666;font-size:11px">${s.size_mb} MB</span>
-                                <div style="display:flex;gap:6px">
-                                    <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶</button>
-                                    <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
-                                </div>
+                        html += `<div class="sound-item">
+                            <span>🎵 ${s.name}</span>
+                            <span style="color:#666;font-size:11px">${s.size_mb} MB</span>
+                            <div style="display:flex;gap:6px">
+                                <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶</button>
+                                <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
                             </div>
-                        `;
+                        </div>`;
                     });
                     list.innerHTML = html;
                 } else {
                     list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No custom sounds uploaded</div>';
                 }
-            } catch (e) {
-                showMsg('❌ Failed to load sounds', 'error');
-            }
+            } catch (e) {}
         }
         
         async function playSound(filename) {
@@ -906,21 +728,15 @@ ADMIN_HTML = '''<!DOCTYPE html>
                     body: JSON.stringify({ filename })
                 });
                 const data = await res.json();
-                if (data.success) {
-                    showMsg('✅ ' + data.message, 'success');
-                    loadSounds();
-                    checkSoundStatus();
-                } else {
-                    showMsg('❌ ' + data.message, 'error');
-                }
+                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
+                else { showMsg('❌ ' + data.message, 'error'); }
             } catch (e) { showMsg('❌ Delete failed', 'error'); }
         }
         
         function copyDownloadLink() {
             const url = window.location.origin + '/api/sounds/download/background.wav';
-            navigator.clipboard.writeText(url).then(() => {
-                showMsg('📋 Download link copied! Use in Termux tool.', 'success');
-            }).catch(() => {
+            navigator.clipboard.writeText(url).then(() => showMsg('📋 Link copied!', 'success'))
+            .catch(() => {
                 const ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
@@ -933,22 +749,14 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         async function checkSoundStatus() {
             try {
-                showMsg('📊 Checking sound status...', 'info');
                 const res = await fetch('/api/sounds/status');
                 const data = await res.json();
-                
                 if (data.exists) {
-                    showMsg('✅ Sound exists! Size: ' + data.size_mb + ' MB\nURL: ' + data.url, 'success');
+                    showMsg('✅ Sound exists! Size: ' + data.size_mb + ' MB', 'success');
                 } else {
-                    let msg = '❌ No sound uploaded yet.';
-                    if (data.files && data.files.length > 0) {
-                        msg += ' Files in directory: ' + data.files.join(', ');
-                    }
-                    showMsg(msg, 'error');
+                    showMsg('❌ No sound uploaded', 'error');
                 }
-            } catch (e) {
-                showMsg('❌ Status check failed: ' + e.message, 'error');
-            }
+            } catch (e) { showMsg('❌ Status check failed', 'error'); }
         }
         
         async function refreshSounds() {
@@ -957,7 +765,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             await checkSoundStatus();
         }
         
-        // ===== LICENSE =====
+        // LICENSE FUNCTIONS
         async function createLic() {
             const days = parseInt(document.getElementById('days').value) || 30;
             const notes = document.getElementById('notes').value || '';
@@ -1002,23 +810,15 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function toggleBan(key, isBanned) {
             const action = isBanned ? 'unban' : 'ban';
             const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
-            if (result && result.success) {
-                showMsg('✅ ' + result.message, 'success');
-                refreshAll();
-            } else {
-                showMsg(result ? result.message : '❌ Failed', 'error');
-            }
+            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
         }
         
         async function deleteLic(key) {
             if (!confirm('Delete ' + key + '?')) return;
             const result = await apiCall('/admin/delete', 'POST', { license_key: key });
-            if (result && result.success) {
-                showMsg('✅ ' + result.message, 'success');
-                refreshAll();
-            } else {
-                showMsg(result ? result.message : '❌ Failed', 'error');
-            }
+            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
         }
         
         function renderTable(users) {
@@ -1026,22 +826,18 @@ ADMIN_HTML = '''<!DOCTYPE html>
             tbody.innerHTML = '';
             const now = new Date();
             const keys = Object.keys(users);
-            
             if (keys.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#444;padding:30px">No licenses</td></tr>';
                 return;
             }
-            
             keys.forEach(key => {
                 const u = users[key];
                 const expires = u.expires_at ? new Date(u.expires_at) : null;
                 const isExpired = expires && now > expires;
                 const isBanned = u.banned || false;
-                
                 let status = 'Active', badge = 'badge-active';
                 if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
                 else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
-                
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><code>${key}</code></td>
@@ -1064,7 +860,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
                 document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">❌ Failed</td></tr>';
                 return;
             }
-            
             allUsers = data.users || {};
             renderTable(allUsers);
             document.getElementById('s_total').textContent = data.total || 0;
@@ -1077,13 +872,10 @@ ADMIN_HTML = '''<!DOCTYPE html>
         function searchLic() {
             const q = document.getElementById('search').value.toLowerCase().trim();
             if (!q) { renderTable(allUsers); return; }
-            
             const filtered = {};
             Object.keys(allUsers).forEach(key => {
                 const u = allUsers[key];
-                if (key.toLowerCase().includes(q) || 
-                    (u.device && u.device.toLowerCase().includes(q)) || 
-                    (u.notes && u.notes.toLowerCase().includes(q))) {
+                if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
                     filtered[key] = u;
                 }
             });
@@ -1091,13 +883,12 @@ ADMIN_HTML = '''<!DOCTYPE html>
             showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
-        // ===== INIT =====
+        // INIT
         refreshAll();
         loadSounds();
         setTimeout(checkSoundStatus, 1000);
         setInterval(refreshAll, 30000);
         
-        // Server status check
         async function checkServerStatus() {
             try {
                 const res = await fetch('/api/test');
