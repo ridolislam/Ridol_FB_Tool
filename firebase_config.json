@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "ridol-fb-tool",
+  "private_key_id": "d3cf4835040a859254951561bd1516efabd28d6e",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCrgyZGNgmadJmV\nSTjrPLTfIbhOjNO7OiXdAGi4jrnpg7Az/YD2aL1Hb9v2LeKqUDk4xript6LQ7Nul\nXlowZFmHekaCzNJzjwL3xczh8OYxahzdSywNtMup7UnI0V784ovYw2efKJfMIg9H\nGu/Xug+skflQR2LbQZ2aqp7/NQ8l30rgcsSd+i63qvK7bgI3QbpBGX53ao1D7Tkt\n8iv7MqrOZxsN9/hnzQRoyIgsrLkLhwzFNAIOQr8uRLz96XZVdMYfslqPnZE/F9iO\nRf5Gpk+0tBq9+oiVUq6n6JuiOO2+7Mv1VSI2R4z3iUMYzEcgQPWIsmJtv5Ceph2r\nwZqmAkJTAgMBAAECggEAQ1VktFHIqWO3W/14JBocJDF3yxbMlQd6D+52LmaSJFP3\n3CFc/OAX1zDaGSbggt6l6F1T6AVZHU6v2JdXLwJmh6KAhh9lS8rMbnuwOM+7f5Da\nLiKx89uTzW2D9xwDf6JtJrdoOfrUxWZluxOfL4EzYBua1mKAM/XpquvrKeQpw0Lm\nrZgLB1eNGxqlcLkVtGUlH4PXJLv/cArJcqgBurRyVOEeYNbOsyhuB9DS9FaBKAoq\nvq+NdRNDnLvLD67xzOgfvrPX4fS69E9v96GNU3bUNoPuhxbYZYIb0rsC/2vXrhI4\n2XNzW7mCO+JPaIWbwDKn/pPGwZFQG49IXeLQ+MP/0QKBgQDekgm0m78zxchUXJXH\nI0Kx+C91S91HDTbiA7jzlkPfOke+gzrqCkAtiEeKfmDsCH5u6XtE0035i7BW/79o\nNdFkQRVErHJuicLR702UdtzkKVkhMa/jCFfJZs8k+cVDvorsIbgW3jgO10MX3Ynz\n/uFWPgRnpzNPYonLe9VKv/pSCQKBgQDFReVmVv9YpWm+Bvtt24CdPNXe7+vBprxL\nqx6UpvptHw7Sf3u9Z1wDdbkwpwIbc35lMf5yTTT7SOXFOmkfXkDh05fgOtIYXC1u\nvt/Y+KtTMZD9/tIb9eLpvkfDTrSlRrLvx40d0bLraVSc+FOBY6KzyT5/fk0dwT7v\n9eI7+6wYewKBgAP1uTJ7auVy6WOG2itW10LvVXjSxrcS5x0ST+IVlFOOZ+Rd1ViA\noi+tMwilwvewFv/GK6lH0SVVdOe3WSJzgqwz9Drqjoak8NBnX4v6qWdtzOYoSibR\n6S3uJFVWFEpmQ3Z8CxhtD7ZD4i+0g1XR/RRZuh5V/TW2XRk/tMXFsKBxAoGBAI88\nVfk917+ksyeP6EV26GbCwkNSDusXxoZmpBipORG8SEXc3JrEjpHQi3tg9+24qSCO\n8UJK/toprvPKmoN1K0UNHqxn6R5Y54AOxXfD7pnEVpOlzycQHQc86txLrGyI7eme\nCb+KABBf9VjYEcHT91H1IBTwPswJAUq4TODitq07AoGAeUacultF2Axp/7X7mKIk\nTkzZVWjdNgtBa+gv3F2Qg0iDDpvezc3yjran6jjRpe/QF2fqCtiodsSg9DUBMXst\npg0hlkALOuxx1Bw3U/Cc0NJIbDiL93ZGHxRZmyKN/IWYzaumQaXMZYMIgm8s//tT\nzaY3YujgqQXscM1OHgXDlVM=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@ridol-fb-tool.iam.gserviceaccount.com",
+  "client_id": "117305850305344646239",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40ridol-fb-tool.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
