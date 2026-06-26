@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - SQLite Database
+Ridol FB Tool License Server v4.0 - Supabase Integration
 Author: Ridol Islam
 License: MIT
 """
@@ -9,11 +9,11 @@ from flask import Flask, request, jsonify, session, redirect, url_for, send_file
 from flask_cors import CORS
 import os
 import uuid
-import sqlite3
+import json
 from datetime import datetime, timedelta
 from functools import wraps
 import io
-import json
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -23,190 +23,221 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 ADMIN_PASSWORD = 'Ridol123@'
 
-# ==================== SQLITE DATABASE ====================
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+# ==================== SUPABASE CONFIGURATION ====================
+SUPABASE_URL = "https://lfnduxngftyozdmohmxp.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"
+SUPABASE_SERVICE_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"  # Service key (same as anon for now)
+
 SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
 os.makedirs(SOUNDS_DIR, exist_ok=True)
 
-def get_db():
-    """Get database connection"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# ==================== SUPABASE API FUNCTIONS ====================
 
-def init_db():
-    """Initialize database tables"""
-    conn = get_db()
-    cursor = conn.cursor()
+def supabase_request(endpoint, method='GET', data=None):
+    """Make request to Supabase API"""
+    url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
+    headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': f'Bearer {SUPABASE_ANON_KEY}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    }
     
-    # Users table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            license_key TEXT PRIMARY KEY,
-            created_at TEXT,
-            expires_at TEXT,
-            banned INTEGER DEFAULT 0,
-            notes TEXT,
-            device TEXT
-        )
-    ''')
-    
-    # Devices table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS devices (
-            device_serial TEXT PRIMARY KEY,
-            license_key TEXT,
-            last_seen TEXT,
-            created_at TEXT
-        )
-    ''')
-    
-    # Sounds table (metadata)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sounds (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT UNIQUE,
-            size INTEGER,
-            uploaded_at TEXT,
-            content_type TEXT
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    print("[+] SQLite Database initialized!")
+    try:
+        if method == 'GET':
+            response = requests.get(url, headers=headers)
+        elif method == 'POST':
+            response = requests.post(url, headers=headers, json=data)
+        elif method == 'PATCH':
+            response = requests.patch(url, headers=headers, json=data)
+        elif method == 'DELETE':
+            response = requests.delete(url, headers=headers)
+        else:
+            return None
+        
+        if response.status_code in [200, 201, 204]:
+            return response.json() if response.text else {'success': True}
+        else:
+            print(f"[-] Supabase Error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"[-] Supabase Request Error: {e}")
+        return None
 
-# Initialize database on startup
-init_db()
+def init_supabase_tables():
+    """Create tables if they don't exist"""
+    
+    # Create users table
+    create_users = """
+    CREATE TABLE IF NOT EXISTS users (
+        license_key TEXT PRIMARY KEY,
+        created_at TEXT,
+        expires_at TEXT,
+        banned BOOLEAN DEFAULT FALSE,
+        notes TEXT,
+        device TEXT
+    )
+    """
+    
+    # Create devices table
+    create_devices = """
+    CREATE TABLE IF NOT EXISTS devices (
+        device_serial TEXT PRIMARY KEY,
+        license_key TEXT,
+        last_seen TEXT,
+        created_at TEXT
+    )
+    """
+    
+    # Create sounds table
+    create_sounds = """
+    CREATE TABLE IF NOT EXISTS sounds (
+        id SERIAL PRIMARY KEY,
+        filename TEXT UNIQUE,
+        size INTEGER,
+        uploaded_at TEXT,
+        content_type TEXT
+    )
+    """
+    
+    try:
+        # Try to create tables using Supabase SQL API
+        sql = f"{create_users} {create_devices} {create_sounds}"
+        response = supabase_request('rpc/exec_sql', 'POST', {'sql': sql})
+        if response:
+            print("[+] Supabase tables initialized!")
+        else:
+            print("[!] Could not initialize tables. They may already exist.")
+    except:
+        print("[!] Tables may already exist. Continuing...")
+
+# Initialize tables
+init_supabase_tables()
 
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE license_key = ?", (license_key,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    """Get user by license key"""
+    result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
+    if result and len(result) > 0:
+        return result[0]
+    return None
 
 def get_users():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    """Get all users"""
+    result = supabase_request("users?select=*", 'GET')
+    return result if result else []
 
 def get_devices():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM devices")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    """Get all devices"""
+    result = supabase_request("devices?select=*", 'GET')
+    return result if result else []
 
 def get_device(device_serial):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM devices WHERE device_serial = ?", (device_serial,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    """Get device by serial"""
+    result = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
+    if result and len(result) > 0:
+        return result[0]
+    return None
 
 def save_user(user_data):
-    conn = get_db()
-    cursor = conn.cursor()
+    """Save user to Supabase"""
     if 'created_at' not in user_data:
         user_data['created_at'] = datetime.now().isoformat()
     
-    cursor.execute('''
-        INSERT OR REPLACE INTO users 
-        (license_key, created_at, expires_at, banned, notes, device)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (
-        user_data['license_key'],
-        user_data['created_at'],
-        user_data.get('expires_at', ''),
-        int(user_data.get('banned', False)),
-        user_data.get('notes', ''),
-        user_data.get('device', '')
-    ))
-    conn.commit()
-    conn.close()
-    return True
+    # Check if exists
+    existing = get_user(user_data['license_key'])
+    if existing:
+        # Update
+        result = supabase_request(
+            f"users?license_key=eq.{user_data['license_key']}",
+            'PATCH',
+            user_data
+        )
+    else:
+        # Insert
+        result = supabase_request("users", 'POST', user_data)
+    
+    return result is not None
 
 def save_device(device_data):
-    conn = get_db()
-    cursor = conn.cursor()
+    """Save device to Supabase"""
     if 'created_at' not in device_data:
         device_data['created_at'] = datetime.now().isoformat()
     
-    cursor.execute('''
-        INSERT OR REPLACE INTO devices
-        (device_serial, license_key, last_seen, created_at)
-        VALUES (?, ?, ?, ?)
-    ''', (
-        device_data['device_serial'],
-        device_data.get('license_key', ''),
-        device_data.get('last_seen', datetime.now().isoformat()),
-        device_data['created_at']
-    ))
-    conn.commit()
-    conn.close()
-    return True
+    existing = get_device(device_data['device_serial'])
+    if existing:
+        result = supabase_request(
+            f"devices?device_serial=eq.{device_data['device_serial']}",
+            'PATCH',
+            device_data
+        )
+    else:
+        result = supabase_request("devices", 'POST', device_data)
+    
+    return result is not None
 
 def delete_user(license_key):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM users WHERE license_key = ?", (license_key,))
-    affected = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return affected > 0
+    """Delete user from Supabase"""
+    result = supabase_request(f"users?license_key=eq.{license_key}", 'DELETE')
+    return result is not None
 
-def save_sound_metadata(filename, size, content_type):
-    """Save sound metadata to database"""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO sounds (filename, size, uploaded_at, content_type)
-        VALUES (?, ?, ?, ?)
-    ''', (filename, size, datetime.now().isoformat(), content_type))
-    conn.commit()
-    conn.close()
-    return True
+def save_sound_file(file_data, filename):
+    """Save sound file to disk and metadata to Supabase"""
+    filepath = os.path.join(SOUNDS_DIR, filename)
+    with open(filepath, 'wb') as f:
+        f.write(file_data)
+    
+    # Save metadata to Supabase
+    sound_data = {
+        'filename': filename,
+        'size': len(file_data),
+        'uploaded_at': datetime.now().isoformat(),
+        'content_type': 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+    }
+    
+    # Check if exists
+    existing = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
+    if existing and len(existing) > 0:
+        supabase_request(f"sounds?filename=eq.{filename}", 'PATCH', sound_data)
+    else:
+        supabase_request("sounds", 'POST', sound_data)
+    
+    return filename
 
-def delete_sound_metadata(filename):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM sounds WHERE filename = ?", (filename,))
-    affected = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return affected > 0
+def get_sound_file(filename):
+    """Get sound file from disk"""
+    filepath = os.path.join(SOUNDS_DIR, filename)
+    if os.path.exists(filepath):
+        with open(filepath, 'rb') as f:
+            return f.read()
+    return None
+
+def delete_sound_file(filename):
+    """Delete sound file from disk and metadata"""
+    filepath = os.path.join(SOUNDS_DIR, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        supabase_request(f"sounds?filename=eq.{filename}", 'DELETE')
+        return True
+    return False
 
 def get_all_sound_files():
-    """Get all sound files from database and disk"""
+    """Get all sound files"""
     sounds = []
     
-    # Get from database
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM sounds")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    # Check if file exists on disk
-    for row in rows:
-        row_dict = dict(row)
-        filepath = os.path.join(SOUNDS_DIR, row_dict['filename'])
-        if os.path.exists(filepath):
-            sounds.append({
-                'name': row_dict['filename'],
-                'size': row_dict['size'],
-                'size_mb': round(row_dict['size'] / (1024 * 1024), 2),
-                'uploaded_at': row_dict['uploaded_at']
-            })
+    # Get from Supabase
+    result = supabase_request("sounds?select=*", 'GET')
+    if result:
+        for row in result:
+            filepath = os.path.join(SOUNDS_DIR, row['filename'])
+            if os.path.exists(filepath):
+                sounds.append({
+                    'name': row['filename'],
+                    'size': row['size'],
+                    'size_mb': round(row['size'] / (1024 * 1024), 2),
+                    'uploaded_at': row['uploaded_at']
+                })
     
     # Also scan disk for files not in database
     if os.path.exists(SOUNDS_DIR):
@@ -222,32 +253,6 @@ def get_all_sound_files():
                     })
     
     return sounds
-
-def save_sound_file(file_data, filename):
-    """Save sound file to disk and database"""
-    filepath = os.path.join(SOUNDS_DIR, filename)
-    with open(filepath, 'wb') as f:
-        f.write(file_data)
-    
-    # Save metadata
-    content_type = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
-    save_sound_metadata(filename, len(file_data), content_type)
-    return filename
-
-def get_sound_file(filename):
-    filepath = os.path.join(SOUNDS_DIR, filename)
-    if os.path.exists(filepath):
-        with open(filepath, 'rb') as f:
-            return f.read()
-    return None
-
-def delete_sound_file(filename):
-    filepath = os.path.join(SOUNDS_DIR, filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
-        delete_sound_metadata(filename)
-        return True
-    return False
 
 # ==================== LICENSE FUNCTIONS ====================
 
@@ -305,7 +310,7 @@ def home():
         'server': 'Ridol FB Tool License Server',
         'version': '4.0',
         'status': 'online',
-        'database': 'SQLite',
+        'database': 'Supabase (PostgreSQL)',
         'users': len(users),
         'devices': len(devices),
         'sounds': len(sound_files),
@@ -318,7 +323,7 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': '4.0',
-        'database': 'SQLite'
+        'database': 'Supabase (PostgreSQL)'
     })
 
 @app.route('/api/v1/status')
@@ -331,7 +336,7 @@ def api_status():
         'status': 'online',
         'version': '4.0',
         'timestamp': datetime.now().isoformat(),
-        'database': 'SQLite',
+        'database': 'Supabase (PostgreSQL)',
         'license_count': len(users),
         'device_count': len(devices),
         'sound_files': [f['name'] for f in sound_files],
@@ -631,13 +636,13 @@ LOGIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login</title>
+    <title>Admin Login - Supabase</title>
     <style>
         body { background: #0a0a1a; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
         .container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
         h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
         .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
-        .db-badge { background: #4488ff; color: #fff; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
+        .db-badge { background: #3b82f6; color: #fff; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
         .form-group { margin-bottom: 20px; }
         label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
         input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; box-sizing: border-box; }
@@ -655,7 +660,7 @@ LOGIN_HTML = """
     <div class="container">
         <h1>RIDOL FB TOOL</h1>
         <div class="subtitle">Admin Authentication v4.0</div>
-        <div style="text-align:center"><span class="db-badge">SQLite Database</span></div>
+        <div style="text-align:center"><span class="db-badge">Supabase</span></div>
         {% if error %}
         <div class="error">{{ error }}</div>
         {% endif %}
@@ -679,7 +684,7 @@ ADMIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel - SQLite</title>
+    <title>Admin Panel - Supabase</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
@@ -687,7 +692,7 @@ ADMIN_HTML = """
         .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         .header h1 { color: #00ff88; font-size: 20px; }
         .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .db-badge { background: #4488ff; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #4488ff; }
+        .db-badge { background: #3b82f6; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #3b82f6; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
         .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
@@ -702,7 +707,7 @@ ADMIN_HTML = """
         .btn:hover { transform: scale(1.02); }
         .btn-green { background: #00ff88; color: #000; }
         .btn-red { background: #ff4444; color: #fff; }
-        .btn-blue { background: #4488ff; color: #fff; }
+        .btn-blue { background: #3b82f6; color: #fff; }
         .btn-orange { background: #ff8800; color: #fff; }
         .btn-purple { background: #aa44ff; color: #fff; }
         .btn-sm { padding: 6px 12px; font-size: 11px; }
@@ -722,7 +727,7 @@ ADMIN_HTML = """
         .msg { padding: 12px 16px; border-radius: 8px; margin: 10px 0; display: none; font-weight: bold; }
         .msg-success { background: #003311; color: #00ff88; border: 1px solid #00ff88; }
         .msg-error { background: #330000; color: #ff4444; border: 1px solid #ff4444; }
-        .msg-info { background: #001133; color: #4488ff; border: 1px solid #4488ff; }
+        .msg-info { background: #001133; color: #3b82f6; border: 1px solid #3b82f6; }
         .new-key-box { margin-top: 15px; padding: 20px; background: #1a1a2e; border-radius: 8px; border: 2px solid #00ff88; display: none; }
         .new-key-box .key { font-size: 20px; font-family: monospace; color: #00ff88; display: block; margin: 10px 0; padding: 10px; background: #000; border-radius: 6px; word-break: break-all; }
         .upload-area { border: 2px dashed #1a1a2e; border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; }
@@ -748,7 +753,7 @@ ADMIN_HTML = """
             <div>
                 <h1>RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
                 <div style="color:#666;font-size:12px;margin-top:3px">
-                    Admin Panel • <span class="db-badge">SQLite Database</span>
+                    Admin Panel • <span class="db-badge">Supabase</span>
                 </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
@@ -822,7 +827,7 @@ ADMIN_HTML = """
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">Active</div></div>
                 <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">Expired</div></div>
                 <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">Banned</div></div>
-                <div class="stat-box"><div class="number" style="color:#4488ff" id="s_devices">0</div><div class="label">Devices</div></div>
+                <div class="stat-box"><div class="number" style="color:#3b82f6" id="s_devices">0</div><div class="label">Devices</div></div>
             </div>
         </div>
         
@@ -841,7 +846,7 @@ ADMIN_HTML = """
             </div>
         </div>
         
-        <div class="footer">RIDOL FB TOOL v4.0 • SQLite Database</div>
+        <div class="footer">RIDOL FB TOOL v4.0 • Supabase</div>
     </div>
     
     <script>
@@ -909,7 +914,7 @@ ADMIN_HTML = """
             
             var formData = new FormData();
             formData.append('file', file);
-            showMsg('Uploading to SQLite...', 'info');
+            showMsg('Uploading to Supabase...', 'info');
             fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
@@ -930,7 +935,7 @@ ADMIN_HTML = """
                 .then(function(data) {
                     var list = document.getElementById('soundList');
                     if (data.sounds && data.sounds.length > 0) {
-                        var html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (SQLite):</div>';
+                        var html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (Supabase):</div>';
                         data.sounds.forEach(function(s) {
                             var ext = s.name.split('.').pop().toUpperCase();
                             html += '<div class="sound-item">' +
@@ -945,7 +950,7 @@ ADMIN_HTML = """
                         });
                         list.innerHTML = html;
                     } else {
-                        list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in database</div>';
+                        list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in Supabase</div>';
                     }
                 })
                 .catch(function(e) {});
@@ -1008,9 +1013,9 @@ ADMIN_HTML = """
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.exists) {
-                        showMsg('Sound exists! ' + data.count + ' file(s)', 'success');
+                        showMsg('Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
                     } else {
-                        showMsg('No sound in database', 'error');
+                        showMsg('No sound in Supabase', 'error');
                     }
                 })
                 .catch(function(e) { showMsg('Status check failed', 'error'); });
