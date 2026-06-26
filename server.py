@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0
+Ridol FB Tool License Server v4.0 - Supabase Edition
 Author: Ridol Islam
 License: MIT
 """
@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, render_template_string, session, redi
 import json
 import os
 import uuid
+import requests
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -16,31 +17,119 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-DB_FILE = 'licenses.json'
+# ==================== SUPABASE CONFIGURATION ====================
+SUPABASE_URL = "https://lfnduxngftyozdmohmxp.supabase.co"
+SUPABASE_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"
+
 ADMIN_PASSWORD = 'Ridol123@'
 CUSTOM_SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
 os.makedirs(CUSTOM_SOUNDS_DIR, exist_ok=True)
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE) as f:
-                return json.load(f)
-        except:
-            pass
-    return {'users': {}, 'devices': {}}
+# ==================== SUPABASE FUNCTIONS ====================
 
-def save_db(db):
-    with open(DB_FILE, 'w') as f:
-        json.dump(db, f, indent=2)
+def supabase_request(endpoint, method='GET', data=None):
+    """Make request to Supabase REST API"""
+    url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
+    
+    headers = {
+        'apikey': SUPABASE_KEY,
+        'Authorization': f'Bearer {SUPABASE_KEY}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    }
+    
+    try:
+        if method == 'GET':
+            response = requests.get(url, headers=headers, timeout=15)
+        elif method == 'POST':
+            response = requests.post(url, headers=headers, json=data, timeout=15)
+        elif method == 'PATCH':
+            response = requests.patch(url, headers=headers, json=data, timeout=15)
+        elif method == 'DELETE':
+            response = requests.delete(url, headers=headers, timeout=15)
+        else:
+            return None
+        
+        if response.status_code in [200, 201, 204]:
+            return response.json() if response.text else {'success': True}
+        else:
+            print(f"[-] Supabase Error ({response.status_code}): {response.text[:200]}")
+            return None
+            
+    except Exception as e:
+        print(f"[-] Supabase Request Error: {e}")
+        return None
 
-db = load_db()
+def supabase_get_user(license_key):
+    """Get user by license key from Supabase"""
+    result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
+    if result and len(result) > 0:
+        return result[0]
+    return None
+
+def supabase_get_users():
+    """Get all users from Supabase"""
+    result = supabase_request("users?select=*", 'GET')
+    return result if result else []
+
+def supabase_get_devices():
+    """Get all devices from Supabase"""
+    result = supabase_request("devices?select=*", 'GET')
+    return result if result else []
+
+def supabase_get_device(device_serial):
+    """Get device by serial from Supabase"""
+    result = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
+    if result and len(result) > 0:
+        return result[0]
+    return None
+
+def supabase_save_user(user_data):
+    """Save user to Supabase"""
+    if 'created_at' not in user_data:
+        user_data['created_at'] = datetime.now().isoformat()
+    
+    existing = supabase_get_user(user_data['license_key'])
+    if existing:
+        result = supabase_request(
+            f"users?license_key=eq.{user_data['license_key']}",
+            'PATCH',
+            user_data
+        )
+    else:
+        result = supabase_request("users", 'POST', user_data)
+    
+    return result is not None
+
+def supabase_save_device(device_data):
+    """Save device to Supabase"""
+    if 'created_at' not in device_data:
+        device_data['created_at'] = datetime.now().isoformat()
+    
+    existing = supabase_get_device(device_data['device_serial'])
+    if existing:
+        result = supabase_request(
+            f"devices?device_serial=eq.{device_data['device_serial']}",
+            'PATCH',
+            device_data
+        )
+    else:
+        result = supabase_request("devices", 'POST', device_data)
+    
+    return result is not None
+
+def supabase_delete_user(license_key):
+    """Delete user from Supabase"""
+    result = supabase_request(f"users?license_key=eq.{license_key}", 'DELETE')
+    return result is not None
+
+# ==================== LICENSE FUNCTIONS ====================
 
 def generate_license_key():
     return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
 def validate_license(key, device_serial):
-    user = db['users'].get(key)
+    user = supabase_get_user(key)
     if not user:
         return {'valid': False, 'message': 'Invalid license key'}
     if user.get('banned', False):
@@ -53,12 +142,12 @@ def validate_license(key, device_serial):
         except:
             pass
     if device_serial:
-        db['devices'][device_serial] = {
+        device_data = {
+            'device_serial': device_serial,
             'license_key': key,
-            'last_seen': datetime.now().isoformat(),
-            'created_at': user.get('created_at', datetime.now().isoformat())
+            'last_seen': datetime.now().isoformat()
         }
-        save_db(db)
+        supabase_save_device(device_data)
     return {
         'valid': True,
         'message': 'License active',
@@ -74,12 +163,26 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# ==================== ROUTES ====================
+
 @app.route('/')
 def home():
+    users = supabase_get_users()
+    devices = supabase_get_devices()
+    sounds = []
+    if os.path.exists(CUSTOM_SOUNDS_DIR):
+        for f in os.listdir(CUSTOM_SOUNDS_DIR):
+            if f.endswith(('.mp3', '.wav', '.ogg')):
+                sounds.append(f)
+    
     return jsonify({
         'server': 'Ridol FB Tool License Server',
         'version': 'v4.0',
         'status': 'online',
+        'database': 'Supabase',
+        'users': len(users),
+        'devices': len(devices),
+        'sounds': len(sounds),
         'endpoints': ['/verify', '/register_device', '/admin']
     })
 
@@ -95,12 +198,12 @@ def register_device():
     data = request.json
     device_serial = data.get('device_serial', '')
     if device_serial:
-        db['devices'][device_serial] = {
-            'license_key': '',
-            'last_seen': datetime.now().isoformat(),
-            'created_at': datetime.now().isoformat()
+        device_data = {
+            'device_serial': device_serial,
+            'license_key': data.get('license_key', ''),
+            'last_seen': datetime.now().isoformat()
         }
-        save_db(db)
+        supabase_save_device(device_data)
         return jsonify({'success': True, 'device_serial': device_serial})
     return jsonify({'success': False, 'message': 'No device serial'})
 
@@ -133,7 +236,8 @@ def upload_sound():
         if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg')):
             return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG files allowed'})
         
-        filename = 'background.wav'
+        ext = os.path.splitext(file.filename)[1].lower()
+        filename = f'background{ext}'
         filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
         file.save(filepath)
         
@@ -179,7 +283,7 @@ def play_sound():
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
 
-# ============ LICENSE ROUTES ============
+# ============ ADMIN ROUTES ============
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
@@ -208,16 +312,16 @@ def admin_check():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = db.get('users', {})
-    devices = db.get('devices', {})
+    users = supabase_get_users()
+    devices = supabase_get_devices()
     now = datetime.now()
     total = len(users)
     active = 0
     expired = 0
     banned = 0
     
-    for key, user in users.items():
-        if user.get('banned'):
+    for user in users:
+        if user.get('banned', False):
             banned += 1
         elif user.get('expires_at', ''):
             try:
@@ -231,8 +335,8 @@ def admin_data():
             active += 1
     
     return jsonify({
-        'users': users,
-        'devices': devices,
+        'users': {u['license_key']: u for u in users},
+        'devices': {d['device_serial']: d for d in devices},
         'total': total,
         'active': active,
         'expired': expired,
@@ -256,21 +360,23 @@ def admin_create():
         key = generate_license_key()
         expires = (datetime.now() + timedelta(days=days)).isoformat()
         
-        db['users'][key] = {
+        user_data = {
+            'license_key': key,
             'created_at': datetime.now().isoformat(),
             'expires_at': expires,
             'banned': False,
             'notes': notes if notes else 'No notes',
             'device': ''
         }
-        save_db(db)
         
-        return jsonify({
-            'success': True,
-            'message': f'✅ License created successfully! Valid for {days} days.',
-            'license_key': key,
-            'expires_at': expires
-        })
+        if supabase_save_user(user_data):
+            return jsonify({
+                'success': True,
+                'message': f'✅ License created successfully! Valid for {days} days.',
+                'license_key': key,
+                'expires_at': expires
+            })
+        return jsonify({'success': False, 'message': 'Failed to save to Supabase'})
     except ValueError:
         return jsonify({'success': False, 'message': '❌ Invalid input! Please enter a valid number for days.'})
     except Exception as e:
@@ -283,10 +389,13 @@ def admin_ban():
         key = request.json.get('license_key', '')
         if not key:
             return jsonify({'success': False, 'message': '❌ No license key provided'})
-        if key not in db['users']:
+        
+        user = supabase_get_user(key)
+        if not user:
             return jsonify({'success': False, 'message': '❌ License key not found'})
-        db['users'][key]['banned'] = True
-        save_db(db)
+        
+        user['banned'] = True
+        supabase_save_user(user)
         return jsonify({'success': True, 'message': '✅ License banned successfully'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
@@ -298,10 +407,13 @@ def admin_unban():
         key = request.json.get('license_key', '')
         if not key:
             return jsonify({'success': False, 'message': '❌ No license key provided'})
-        if key not in db['users']:
+        
+        user = supabase_get_user(key)
+        if not user:
             return jsonify({'success': False, 'message': '❌ License key not found'})
-        db['users'][key]['banned'] = False
-        save_db(db)
+        
+        user['banned'] = False
+        supabase_save_user(user)
         return jsonify({'success': True, 'message': '✅ License unbanned successfully'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
@@ -313,11 +425,10 @@ def admin_delete():
         key = request.json.get('license_key', '')
         if not key:
             return jsonify({'success': False, 'message': '❌ No license key provided'})
-        if key not in db['users']:
-            return jsonify({'success': False, 'message': '❌ License key not found'})
-        del db['users'][key]
-        save_db(db)
-        return jsonify({'success': True, 'message': '✅ License deleted successfully'})
+        
+        if supabase_delete_user(key):
+            return jsonify({'success': True, 'message': '✅ License deleted successfully'})
+        return jsonify({'success': False, 'message': '❌ License key not found'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
 
@@ -328,7 +439,7 @@ def admin_logout():
     return redirect(url_for('admin_login'))
 
 # ============================================================
-# ============ LOGIN HTML WITH 3D + WRITING EFFECT ============
+# ============ LOGIN HTML ============
 # ============================================================
 
 LOGIN_HTML = '''<!DOCTYPE html>
@@ -353,7 +464,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             perspective: 1200px;
         }
         
-        /* Animated Background */
         .bg-animation {
             position: fixed;
             top: 0;
@@ -373,7 +483,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { opacity: 1; transform: scale(1.1); }
         }
         
-        /* Particles */
         .particles {
             position: fixed;
             top: 0;
@@ -401,7 +510,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             100% { transform: translateY(-100vh) scale(1); opacity: 0; }
         }
         
-        /* Main Container */
         .login-container {
             position: relative;
             z-index: 1;
@@ -412,10 +520,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
             max-width: 550px;
             width: 100%;
             transform: rotateY(5deg) rotateX(5deg) translateZ(50px);
-            box-shadow: 
-                0 30px 80px rgba(0, 0, 0, 0.8),
-                0 0 40px rgba(0, 255, 136, 0.1),
-                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 255, 136, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(0, 255, 136, 0.1);
             transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
             animation: float3D 6s ease-in-out infinite;
@@ -431,7 +536,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 60px rgba(0, 255, 136, 0.2);
         }
         
-        /* ===== 3D BIG TITLE WITH WRITING EFFECT ===== */
         .title-section {
             text-align: center;
             margin-bottom: 35px;
@@ -451,7 +555,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { transform: scale(1.15) rotate(5deg); }
         }
         
-        /* 3D Title - Large & Glowing */
         .title-3d {
             font-size: 42px;
             font-weight: 900;
@@ -461,14 +564,10 @@ LOGIN_HTML = '''<!DOCTYPE html>
             position: relative;
             min-height: 70px;
             margin-bottom: 5px;
-            text-shadow: 
-                0 0 10px rgba(0, 255, 136, 0.3),
-                0 0 20px rgba(0, 255, 136, 0.2),
-                0 0 40px rgba(0, 255, 136, 0.1);
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.3), 0 0 20px rgba(0, 255, 136, 0.2), 0 0 40px rgba(0, 255, 136, 0.1);
             transform: translateZ(30px);
         }
         
-        /* Writing Effect Cursor */
         .cursor {
             display: inline-block;
             width: 4px;
@@ -484,7 +583,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { opacity: 0; }
         }
         
-        /* Gradient Text for Title */
         .title-text {
             background: linear-gradient(135deg, #00ff88 0%, #00ff88 30%, #44ffaa 50%, #4488ff 70%, #00ff88 100%);
             background-size: 300% 300%;
@@ -502,7 +600,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             100% { background-position: 0% 50%; }
         }
         
-        /* 3D Shadow Layer */
         .title-3d::before {
             content: 'RIDOL FB TOOL';
             position: absolute;
@@ -514,7 +611,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             -webkit-text-fill-color: rgba(0, 255, 136, 0.1);
         }
         
-        /* Subtitle with writing effect */
         .subtitle-3d {
             font-size: 12px;
             letter-spacing: 8px;
@@ -554,7 +650,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
             50% { box-shadow: 0 0 40px rgba(0, 255, 136, 0.2); }
         }
         
-        /* Form */
         .form-group {
             margin-bottom: 22px;
             position: relative;
@@ -734,13 +829,11 @@ LOGIN_HTML = '''<!DOCTYPE html>
         <div class="title-section">
             <span class="icon">🔐</span>
             
-            <!-- 3D BIG TITLE WITH WRITING EFFECT -->
             <div class="title-3d">
                 <span class="title-text" id="titleText"></span>
                 <span class="cursor" id="cursor"></span>
             </div>
             
-            <!-- Subtitle with writing effect -->
             <div class="subtitle-3d">
                 <span id="subText"></span>
                 <span class="sub-cursor" id="subCursor"></span>
@@ -774,7 +867,6 @@ LOGIN_HTML = '''<!DOCTYPE html>
     </div>
     
     <script>
-        // ===== WRITING EFFECT =====
         const titleText = "RIDOL FB TOOL";
         const subText = "ADMIN AUTHENTICATION";
         
@@ -789,9 +881,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
                 setTimeout(typeTitle, 80 + Math.random() * 40);
             } else {
                 isTitleComplete = true;
-                // Remove cursor after title complete
                 document.getElementById('cursor').style.display = 'none';
-                // Start subtitle after a delay
                 setTimeout(typeSubtitle, 300);
             }
         }
@@ -802,20 +892,16 @@ LOGIN_HTML = '''<!DOCTYPE html>
                 subIndex++;
                 setTimeout(typeSubtitle, 50 + Math.random() * 30);
             } else {
-                // Remove subtitle cursor
                 document.getElementById('subCursor').style.display = 'none';
             }
         }
         
-        // Start typing on page load
         window.onload = function() {
-            // Clear any existing text
             document.getElementById('titleText').textContent = '';
             document.getElementById('subText').textContent = '';
             setTimeout(typeTitle, 500);
         };
         
-        // ===== PARTICLES =====
         (function createParticles() {
             const container = document.getElementById('particles');
             for (let i = 0; i < 50; i++) {
@@ -835,7 +921,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
 </html>'''
 
 # ============================================================
-# ============ ADMIN HTML WITH 3D UI ============
+# ============ ADMIN HTML ============
 # ============================================================
 
 ADMIN_HTML = '''<!DOCTYPE html>
@@ -863,7 +949,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             margin: 0 auto;
         }
         
-        /* 3D Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -963,7 +1048,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             box-shadow: 0 10px 30px rgba(255, 68, 68, 0.1);
         }
         
-        /* 3D Cards */
         .card {
             background: rgba(17, 17, 34, 0.85);
             backdrop-filter: blur(20px);
@@ -995,7 +1079,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         .card h2 .icon { font-size: 20px; }
         
-        /* Stats */
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1030,7 +1113,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             text-transform: uppercase;
         }
         
-        /* Form */
         .flex { display: flex; gap: 15px; flex-wrap: wrap; }
         .flex-grow { flex: 1; min-width: 180px; }
         
@@ -1064,7 +1146,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             transform: translateZ(10px);
         }
         
-        /* Buttons */
         .btn {
             padding: 14px 28px;
             border: none;
@@ -1097,7 +1178,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         .btn-sm { padding: 8px 14px; font-size: 9px; }
         
-        /* Messages */
         .msg {
             padding: 16px 22px;
             border-radius: 14px;
@@ -1112,7 +1192,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .msg-error { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
         .msg-info { background: rgba(68, 136, 255, 0.08); color: #4488ff; border: 1px solid rgba(68, 136, 255, 0.15); }
         
-        /* New Key Box */
         .new-key-box {
             margin-top: 18px;
             padding: 24px;
@@ -1136,7 +1215,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             letter-spacing: 2px;
         }
         
-        /* Table */
         .table-wrapper { overflow-x: auto; margin-top: 10px; }
         table { width: 100%; border-collapse: collapse; }
         th, td {
@@ -1171,7 +1249,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .badge-expired { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
         .badge-banned { background: rgba(255, 136, 0, 0.08); color: #ff8800; border: 1px solid rgba(255, 136, 0, 0.15); }
         
-        /* Search */
         .search-box {
             display: flex;
             gap: 12px;
@@ -1196,7 +1273,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             transform: translateZ(10px);
         }
         
-        /* Upload Area */
         .upload-area {
             border: 2px dashed rgba(0, 255, 136, 0.08);
             border-radius: 14px;
@@ -1375,7 +1451,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <div class="footer">✦ RIDOL FB TOOL v4.0 • LICENSE SERVER ✦</div>
+        <div class="footer">✦ RIDOL FB TOOL v4.0 • Supabase ✦</div>
     </div>
     
     <script>
@@ -1422,7 +1498,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
         async function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
             const file = files[0];
-            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['mp3', 'wav', 'ogg'].includes(ext)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
             if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
             const formData = new FormData();
