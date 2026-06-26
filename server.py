@@ -5,13 +5,12 @@ Author: Ridol Islam
 License: MIT
 """
 
-from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
+from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for
 from flask_cors import CORS
 import os
 import sys
 import json
 import uuid
-import requests
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
@@ -38,6 +37,7 @@ except ImportError:
     MONGO_AVAILABLE = False
     print("[-] pymongo not installed")
 
+# MongoDB variables - initialize as None
 db = None
 users_collection = None
 devices_collection = None
@@ -53,35 +53,50 @@ if MONGO_AVAILABLE:
     except Exception as e:
         print(f"[-] MongoDB Connection Error: {e}")
         db = None
+        users_collection = None
+        devices_collection = None
 
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    if users_collection:
+    """Get user by license key"""
+    if users_collection is not None:
         try:
             return users_collection.find_one({'license_key': license_key}, {'_id': 0})
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Get user error: {e}")
     return None
 
 def get_users():
-    if users_collection:
+    """Get all users"""
+    if users_collection is not None:
         try:
             return list(users_collection.find({}, {'_id': 0}))
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Get users error: {e}")
     return []
 
 def get_devices():
-    if devices_collection:
+    """Get all devices"""
+    if devices_collection is not None:
         try:
             return list(devices_collection.find({}, {'_id': 0}))
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Get devices error: {e}")
     return []
 
+def get_device(device_serial):
+    """Get device by serial"""
+    if devices_collection is not None:
+        try:
+            return devices_collection.find_one({'device_serial': device_serial}, {'_id': 0})
+        except Exception as e:
+            logger.error(f"Get device error: {e}")
+    return None
+
 def save_user(user_data):
-    if users_collection:
+    """Save user to MongoDB"""
+    if users_collection is not None:
         try:
             if 'created_at' not in user_data:
                 user_data['created_at'] = datetime.now().isoformat()
@@ -91,12 +106,13 @@ def save_user(user_data):
                 upsert=True
             )
             return True
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Save user error: {e}")
     return False
 
 def save_device(device_data):
-    if devices_collection:
+    """Save device to MongoDB"""
+    if devices_collection is not None:
         try:
             if 'created_at' not in device_data:
                 device_data['created_at'] = datetime.now().isoformat()
@@ -106,18 +122,23 @@ def save_device(device_data):
                 upsert=True
             )
             return True
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Save device error: {e}")
     return False
 
 def delete_user(license_key):
-    if users_collection:
+    """Delete user from MongoDB"""
+    if users_collection is not None:
         try:
             users_collection.delete_one({'license_key': license_key})
             return True
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Delete user error: {e}")
     return False
+
+def get_db_status():
+    """Check if database is connected"""
+    return users_collection is not None and devices_collection is not None
 
 # ==================== LICENSE FUNCTIONS ====================
 
@@ -166,11 +187,13 @@ def home():
     try:
         users = get_users()
         devices = get_devices()
+        db_connected = get_db_status()
+        
         return jsonify({
             'server': 'Ridol FB Tool License Server',
             'version': '4.0',
             'status': 'online',
-            'database': 'MongoDB' if db else 'Not Connected',
+            'database': 'MongoDB' if db_connected else 'Not Connected',
             'users': len(users),
             'devices': len(devices),
             'timestamp': datetime.now().isoformat()
@@ -185,7 +208,7 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': '4.0',
-        'database': 'MongoDB' if db else 'Not Connected'
+        'database': 'MongoDB' if get_db_status() else 'Not Connected'
     })
 
 @app.route('/api/v1/status')
@@ -193,11 +216,13 @@ def api_status():
     try:
         users = get_users()
         devices = get_devices()
+        db_connected = get_db_status()
+        
         return jsonify({
             'status': 'online',
             'version': '4.0',
             'timestamp': datetime.now().isoformat(),
-            'database': 'MongoDB' if db else 'Not Connected',
+            'database': 'MongoDB' if db_connected else 'Not Connected',
             'license_count': len(users),
             'device_count': len(devices)
         })
