@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Supabase Integration (No exec_sql)
+Ridol FB Tool License Server v4.0 - Supabase Integration (FIXED)
 Author: Ridol Islam
 License: MIT
 """
@@ -15,6 +15,11 @@ from functools import wraps
 import io
 import requests
 import traceback
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
@@ -45,7 +50,9 @@ def supabase_request(endpoint, method='GET', data=None):
     }
     
     try:
-        print(f"[*] Supabase: {method} {endpoint}")
+        logger.debug(f"[*] Supabase: {method} {endpoint}")
+        if data:
+            logger.debug(f"[*] Data: {json.dumps(data)[:200]}")
         
         if method == 'GET':
             response = requests.get(url, headers=headers, timeout=15)
@@ -58,78 +65,57 @@ def supabase_request(endpoint, method='GET', data=None):
         else:
             return None
         
+        logger.debug(f"[+] Response Status: {response.status_code}")
+        
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
         else:
-            print(f"[-] Supabase Error ({response.status_code}): {response.text[:200]}")
+            logger.error(f"[-] Supabase Error ({response.status_code}): {response.text[:500]}")
             return None
             
     except Exception as e:
-        print(f"[-] Supabase Request Error: {e}")
+        logger.error(f"[-] Supabase Request Error: {e}")
         return None
-
-def supabase_check_connection():
-    """Check if Supabase is accessible"""
-    try:
-        # Try to query users table
-        result = supabase_request("users?limit=1", 'GET')
-        if result is not None:
-            print("[+] Supabase Connected!")
-            return True
-        else:
-            print("[-] Supabase connection failed!")
-            return False
-    except Exception as e:
-        print(f"[-] Connection error: {e}")
-        return False
 
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    """Get user by license key"""
     result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
     if result and len(result) > 0:
         return result[0]
     return None
 
 def get_users():
-    """Get all users"""
     result = supabase_request("users?select=*", 'GET')
     return result if result else []
 
 def get_devices():
-    """Get all devices"""
     result = supabase_request("devices?select=*", 'GET')
     return result if result else []
 
 def get_device(device_serial):
-    """Get device by serial"""
     result = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
     if result and len(result) > 0:
         return result[0]
     return None
 
 def save_user(user_data):
-    """Save or update user"""
     if 'created_at' not in user_data:
         user_data['created_at'] = datetime.now().isoformat()
     
     existing = get_user(user_data['license_key'])
     if existing:
-        # Update existing
         result = supabase_request(
             f"users?license_key=eq.{user_data['license_key']}",
             'PATCH',
             user_data
         )
     else:
-        # Insert new
         result = supabase_request("users", 'POST', user_data)
     
     return result is not None
 
 def save_device(device_data):
-    """Save or update device"""
     if 'created_at' not in device_data:
         device_data['created_at'] = datetime.now().isoformat()
     
@@ -146,7 +132,6 @@ def save_device(device_data):
     return result is not None
 
 def delete_user(license_key):
-    """Delete user"""
     result = supabase_request(f"users?license_key=eq.{license_key}", 'DELETE')
     return result is not None
 
@@ -154,28 +139,44 @@ def delete_user(license_key):
 
 def save_sound_file(file_data, filename):
     """Save sound file to disk and metadata to Supabase"""
-    filepath = os.path.join(SOUNDS_DIR, filename)
-    with open(filepath, 'wb') as f:
-        f.write(file_data)
-    
-    # Save metadata to Supabase
-    sound_data = {
-        'filename': filename,
-        'size': len(file_data),
-        'uploaded_at': datetime.now().isoformat(),
-        'content_type': 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
-    }
-    
-    existing = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
-    if existing and len(existing) > 0:
-        supabase_request(f"sounds?filename=eq.{filename}", 'PATCH', sound_data)
-    else:
-        supabase_request("sounds", 'POST', sound_data)
-    
-    return filename
+    try:
+        logger.info(f"[+] Saving sound: {filename} ({len(file_data)} bytes)")
+        
+        # Save to disk
+        filepath = os.path.join(SOUNDS_DIR, filename)
+        with open(filepath, 'wb') as f:
+            f.write(file_data)
+        logger.info(f"[+] File saved to disk: {filepath}")
+        
+        # Save metadata to Supabase
+        sound_data = {
+            'filename': filename,
+            'size': len(file_data),
+            'uploaded_at': datetime.now().isoformat(),
+            'content_type': 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+        }
+        
+        # Check if exists
+        existing = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
+        if existing and len(existing) > 0:
+            logger.info(f"[+] Updating existing sound metadata")
+            result = supabase_request(f"sounds?filename=eq.{filename}", 'PATCH', sound_data)
+        else:
+            logger.info(f"[+] Creating new sound metadata")
+            result = supabase_request("sounds", 'POST', sound_data)
+        
+        if result is not None:
+            logger.info(f"[+] Sound metadata saved successfully")
+            return filename
+        else:
+            logger.error(f"[-] Failed to save metadata to Supabase")
+            return None
+            
+    except Exception as e:
+        logger.error(f"[-] Save sound error: {e}")
+        return None
 
 def get_sound_file(filename):
-    """Get sound file from disk"""
     filepath = os.path.join(SOUNDS_DIR, filename)
     if os.path.exists(filepath):
         with open(filepath, 'rb') as f:
@@ -183,7 +184,6 @@ def get_sound_file(filename):
     return None
 
 def delete_sound_file(filename):
-    """Delete sound file from disk and metadata"""
     filepath = os.path.join(SOUNDS_DIR, filename)
     if os.path.exists(filepath):
         os.remove(filepath)
@@ -192,7 +192,6 @@ def delete_sound_file(filename):
     return False
 
 def get_all_sound_files():
-    """Get all sound files"""
     sounds = []
     
     # Get from Supabase
@@ -208,7 +207,7 @@ def get_all_sound_files():
                     'uploaded_at': row['uploaded_at']
                 })
     
-    # Scan disk for files not in database
+    # Scan disk
     if os.path.exists(SOUNDS_DIR):
         for f in os.listdir(SOUNDS_DIR):
             if f.endswith(('.mp3', '.wav', '.ogg')):
@@ -229,7 +228,6 @@ def generate_license_key():
     return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
 def validate_license(key, device_serial):
-    """Validate license key"""
     user = get_user(key)
     if not user:
         return {'valid': False, 'message': 'Invalid license key'}
@@ -288,7 +286,7 @@ def home():
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
-        print(f"[-] Home error: {e}")
+        logger.error(f"[-] Home error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/ping')
@@ -368,31 +366,49 @@ def api_download_sound_default():
 @login_required
 def api_upload_sound():
     try:
+        logger.info("[+] Upload request received")
+        
         if 'file' not in request.files:
+            logger.error("[-] No file in request")
             return jsonify({'success': False, 'message': 'No file uploaded'})
         
         file = request.files['file']
         if file.filename == '':
+            logger.error("[-] Empty filename")
             return jsonify({'success': False, 'message': 'No file selected'})
+        
+        logger.info(f"[+] Filename: {file.filename}")
+        logger.info(f"[+] Content Type: {file.content_type}")
         
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ['.mp3', '.wav', '.ogg']:
+            logger.error(f"[-] Invalid extension: {ext}")
             return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
         
         filename = f'background{ext}'
         file_data = file.read()
+        logger.info(f"[+] File size: {len(file_data)} bytes")
         
-        save_sound_file(file_data, filename)
+        # Save file
+        result = save_sound_file(file_data, filename)
         
-        return jsonify({
-            'success': True,
-            'message': 'Sound uploaded successfully!',
-            'filename': filename,
-            'original_name': file.filename,
-            'size': len(file_data),
-            'download_url': f'/api/v1/sound/download/{filename}'
-        })
+        if result:
+            logger.info("[+] Upload successful!")
+            return jsonify({
+                'success': True,
+                'message': 'Sound uploaded successfully!',
+                'filename': filename,
+                'original_name': file.filename,
+                'size': len(file_data),
+                'download_url': f'/api/v1/sound/download/{filename}'
+            })
+        else:
+            logger.error("[-] Upload failed - save_sound_file returned None")
+            return jsonify({'success': False, 'message': 'Failed to save file'})
+            
     except Exception as e:
+        logger.error(f"[-] Upload error: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
