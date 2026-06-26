@@ -22,7 +22,16 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS configuration - Allow all origins for testing
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"]
+    }
+})
+
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
@@ -362,11 +371,16 @@ def api_download_sound_default():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/v1/sound/upload', methods=['POST'])
+@app.route('/api/v1/sound/upload', methods=['POST', 'OPTIONS'])
 @login_required
 def api_upload_sound():
     try:
+        # Handle preflight request
+        if request.method == 'OPTIONS':
+            return '', 200
+        
         logger.info("[+] Upload request received")
+        logger.info(f"[+] Headers: {dict(request.headers)}")
         
         if 'file' not in request.files:
             logger.error("[-] No file in request")
@@ -647,7 +661,7 @@ LOGIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login - Supabase</title>
+    <title>Admin Login</title>
     <style>
         body { background: #0a0a1a; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
         .container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
@@ -695,7 +709,7 @@ ADMIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel - Supabase</title>
+    <title>Admin Panel</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
