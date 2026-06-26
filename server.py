@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 import io
 import requests
+import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -26,142 +27,226 @@ ADMIN_PASSWORD = 'Ridol123@'
 # ==================== SUPABASE CONFIGURATION ====================
 SUPABASE_URL = "https://lfnduxngftyozdmohmxp.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"
-SUPABASE_SERVICE_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"  # Service key (same as anon for now)
+SUPABASE_SERVICE_KEY = SUPABASE_ANON_KEY  # Service key (same as anon for now)
 
 SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
 os.makedirs(SOUNDS_DIR, exist_ok=True)
 
 # ==================== SUPABASE API FUNCTIONS ====================
 
-def supabase_request(endpoint, method='GET', data=None):
-    """Make request to Supabase API"""
+def supabase_request(endpoint, method='GET', data=None, use_service=False):
+    """Make request to Supabase API with error handling"""
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
+    
+    # Use service key for admin operations
+    key = SUPABASE_SERVICE_KEY if use_service else SUPABASE_ANON_KEY
+    
     headers = {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': f'Bearer {SUPABASE_ANON_KEY}',
+        'apikey': key,
+        'Authorization': f'Bearer {key}',
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
     }
     
     try:
+        print(f"[*] Supabase Request: {method} {endpoint}")
+        
         if method == 'GET':
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=15)
         elif method == 'POST':
-            response = requests.post(url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, json=data, timeout=15)
         elif method == 'PATCH':
-            response = requests.patch(url, headers=headers, json=data)
+            response = requests.patch(url, headers=headers, json=data, timeout=15)
         elif method == 'DELETE':
-            response = requests.delete(url, headers=headers)
+            response = requests.delete(url, headers=headers, timeout=15)
         else:
             return None
+        
+        print(f"[+] Response Status: {response.status_code}")
         
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
         else:
-            print(f"[-] Supabase Error: {response.status_code} - {response.text}")
+            error_msg = response.text[:200] if response.text else "Unknown error"
+            print(f"[-] Supabase Error ({response.status_code}): {error_msg}")
             return None
+            
+    except requests.exceptions.ConnectionError:
+        print("[-] Connection Error: Cannot reach Supabase")
+        return None
+    except requests.exceptions.Timeout:
+        print("[-] Timeout Error: Request took too long")
+        return None
     except Exception as e:
-        print(f"[-] Supabase Request Error: {e}")
+        print(f"[-] Request Error: {e}")
         return None
 
-def init_supabase_tables():
-    """Create tables if they don't exist"""
-    
-    # Create users table
-    create_users = """
-    CREATE TABLE IF NOT EXISTS users (
-        license_key TEXT PRIMARY KEY,
-        created_at TEXT,
-        expires_at TEXT,
-        banned BOOLEAN DEFAULT FALSE,
-        notes TEXT,
-        device TEXT
-    )
-    """
-    
-    # Create devices table
-    create_devices = """
-    CREATE TABLE IF NOT EXISTS devices (
-        device_serial TEXT PRIMARY KEY,
-        license_key TEXT,
-        last_seen TEXT,
-        created_at TEXT
-    )
-    """
-    
-    # Create sounds table
-    create_sounds = """
-    CREATE TABLE IF NOT EXISTS sounds (
-        id SERIAL PRIMARY KEY,
-        filename TEXT UNIQUE,
-        size INTEGER,
-        uploaded_at TEXT,
-        content_type TEXT
-    )
-    """
-    
+def supabase_test_connection():
+    """Test Supabase connection"""
     try:
-        # Try to create tables using Supabase SQL API
-        sql = f"{create_users} {create_devices} {create_sounds}"
-        response = supabase_request('rpc/exec_sql', 'POST', {'sql': sql})
-        if response:
-            print("[+] Supabase tables initialized!")
+        # Simple test query
+        result = supabase_request("users?limit=1&select=*", 'GET')
+        if result is not None:
+            print("[+] Supabase Connection Successful!")
+            return True
         else:
-            print("[!] Could not initialize tables. They may already exist.")
-    except:
-        print("[!] Tables may already exist. Continuing...")
+            print("[-] Supabase Connection Failed!")
+            return False
+    except Exception as e:
+        print(f"[-] Supabase Connection Error: {e}")
+        return False
 
-# Initialize tables
-init_supabase_tables()
+def supabase_verify_license(license_key, device_serial):
+    """Verify license using Supabase"""
+    try:
+        # First try to get user
+        result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
+        
+        if not result or len(result) == 0:
+            return {'valid': False, 'message': 'Invalid license key'}
+        
+        user = result[0]
+        
+        if user.get('banned', False):
+            return {'valid': False, 'message': 'License is banned'}
+        
+        expires_str = user.get('expires_at', '')
+        if expires_str:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_str):
+                    return {'valid': False, 'message': 'License has expired'}
+            except:
+                pass
+        
+        # Register device if provided
+        if device_serial:
+            device_data = {
+                'device_serial': device_serial,
+                'license_key': license_key,
+                'last_seen': datetime.now().isoformat()
+            }
+            # Check if device exists
+            existing = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
+            if existing and len(existing) > 0:
+                supabase_request(
+                    f"devices?device_serial=eq.{device_serial}",
+                    'PATCH',
+                    device_data
+                )
+            else:
+                device_data['created_at'] = datetime.now().isoformat()
+                supabase_request("devices", 'POST', device_data)
+        
+        return {
+            'valid': True,
+            'message': 'License active',
+            'expires_at': user.get('expires_at', 'Never'),
+            'device': device_serial
+        }
+    except Exception as e:
+        print(f"[-] License verification error: {e}")
+        return {'valid': False, 'message': f'Error: {str(e)}'}
+
+def supabase_check_sound_status():
+    """Check if sound exists in Supabase"""
+    try:
+        result = supabase_request("sounds?select=*", 'GET')
+        if result and len(result) > 0:
+            return {'exists': True, 'files': result}
+        return {'exists': False, 'files': []}
+    except Exception as e:
+        print(f"[-] Sound status error: {e}")
+        return {'exists': False, 'files': []}
+
+def supabase_download_sound():
+    """Download sound from server"""
+    try:
+        response = requests.get(f"{SUPABASE_URL}/api/v1/sound/status", timeout=10)
+        if response.status_code != 200:
+            return None
+        
+        data = response.json()
+        if not data.get('exists'):
+            return None
+        
+        sounds = data.get('sounds', [])
+        if not sounds:
+            return None
+        
+        filename = None
+        for s in sounds:
+            if s['name'].endswith('.mp3'):
+                filename = s['name']
+                break
+        if not filename:
+            filename = sounds[0]['name']
+        
+        download_url = f"{SUPABASE_URL}/api/v1/sound/download/{filename}"
+        response = requests.get(download_url, stream=True, timeout=30)
+        
+        if response.status_code != 200:
+            return None
+        
+        filepath = os.path.join(SOUNDS_DIR, filename)
+        total_size = int(response.headers.get('content-length', 0))
+        
+        with open(filepath, 'wb') as f:
+            if total_size == 0:
+                f.write(response.content)
+            else:
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    progress = int((downloaded / total_size) * 100)
+                    print(f'\r[*] Downloading: {progress}%', end='', flush=True)
+        
+        print(f'\n[+] Sound downloaded: {filename}')
+        return filepath
+        
+    except Exception as e:
+        print(f"[-] Download error: {e}")
+        return None
 
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    """Get user by license key"""
     result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
     if result and len(result) > 0:
         return result[0]
     return None
 
 def get_users():
-    """Get all users"""
     result = supabase_request("users?select=*", 'GET')
     return result if result else []
 
 def get_devices():
-    """Get all devices"""
     result = supabase_request("devices?select=*", 'GET')
     return result if result else []
 
 def get_device(device_serial):
-    """Get device by serial"""
     result = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
     if result and len(result) > 0:
         return result[0]
     return None
 
 def save_user(user_data):
-    """Save user to Supabase"""
     if 'created_at' not in user_data:
         user_data['created_at'] = datetime.now().isoformat()
     
-    # Check if exists
     existing = get_user(user_data['license_key'])
     if existing:
-        # Update
         result = supabase_request(
             f"users?license_key=eq.{user_data['license_key']}",
             'PATCH',
             user_data
         )
     else:
-        # Insert
         result = supabase_request("users", 'POST', user_data)
     
     return result is not None
 
 def save_device(device_data):
-    """Save device to Supabase"""
     if 'created_at' not in device_data:
         device_data['created_at'] = datetime.now().isoformat()
     
@@ -178,17 +263,14 @@ def save_device(device_data):
     return result is not None
 
 def delete_user(license_key):
-    """Delete user from Supabase"""
     result = supabase_request(f"users?license_key=eq.{license_key}", 'DELETE')
     return result is not None
 
 def save_sound_file(file_data, filename):
-    """Save sound file to disk and metadata to Supabase"""
     filepath = os.path.join(SOUNDS_DIR, filename)
     with open(filepath, 'wb') as f:
         f.write(file_data)
     
-    # Save metadata to Supabase
     sound_data = {
         'filename': filename,
         'size': len(file_data),
@@ -196,7 +278,6 @@ def save_sound_file(file_data, filename):
         'content_type': 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
     }
     
-    # Check if exists
     existing = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
     if existing and len(existing) > 0:
         supabase_request(f"sounds?filename=eq.{filename}", 'PATCH', sound_data)
@@ -206,7 +287,6 @@ def save_sound_file(file_data, filename):
     return filename
 
 def get_sound_file(filename):
-    """Get sound file from disk"""
     filepath = os.path.join(SOUNDS_DIR, filename)
     if os.path.exists(filepath):
         with open(filepath, 'rb') as f:
@@ -214,7 +294,6 @@ def get_sound_file(filename):
     return None
 
 def delete_sound_file(filename):
-    """Delete sound file from disk and metadata"""
     filepath = os.path.join(SOUNDS_DIR, filename)
     if os.path.exists(filepath):
         os.remove(filepath)
@@ -223,10 +302,8 @@ def delete_sound_file(filename):
     return False
 
 def get_all_sound_files():
-    """Get all sound files"""
     sounds = []
     
-    # Get from Supabase
     result = supabase_request("sounds?select=*", 'GET')
     if result:
         for row in result:
@@ -239,7 +316,6 @@ def get_all_sound_files():
                     'uploaded_at': row['uploaded_at']
                 })
     
-    # Also scan disk for files not in database
     if os.path.exists(SOUNDS_DIR):
         for f in os.listdir(SOUNDS_DIR):
             if f.endswith(('.mp3', '.wav', '.ogg')):
@@ -260,35 +336,7 @@ def generate_license_key():
     return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
 def validate_license(key, device_serial):
-    user = get_user(key)
-    if not user:
-        return {'valid': False, 'message': 'Invalid license key'}
-    
-    if user.get('banned', False):
-        return {'valid': False, 'message': 'License is banned'}
-    
-    expires_str = user.get('expires_at', '')
-    if expires_str:
-        try:
-            if datetime.now() > datetime.fromisoformat(expires_str):
-                return {'valid': False, 'message': 'License has expired'}
-        except:
-            pass
-    
-    if device_serial:
-        device_data = {
-            'device_serial': device_serial,
-            'license_key': key,
-            'last_seen': datetime.now().isoformat()
-        }
-        save_device(device_data)
-    
-    return {
-        'valid': True,
-        'message': 'License active',
-        'expires_at': user.get('expires_at', 'Never'),
-        'device': device_serial
-    }
+    return supabase_verify_license(key, device_serial)
 
 def login_required(f):
     @wraps(f)
@@ -302,20 +350,24 @@ def login_required(f):
 
 @app.route('/')
 def home():
-    users = get_users()
-    devices = get_devices()
-    sound_files = get_all_sound_files()
-    
-    return jsonify({
-        'server': 'Ridol FB Tool License Server',
-        'version': '4.0',
-        'status': 'online',
-        'database': 'Supabase (PostgreSQL)',
-        'users': len(users),
-        'devices': len(devices),
-        'sounds': len(sound_files),
-        'timestamp': datetime.now().isoformat()
-    })
+    try:
+        users = get_users() if supabase_test_connection() else []
+        devices = get_devices() if supabase_test_connection() else []
+        sound_files = get_all_sound_files()
+        
+        return jsonify({
+            'server': 'Ridol FB Tool License Server',
+            'version': '4.0',
+            'status': 'online',
+            'database': 'Supabase (PostgreSQL)',
+            'users': len(users),
+            'devices': len(devices),
+            'sounds': len(sound_files),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        print(f"[-] Home error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/ping')
 def ping():
@@ -328,29 +380,35 @@ def ping():
 
 @app.route('/api/v1/status')
 def api_status():
-    users = get_users()
-    devices = get_devices()
-    sound_files = get_all_sound_files()
-    
-    return jsonify({
-        'status': 'online',
-        'version': '4.0',
-        'timestamp': datetime.now().isoformat(),
-        'database': 'Supabase (PostgreSQL)',
-        'license_count': len(users),
-        'device_count': len(devices),
-        'sound_files': [f['name'] for f in sound_files],
-        'sound_exists': len(sound_files) > 0
-    })
+    try:
+        users = get_users() if supabase_test_connection() else []
+        devices = get_devices() if supabase_test_connection() else []
+        sound_files = get_all_sound_files()
+        
+        return jsonify({
+            'status': 'online',
+            'version': '4.0',
+            'timestamp': datetime.now().isoformat(),
+            'database': 'Supabase (PostgreSQL)',
+            'license_count': len(users),
+            'device_count': len(devices),
+            'sound_files': [f['name'] for f in sound_files],
+            'sound_exists': len(sound_files) > 0
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/sound/status')
 def api_sound_status():
-    sound_files = get_all_sound_files()
-    return jsonify({
-        'exists': len(sound_files) > 0,
-        'sounds': sound_files,
-        'count': len(sound_files)
-    })
+    try:
+        sound_files = get_all_sound_files()
+        return jsonify({
+            'exists': len(sound_files) > 0,
+            'sounds': sound_files,
+            'count': len(sound_files)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/sound/download/<filename>')
 def api_download_sound(filename):
@@ -431,53 +489,65 @@ def api_delete_sound():
 
 @app.route('/api/v1/license/verify', methods=['POST'])
 def api_verify_license():
-    data = request.json
-    return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
+    try:
+        data = request.json
+        return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
+    except Exception as e:
+        return jsonify({'valid': False, 'message': str(e)})
 
 @app.route('/api/v1/license/status/<license_key>')
 def api_license_status(license_key):
-    user = get_user(license_key)
-    if not user:
-        return jsonify({'exists': False, 'message': 'License not found'})
-    
-    return jsonify({
-        'exists': True,
-        'valid': not user.get('banned', False),
-        'expires_at': user.get('expires_at', 'Never'),
-        'device': user.get('device', ''),
-        'notes': user.get('notes', ''),
-        'created_at': user.get('created_at', '')
-    })
+    try:
+        user = get_user(license_key)
+        if not user:
+            return jsonify({'exists': False, 'message': 'License not found'})
+        
+        return jsonify({
+            'exists': True,
+            'valid': not user.get('banned', False),
+            'expires_at': user.get('expires_at', 'Never'),
+            'device': user.get('device', ''),
+            'notes': user.get('notes', ''),
+            'created_at': user.get('created_at', '')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/device/register', methods=['POST'])
 def api_register_device():
-    data = request.json
-    device_serial = data.get('device_serial', '')
-    license_key = data.get('license_key', '')
-    
-    if not device_serial:
-        return jsonify({'success': False, 'message': 'No device serial'})
-    
-    device_data = {
-        'device_serial': device_serial,
-        'license_key': license_key,
-        'last_seen': datetime.now().isoformat()
-    }
-    save_device(device_data)
-    return jsonify({'success': True, 'device_serial': device_serial})
+    try:
+        data = request.json
+        device_serial = data.get('device_serial', '')
+        license_key = data.get('license_key', '')
+        
+        if not device_serial:
+            return jsonify({'success': False, 'message': 'No device serial'})
+        
+        device_data = {
+            'device_serial': device_serial,
+            'license_key': license_key,
+            'last_seen': datetime.now().isoformat()
+        }
+        save_device(device_data)
+        return jsonify({'success': True, 'device_serial': device_serial})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/v1/device/status/<device_serial>')
 def api_device_status(device_serial):
-    device = get_device(device_serial)
-    if not device:
-        return jsonify({'exists': False, 'message': 'Device not found'})
-    
-    return jsonify({
-        'exists': True,
-        'license_key': device.get('license_key', ''),
-        'last_seen': device.get('last_seen', ''),
-        'created_at': device.get('created_at', '')
-    })
+    try:
+        device = get_device(device_serial)
+        if not device:
+            return jsonify({'exists': False, 'message': 'Device not found'})
+        
+        return jsonify({
+            'exists': True,
+            'license_key': device.get('license_key', ''),
+            'last_seen': device.get('last_seen', ''),
+            'created_at': device.get('created_at', '')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ==================== ADMIN ROUTES ====================
 
@@ -505,38 +575,41 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = get_users()
-    devices = get_devices()
-    
-    now = datetime.now()
-    total = len(users)
-    active = 0
-    expired = 0
-    banned = 0
-    
-    for user in users:
-        if user.get('banned', False):
-            banned += 1
-        elif user.get('expires_at', ''):
-            try:
-                if now > datetime.fromisoformat(user['expires_at']):
-                    expired += 1
-                else:
+    try:
+        users = get_users() if supabase_test_connection() else []
+        devices = get_devices() if supabase_test_connection() else []
+        
+        now = datetime.now()
+        total = len(users)
+        active = 0
+        expired = 0
+        banned = 0
+        
+        for user in users:
+            if user.get('banned', False):
+                banned += 1
+            elif user.get('expires_at', ''):
+                try:
+                    if now > datetime.fromisoformat(user['expires_at']):
+                        expired += 1
+                    else:
+                        active += 1
+                except:
                     active += 1
-            except:
+            else:
                 active += 1
-        else:
-            active += 1
-    
-    return jsonify({
-        'users': {u['license_key']: u for u in users},
-        'devices': {d['device_serial']: d for d in devices},
-        'total': total,
-        'active': active,
-        'expired': expired,
-        'banned': banned,
-        'device_count': len(devices)
-    })
+        
+        return jsonify({
+            'users': {u['license_key']: u for u in users},
+            'devices': {d['device_serial']: d for d in devices},
+            'total': total,
+            'active': active,
+            'expired': expired,
+            'banned': banned,
+            'device_count': len(devices)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/admin/create', methods=['POST'])
 @login_required
