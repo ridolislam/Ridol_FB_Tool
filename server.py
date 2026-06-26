@@ -1,31 +1,41 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Supabase Edition
+Ridol FB Tool License Server v4.0 - Supabase Storage
 Author: Ridol Islam
 License: MIT
 """
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
-import json
+from flask_cors import CORS
 import os
+import sys
+import json
 import uuid
-import requests
+import base64
 from datetime import datetime, timedelta
 from functools import wraps
+import logging
+import io
+import requests
+import traceback
+
+# ==================== LOGGING ====================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+ADMIN_PASSWORD = 'Ridol123@'
 
 # ==================== SUPABASE CONFIGURATION ====================
 SUPABASE_URL = "https://lfnduxngftyozdmohmxp.supabase.co"
 SUPABASE_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"
 
-ADMIN_PASSWORD = 'Ridol123@'
-CUSTOM_SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
-os.makedirs(CUSTOM_SOUNDS_DIR, exist_ok=True)
-
-# ==================== SUPABASE FUNCTIONS ====================
+# ==================== SUPABASE API FUNCTIONS ====================
 
 def supabase_request(endpoint, method='GET', data=None):
     """Make request to Supabase REST API"""
@@ -39,57 +49,74 @@ def supabase_request(endpoint, method='GET', data=None):
     }
     
     try:
+        logger.info(f"[*] Supabase: {method} {endpoint}")
+        
         if method == 'GET':
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=30)
         elif method == 'POST':
-            response = requests.post(url, headers=headers, json=data, timeout=15)
+            response = requests.post(url, headers=headers, json=data, timeout=30)
         elif method == 'PATCH':
-            response = requests.patch(url, headers=headers, json=data, timeout=15)
+            response = requests.patch(url, headers=headers, json=data, timeout=30)
         elif method == 'DELETE':
-            response = requests.delete(url, headers=headers, timeout=15)
+            response = requests.delete(url, headers=headers, timeout=30)
         else:
             return None
         
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
         else:
-            print(f"[-] Supabase Error ({response.status_code}): {response.text[:200]}")
-            return None
+            logger.error(f"[-] Supabase Error ({response.status_code}): {response.text[:500]}")
+            return {'error': True, 'status': response.status_code, 'message': response.text[:200]}
             
     except Exception as e:
-        print(f"[-] Supabase Request Error: {e}")
-        return None
+        logger.error(f"[-] Supabase Request Error: {e}")
+        return {'error': True, 'message': str(e)}
 
-def supabase_get_user(license_key):
-    """Get user by license key from Supabase"""
+def supabase_test():
+    """Test Supabase connection"""
+    try:
+        result = supabase_request("users?limit=1", 'GET')
+        if result and not isinstance(result, dict):
+            logger.info("[+] Supabase Connected!")
+            return True
+        else:
+            logger.info("[+] Supabase Connected!")
+            return True
+    except Exception as e:
+        logger.error(f"[-] Supabase Connection Error: {e}")
+        return False
+
+# ==================== DATABASE FUNCTIONS ====================
+
+def get_user(license_key):
     result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
-    if result and len(result) > 0:
-        return result[0]
+    if result and not isinstance(result, dict):
+        return result[0] if len(result) > 0 else None
     return None
 
-def supabase_get_users():
-    """Get all users from Supabase"""
+def get_users():
     result = supabase_request("users?select=*", 'GET')
-    return result if result else []
+    if result and not isinstance(result, dict):
+        return result
+    return []
 
-def supabase_get_devices():
-    """Get all devices from Supabase"""
+def get_devices():
     result = supabase_request("devices?select=*", 'GET')
-    return result if result else []
+    if result and not isinstance(result, dict):
+        return result
+    return []
 
-def supabase_get_device(device_serial):
-    """Get device by serial from Supabase"""
+def get_device(device_serial):
     result = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
-    if result and len(result) > 0:
-        return result[0]
+    if result and not isinstance(result, dict):
+        return result[0] if len(result) > 0 else None
     return None
 
-def supabase_save_user(user_data):
-    """Save user to Supabase"""
+def save_user(user_data):
     if 'created_at' not in user_data:
         user_data['created_at'] = datetime.now().isoformat()
     
-    existing = supabase_get_user(user_data['license_key'])
+    existing = get_user(user_data['license_key'])
     if existing:
         result = supabase_request(
             f"users?license_key=eq.{user_data['license_key']}",
@@ -99,14 +126,13 @@ def supabase_save_user(user_data):
     else:
         result = supabase_request("users", 'POST', user_data)
     
-    return result is not None
+    return result is not None and not isinstance(result, dict)
 
-def supabase_save_device(device_data):
-    """Save device to Supabase"""
+def save_device(device_data):
     if 'created_at' not in device_data:
         device_data['created_at'] = datetime.now().isoformat()
     
-    existing = supabase_get_device(device_data['device_serial'])
+    existing = get_device(device_data['device_serial'])
     if existing:
         result = supabase_request(
             f"devices?device_serial=eq.{device_data['device_serial']}",
@@ -116,12 +142,91 @@ def supabase_save_device(device_data):
     else:
         result = supabase_request("devices", 'POST', device_data)
     
-    return result is not None
+    return result is not None and not isinstance(result, dict)
 
-def supabase_delete_user(license_key):
-    """Delete user from Supabase"""
+def delete_user(license_key):
     result = supabase_request(f"users?license_key=eq.{license_key}", 'DELETE')
-    return result is not None
+    return result is not None and not isinstance(result, dict)
+
+# ==================== SOUND FUNCTIONS (Supabase Storage) ====================
+
+def save_sound_to_supabase(file_data, filename):
+    """Save sound file directly to Supabase database as base64"""
+    try:
+        logger.info(f"[+] Saving sound to Supabase: {filename} ({len(file_data)} bytes)")
+        
+        # Convert to base64 for storage
+        file_base64 = base64.b64encode(file_data).decode('utf-8')
+        
+        sound_data = {
+            'filename': filename,
+            'size': len(file_data),
+            'uploaded_at': datetime.now().isoformat(),
+            'content_type': 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav',
+            'file_data': file_base64  # Store file as base64 in database
+        }
+        
+        # Check if exists
+        existing = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
+        if existing and not isinstance(existing, dict) and len(existing) > 0:
+            logger.info(f"[+] Updating existing sound in Supabase")
+            result = supabase_request(f"sounds?filename=eq.{filename}", 'PATCH', sound_data)
+        else:
+            logger.info(f"[+] Creating new sound in Supabase")
+            result = supabase_request("sounds", 'POST', sound_data)
+        
+        if result and not isinstance(result, dict):
+            logger.info(f"[+] Sound saved to Supabase successfully")
+            return True
+        else:
+            logger.error(f"[-] Failed to save sound to Supabase: {result}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"[-] Save sound error: {e}")
+        return False
+
+def get_sound_from_supabase(filename):
+    """Get sound file from Supabase database"""
+    try:
+        result = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
+        if result and not isinstance(result, dict) and len(result) > 0:
+            sound_data = result[0]
+            file_base64 = sound_data.get('file_data', '')
+            if file_base64:
+                return base64.b64decode(file_base64)
+        return None
+    except Exception as e:
+        logger.error(f"[-] Get sound error: {e}")
+        return None
+
+def delete_sound_from_supabase(filename):
+    """Delete sound from Supabase database"""
+    try:
+        result = supabase_request(f"sounds?filename=eq.{filename}", 'DELETE')
+        return result is not None and not isinstance(result, dict)
+    except Exception as e:
+        logger.error(f"[-] Delete sound error: {e}")
+        return False
+
+def get_all_sounds_from_supabase():
+    """Get all sound metadata from Supabase"""
+    try:
+        result = supabase_request("sounds?select=*", 'GET')
+        if result and not isinstance(result, dict):
+            sounds = []
+            for row in result:
+                sounds.append({
+                    'name': row['filename'],
+                    'size': row['size'],
+                    'size_mb': round(row['size'] / (1024 * 1024), 2),
+                    'uploaded_at': row['uploaded_at']
+                })
+            return sounds
+        return []
+    except Exception as e:
+        logger.error(f"[-] Get all sounds error: {e}")
+        return []
 
 # ==================== LICENSE FUNCTIONS ====================
 
@@ -129,11 +234,13 @@ def generate_license_key():
     return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
 def validate_license(key, device_serial):
-    user = supabase_get_user(key)
+    user = get_user(key)
     if not user:
         return {'valid': False, 'message': 'Invalid license key'}
+    
     if user.get('banned', False):
         return {'valid': False, 'message': 'License is banned'}
+    
     expires_str = user.get('expires_at', '')
     if expires_str:
         try:
@@ -141,13 +248,15 @@ def validate_license(key, device_serial):
                 return {'valid': False, 'message': 'License has expired'}
         except:
             pass
+    
     if device_serial:
         device_data = {
             'device_serial': device_serial,
             'license_key': key,
             'last_seen': datetime.now().isoformat()
         }
-        supabase_save_device(device_data)
+        save_device(device_data)
+    
     return {
         'valid': True,
         'message': 'License active',
@@ -167,132 +276,257 @@ def login_required(f):
 
 @app.route('/')
 def home():
-    users = supabase_get_users()
-    devices = supabase_get_devices()
-    sounds = []
-    if os.path.exists(CUSTOM_SOUNDS_DIR):
-        for f in os.listdir(CUSTOM_SOUNDS_DIR):
-            if f.endswith(('.mp3', '.wav', '.ogg')):
-                sounds.append(f)
-    
+    try:
+        users = get_users()
+        devices = get_devices()
+        sounds = get_all_sounds_from_supabase()
+        
+        return jsonify({
+            'server': 'Ridol FB Tool License Server',
+            'version': '4.0',
+            'status': 'online',
+            'database': 'Supabase (PostgreSQL)',
+            'storage': 'Supabase Database (Base64)',
+            'users': len(users),
+            'devices': len(devices),
+            'sounds': len(sounds),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"[-] Home error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/ping')
+def ping():
     return jsonify({
-        'server': 'Ridol FB Tool License Server',
-        'version': 'v4.0',
         'status': 'online',
-        'database': 'Supabase',
-        'users': len(users),
-        'devices': len(devices),
-        'sounds': len(sounds),
-        'endpoints': ['/verify', '/register_device', '/admin']
+        'timestamp': datetime.now().isoformat(),
+        'version': '4.0',
+        'database': 'Supabase (PostgreSQL)',
+        'storage': 'Supabase Database'
     })
 
-@app.route('/verify', methods=['POST'])
-def verify():
-    data = request.json
-    license_key = data.get('license_key', '')
-    device_serial = data.get('device_serial', '')
-    return jsonify(validate_license(license_key, device_serial))
-
-@app.route('/register_device', methods=['POST'])
-def register_device():
-    data = request.json
-    device_serial = data.get('device_serial', '')
-    if device_serial:
-        device_data = {
-            'device_serial': device_serial,
-            'license_key': data.get('license_key', ''),
-            'last_seen': datetime.now().isoformat()
-        }
-        supabase_save_device(device_data)
-        return jsonify({'success': True, 'device_serial': device_serial})
-    return jsonify({'success': False, 'message': 'No device serial'})
-
-# ============ CUSTOM SOUND ROUTES ============
-@app.route('/api/sounds/list')
-@login_required
-def list_sounds():
-    sounds = []
-    for f in os.listdir(CUSTOM_SOUNDS_DIR):
-        if f.endswith(('.mp3', '.wav', '.ogg')):
-            size = os.path.getsize(os.path.join(CUSTOM_SOUNDS_DIR, f))
-            sounds.append({
-                'name': f,
-                'size': size,
-                'size_mb': round(size / (1024 * 1024), 2)
-            })
-    return jsonify({'sounds': sounds})
-
-@app.route('/api/sounds/upload', methods=['POST'])
-@login_required
-def upload_sound():
+@app.route('/api/v1/status')
+def api_status():
     try:
+        users = get_users()
+        devices = get_devices()
+        sounds = get_all_sounds_from_supabase()
+        
+        return jsonify({
+            'status': 'online',
+            'version': '4.0',
+            'timestamp': datetime.now().isoformat(),
+            'database': 'Supabase (PostgreSQL)',
+            'storage': 'Supabase Database (Base64)',
+            'license_count': len(users),
+            'device_count': len(devices),
+            'sound_files': [s['name'] for s in sounds],
+            'sound_exists': len(sounds) > 0
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/sound/status')
+def api_sound_status():
+    try:
+        sounds = get_all_sounds_from_supabase()
+        return jsonify({
+            'exists': len(sounds) > 0,
+            'sounds': sounds,
+            'count': len(sounds)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/sound/download/<filename>')
+def api_download_sound(filename):
+    try:
+        if not filename.endswith(('.mp3', '.wav', '.ogg')):
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        file_data = get_sound_from_supabase(filename)
+        if file_data:
+            mimetype = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+            return send_file(
+                io.BytesIO(file_data),
+                as_attachment=True,
+                download_name=filename,
+                mimetype=mimetype
+            )
+        return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/sound/download')
+def api_download_sound_default():
+    try:
+        sounds = get_all_sounds_from_supabase()
+        if sounds:
+            for s in sounds:
+                if s['name'].endswith('.mp3'):
+                    return api_download_sound(s['name'])
+            return api_download_sound(sounds[0]['name'])
+        return jsonify({'error': 'No sound found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/sound/upload', methods=['POST'])
+@login_required
+def api_upload_sound():
+    try:
+        logger.info("[+] Upload request received")
+        
         if 'file' not in request.files:
-            return jsonify({'success': False, 'message': 'No file uploaded'})
+            error_msg = 'No file uploaded. Please select a file.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'no_file'})
         
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'success': False, 'message': 'No file selected'})
+            error_msg = 'No file selected. Please choose a file.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'empty_filename'})
         
-        if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg')):
-            return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG files allowed'})
+        logger.info(f"[+] Filename: {file.filename}")
+        logger.info(f"[+] Content Type: {file.content_type}")
         
         ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ['.mp3', '.wav', '.ogg']:
+            error_msg = f'Invalid file type: {ext}. Only MP3, WAV, OGG allowed.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'invalid_type'})
+        
+        # Check file size
+        file_data = file.read()
+        file_size = len(file_data)
+        if file_size == 0:
+            error_msg = 'File is empty. Please upload a valid file.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'empty_file'})
+        
+        if file_size > 50 * 1024 * 1024:
+            error_msg = f'File too large: {file_size / (1024*1024):.2f} MB. Max 50 MB.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'file_too_large'})
+        
+        logger.info(f"[+] File size: {file_size} bytes")
+        
         filename = f'background{ext}'
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        file.save(filepath)
+        
+        # Save to Supabase directly
+        result = save_sound_to_supabase(file_data, filename)
+        
+        if result:
+            logger.info("[+] Upload successful! File saved to Supabase database.")
+            return jsonify({
+                'success': True,
+                'message': 'Sound uploaded successfully to Supabase!',
+                'filename': filename,
+                'original_name': file.filename,
+                'size': file_size,
+                'download_url': f'/api/v1/sound/download/{filename}',
+                'storage': 'Supabase Database'
+            })
+        else:
+            error_msg = 'Failed to save file to Supabase. Please check server logs.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'save_failed'})
+            
+    except Exception as e:
+        error_msg = f'Upload error: {str(e)}'
+        logger.error(f"[-] {error_msg}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'message': error_msg, 'error_type': 'exception'})
+
+@app.route('/api/v1/sound/delete', methods=['POST'])
+@login_required
+def api_delete_sound():
+    try:
+        filename = request.json.get('filename', '')
+        if not filename:
+            return jsonify({'success': False, 'message': 'No filename provided'})
+        
+        if delete_sound_from_supabase(filename):
+            return jsonify({'success': True, 'message': 'Sound deleted from Supabase'})
+        return jsonify({'success': False, 'message': 'File not found'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/v1/license/verify', methods=['POST'])
+def api_verify_license():
+    try:
+        data = request.json
+        return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
+    except Exception as e:
+        return jsonify({'valid': False, 'message': str(e)})
+
+@app.route('/api/v1/license/status/<license_key>')
+def api_license_status(license_key):
+    try:
+        user = get_user(license_key)
+        if not user:
+            return jsonify({'exists': False, 'message': 'License not found'})
         
         return jsonify({
-            'success': True,
-            'message': f'✅ Sound uploaded successfully!',
-            'filename': filename,
-            'size': os.path.getsize(filepath)
+            'exists': True,
+            'valid': not user.get('banned', False),
+            'expires_at': user.get('expires_at', 'Never'),
+            'device': user.get('device', ''),
+            'notes': user.get('notes', ''),
+            'created_at': user.get('created_at', '')
         })
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/sounds/delete', methods=['POST'])
-@login_required
-def delete_sound():
+@app.route('/api/v1/device/register', methods=['POST'])
+def api_register_device():
     try:
         data = request.json
-        filename = data.get('filename', '')
-        if not filename:
-            return jsonify({'success': False, 'message': 'No filename provided'})
+        device_serial = data.get('device_serial', '')
+        license_key = data.get('license_key', '')
         
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            return jsonify({'success': True, 'message': '✅ Sound deleted successfully'})
-        return jsonify({'success': False, 'message': 'File not found'})
+        if not device_serial:
+            return jsonify({'success': False, 'message': 'No device serial'})
+        
+        device_data = {
+            'device_serial': device_serial,
+            'license_key': license_key,
+            'last_seen': datetime.now().isoformat()
+        }
+        save_device(device_data)
+        return jsonify({'success': True, 'device_serial': device_serial})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/sounds/play', methods=['POST'])
-@login_required
-def play_sound():
+@app.route('/api/v1/device/status/<device_serial>')
+def api_device_status(device_serial):
     try:
-        data = request.json
-        filename = data.get('filename', '')
-        if not filename:
-            return jsonify({'success': False, 'message': 'No filename provided'})
+        device = get_device(device_serial)
+        if not device:
+            return jsonify({'exists': False, 'message': 'Device not found'})
         
-        filepath = os.path.join(CUSTOM_SOUNDS_DIR, filename)
-        if os.path.exists(filepath):
-            return send_file(filepath, as_attachment=False)
-        return jsonify({'success': False, 'message': 'File not found'})
+        return jsonify({
+            'exists': True,
+            'license_key': device.get('license_key', ''),
+            'last_seen': device.get('last_seen', ''),
+            'created_at': device.get('created_at', '')
+        })
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'error': str(e)}), 500
 
-# ============ ADMIN ROUTES ============
+# ==================== ADMIN ROUTES ====================
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
         password = request.form.get('password', '')
         if password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
+            session.permanent = True
             return redirect(url_for('admin_panel'))
         else:
-            return render_template_string(LOGIN_HTML, error='❌ Incorrect password! Please try again.')
+            return render_template_string(LOGIN_HTML, error='❌ Incorrect password!')
     
     if session.get('admin_logged_in'):
         return redirect(url_for('admin_panel'))
@@ -304,45 +538,44 @@ def admin_login():
 def admin_panel():
     return render_template_string(ADMIN_HTML)
 
-@app.route('/admin/check')
-@login_required
-def admin_check():
-    return jsonify({'authenticated': True})
-
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = supabase_get_users()
-    devices = supabase_get_devices()
-    now = datetime.now()
-    total = len(users)
-    active = 0
-    expired = 0
-    banned = 0
-    
-    for user in users:
-        if user.get('banned', False):
-            banned += 1
-        elif user.get('expires_at', ''):
-            try:
-                if now > datetime.fromisoformat(user['expires_at']):
-                    expired += 1
-                else:
+    try:
+        users = get_users()
+        devices = get_devices()
+        
+        now = datetime.now()
+        total = len(users)
+        active = 0
+        expired = 0
+        banned = 0
+        
+        for user in users:
+            if user.get('banned', False):
+                banned += 1
+            elif user.get('expires_at', ''):
+                try:
+                    if now > datetime.fromisoformat(user['expires_at']):
+                        expired += 1
+                    else:
+                        active += 1
+                except:
                     active += 1
-            except:
+            else:
                 active += 1
-        else:
-            active += 1
-    
-    return jsonify({
-        'users': {u['license_key']: u for u in users},
-        'devices': {d['device_serial']: d for d in devices},
-        'total': total,
-        'active': active,
-        'expired': expired,
-        'banned': banned,
-        'device_count': len(devices)
-    })
+        
+        return jsonify({
+            'users': {u['license_key']: u for u in users},
+            'devices': {d['device_serial']: d for d in devices},
+            'total': total,
+            'active': active,
+            'expired': expired,
+            'banned': banned,
+            'device_count': len(devices)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/admin/create', methods=['POST'])
 @login_required
@@ -352,10 +585,8 @@ def admin_create():
         days = int(data.get('days', 30))
         notes = data.get('notes', '').strip()
         
-        if days < 1:
-            return jsonify({'success': False, 'message': '❌ Expiry days must be at least 1'})
-        if days > 365:
-            return jsonify({'success': False, 'message': '❌ Expiry days cannot exceed 365'})
+        if days < 1 or days > 365:
+            return jsonify({'success': False, 'message': 'Days must be 1-365'})
         
         key = generate_license_key()
         expires = (datetime.now() + timedelta(days=days)).isoformat()
@@ -369,18 +600,16 @@ def admin_create():
             'device': ''
         }
         
-        if supabase_save_user(user_data):
+        if save_user(user_data):
             return jsonify({
                 'success': True,
-                'message': f'✅ License created successfully! Valid for {days} days.',
+                'message': f'✅ License created! Valid for {days} days.',
                 'license_key': key,
                 'expires_at': expires
             })
-        return jsonify({'success': False, 'message': 'Failed to save to Supabase'})
-    except ValueError:
-        return jsonify({'success': False, 'message': '❌ Invalid input! Please enter a valid number for days.'})
+        return jsonify({'success': False, 'message': 'Failed to save to database'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/ban', methods=['POST'])
 @login_required
@@ -388,17 +617,17 @@ def admin_ban():
     try:
         key = request.json.get('license_key', '')
         if not key:
-            return jsonify({'success': False, 'message': '❌ No license key provided'})
+            return jsonify({'success': False, 'message': 'No license key'})
         
-        user = supabase_get_user(key)
+        user = get_user(key)
         if not user:
-            return jsonify({'success': False, 'message': '❌ License key not found'})
+            return jsonify({'success': False, 'message': 'License not found'})
         
         user['banned'] = True
-        supabase_save_user(user)
-        return jsonify({'success': True, 'message': '✅ License banned successfully'})
+        save_user(user)
+        return jsonify({'success': True, 'message': '✅ License banned'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/unban', methods=['POST'])
 @login_required
@@ -406,17 +635,17 @@ def admin_unban():
     try:
         key = request.json.get('license_key', '')
         if not key:
-            return jsonify({'success': False, 'message': '❌ No license key provided'})
+            return jsonify({'success': False, 'message': 'No license key'})
         
-        user = supabase_get_user(key)
+        user = get_user(key)
         if not user:
-            return jsonify({'success': False, 'message': '❌ License key not found'})
+            return jsonify({'success': False, 'message': 'License not found'})
         
         user['banned'] = False
-        supabase_save_user(user)
-        return jsonify({'success': True, 'message': '✅ License unbanned successfully'})
+        save_user(user)
+        return jsonify({'success': True, 'message': '✅ License unbanned'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/delete', methods=['POST'])
 @login_required
@@ -424,13 +653,13 @@ def admin_delete():
     try:
         key = request.json.get('license_key', '')
         if not key:
-            return jsonify({'success': False, 'message': '❌ No license key provided'})
+            return jsonify({'success': False, 'message': 'No license key'})
         
-        if supabase_delete_user(key):
-            return jsonify({'success': True, 'message': '✅ License deleted successfully'})
-        return jsonify({'success': False, 'message': '❌ License key not found'})
+        if delete_user(key):
+            return jsonify({'success': True, 'message': '✅ License deleted'})
+        return jsonify({'success': False, 'message': 'License not found'})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'❌ Error: {str(e)}'})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/logout')
 @login_required
@@ -438,932 +667,133 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ============================================================
-# ============ LOGIN HTML ============
-# ============================================================
+# ==================== HTML TEMPLATES ====================
 
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Login - Ridol FB Tool</title>
+    <title>🔐 Admin Login - Supabase</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            background: #0a0a1a;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-family: 'Orbitron', sans-serif;
-            overflow: hidden;
-            perspective: 1200px;
-        }
-        
-        .bg-animation {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            background: 
-                radial-gradient(ellipse at 20% 50%, rgba(0, 255, 136, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 50%, rgba(0, 255, 136, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 100%, rgba(0, 255, 136, 0.05) 0%, transparent 30%);
-            animation: bgPulse 4s ease-in-out infinite;
-        }
-        
-        @keyframes bgPulse {
-            0%, 100% { opacity: 0.5; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.1); }
-        }
-        
-        .particles {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            overflow: hidden;
-        }
-        
-        .particle {
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background: #00ff88;
-            border-radius: 50%;
-            animation: float linear infinite;
-            opacity: 0.3;
-        }
-        
-        @keyframes float {
-            0% { transform: translateY(100vh) scale(0); opacity: 0; }
-            10% { opacity: 0.3; }
-            90% { opacity: 0.3; }
-            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
-        }
-        
-        .login-container {
-            position: relative;
-            z-index: 1;
-            background: rgba(17, 17, 34, 0.85);
-            backdrop-filter: blur(20px);
-            padding: 50px 45px;
-            border-radius: 24px;
-            max-width: 550px;
-            width: 100%;
-            transform: rotateY(5deg) rotateX(5deg) translateZ(50px);
-            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 255, 136, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(0, 255, 136, 0.1);
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            animation: float3D 6s ease-in-out infinite;
-        }
-        
-        @keyframes float3D {
-            0%, 100% { transform: rotateY(5deg) rotateX(5deg) translateZ(50px); }
-            50% { transform: rotateY(-3deg) rotateX(-3deg) translateZ(60px); }
-        }
-        
-        .login-container:hover {
-            transform: rotateY(0deg) rotateX(0deg) translateZ(80px);
-            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 60px rgba(0, 255, 136, 0.2);
-        }
-        
-        .title-section {
-            text-align: center;
-            margin-bottom: 35px;
-            position: relative;
-        }
-        
-        .title-section .icon {
-            font-size: 60px;
-            display: block;
-            margin-bottom: 10px;
-            animation: iconPulse 3s ease-in-out infinite;
-            filter: drop-shadow(0 0 40px rgba(0, 255, 136, 0.3));
-        }
-        
-        @keyframes iconPulse {
-            0%, 100% { transform: scale(1) rotate(0deg); }
-            50% { transform: scale(1.15) rotate(5deg); }
-        }
-        
-        .title-3d {
-            font-size: 42px;
-            font-weight: 900;
-            letter-spacing: 6px;
-            display: block;
-            text-align: center;
-            position: relative;
-            min-height: 70px;
-            margin-bottom: 5px;
-            text-shadow: 0 0 10px rgba(0, 255, 136, 0.3), 0 0 20px rgba(0, 255, 136, 0.2), 0 0 40px rgba(0, 255, 136, 0.1);
-            transform: translateZ(30px);
-        }
-        
-        .cursor {
-            display: inline-block;
-            width: 4px;
-            height: 42px;
-            background: #00ff88;
-            margin-left: 4px;
-            vertical-align: middle;
-            animation: blink 0.8s step-end infinite;
-        }
-        
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-        }
-        
-        .title-text {
-            background: linear-gradient(135deg, #00ff88 0%, #00ff88 30%, #44ffaa 50%, #4488ff 70%, #00ff88 100%);
-            background-size: 300% 300%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradientMove 3s ease-in-out infinite;
-            text-shadow: none;
-            position: relative;
-        }
-        
-        @keyframes gradientMove {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        
-        .title-3d::before {
-            content: 'RIDOL FB TOOL';
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            color: rgba(0, 255, 136, 0.1);
-            z-index: -1;
-            filter: blur(8px);
-            -webkit-text-fill-color: rgba(0, 255, 136, 0.1);
-        }
-        
-        .subtitle-3d {
-            font-size: 12px;
-            letter-spacing: 8px;
-            color: rgba(255, 255, 255, 0.2);
-            margin-top: 5px;
-            font-weight: 400;
-            min-height: 20px;
-        }
-        
-        .subtitle-3d .sub-cursor {
-            display: inline-block;
-            width: 3px;
-            height: 14px;
-            background: rgba(255, 255, 255, 0.2);
-            vertical-align: middle;
-            margin-left: 2px;
-            animation: blink 0.8s step-end infinite;
-        }
-        
-        .version-badge {
-            display: inline-block;
-            background: rgba(0, 255, 136, 0.15);
-            border: 1px solid rgba(0, 255, 136, 0.2);
-            padding: 4px 20px;
-            border-radius: 20px;
-            color: #00ff88;
-            font-size: 11px;
-            margin-top: 10px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            animation: badgeGlow 2s ease-in-out infinite;
-            transform: translateZ(10px);
-        }
-        
-        @keyframes badgeGlow {
-            0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 136, 0.05); }
-            50% { box-shadow: 0 0 40px rgba(0, 255, 136, 0.2); }
-        }
-        
-        .form-group {
-            margin-bottom: 22px;
-            position: relative;
-        }
-        
-        .form-group label {
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 10px;
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }
-        
-        .form-group .input-wrapper {
-            position: relative;
-            transform: translateZ(10px);
-        }
-        
-        .form-group .input-wrapper .lock-icon {
-            position: absolute;
-            left: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255, 255, 255, 0.15);
-            font-size: 18px;
-            transition: all 0.3s ease;
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 16px 16px 16px 50px;
-            background: rgba(26, 26, 46, 0.8);
-            border: 2px solid rgba(255, 255, 255, 0.05);
-            border-radius: 14px;
-            color: #fff;
-            font-size: 15px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s ease;
-            outline: none;
-            backdrop-filter: blur(10px);
-        }
-        
-        .form-group input:focus {
-            border-color: #00ff88;
-            box-shadow: 0 0 40px rgba(0, 255, 136, 0.1), inset 0 0 20px rgba(0, 255, 136, 0.05);
-            transform: translateZ(20px) scale(1.02);
-        }
-        
-        .form-group input:focus + .lock-icon,
-        .form-group input:focus ~ .lock-icon {
-            color: #00ff88;
-        }
-        
-        .form-group input::placeholder {
-            color: rgba(255, 255, 255, 0.1);
-            font-size: 12px;
-            letter-spacing: 2px;
-        }
-        
-        .btn-login {
-            width: 100%;
-            padding: 18px;
-            background: linear-gradient(135deg, #00ff88, #00cc77);
-            border: none;
-            border-radius: 14px;
-            color: #000;
-            font-size: 16px;
-            font-weight: 900;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            letter-spacing: 3px;
-            font-family: 'Orbitron', sans-serif;
-            text-transform: uppercase;
-            position: relative;
-            overflow: hidden;
-            transform: translateZ(10px);
-        }
-        
-        .btn-login::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-            transform: rotate(45deg);
-            animation: btnShine 3s ease-in-out infinite;
-        }
-        
-        @keyframes btnShine {
-            0% { transform: translateX(-100%) rotate(45deg); }
-            100% { transform: translateX(100%) rotate(45deg); }
-        }
-        
-        .btn-login:hover {
-            transform: translateZ(30px) scale(1.03);
-            box-shadow: 0 20px 60px rgba(0, 255, 136, 0.4);
-        }
-        
-        .btn-login:active {
-            transform: translateZ(5px) scale(0.97);
-        }
-        
-        .error-msg {
-            background: rgba(255, 68, 68, 0.1);
-            border: 1px solid rgba(255, 68, 68, 0.2);
-            color: #ff4444;
-            padding: 14px 18px;
-            border-radius: 12px;
-            font-size: 13px;
-            margin-bottom: 20px;
-            text-align: center;
-            animation: shake 0.5s ease-in-out;
-            font-weight: 400;
-            letter-spacing: 1px;
-        }
-        
-        @keyframes shake {
-            0%, 100% { transform: translateX(0) rotateY(0deg); }
-            25% { transform: translateX(-10px) rotateY(-3deg); }
-            75% { transform: translateX(10px) rotateY(3deg); }
-        }
-        
-        .login-footer {
-            text-align: center;
-            margin-top: 25px;
-            color: rgba(255, 255, 255, 0.05);
-            font-size: 9px;
-            letter-spacing: 5px;
-        }
-        
-        .login-footer .brand {
-            color: rgba(0, 255, 136, 0.2);
-            font-weight: 700;
-        }
-        
-        .hint {
-            text-align: center;
-            color: rgba(255, 255, 255, 0.05);
-            font-size: 10px;
-            margin-top: 15px;
-            letter-spacing: 3px;
-        }
-        
-        .hint span {
-            background: rgba(26, 26, 46, 0.3);
-            padding: 4px 14px;
-            border-radius: 6px;
-            font-family: monospace;
-            color: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.03);
-        }
-        
-        @media (max-width: 480px) {
-            .login-container {
-                padding: 30px 20px;
-                margin: 20px;
-                transform: rotateY(0deg) rotateX(0deg) translateZ(0px) !important;
-            }
-            .title-3d { font-size: 26px; letter-spacing: 3px; }
-            .title-3d::before { font-size: 26px; }
-            .cursor { height: 28px; }
-            .login-container:hover {
-                transform: rotateY(0deg) rotateX(0deg) translateZ(0px) !important;
-            }
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .login-container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 420px; width: 100%; }
+        .login-container h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
+        .db-badge { background: #3b82f6; color: #fff; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
+        .form-group input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+        .form-group input:focus { border-color: #00ff88; }
+        .btn-login { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-login:hover { background: #00cc77; }
+        .error-msg { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
+        .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
+        .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
+        .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
+        .footer .brand { color: #00ff88; }
     </style>
 </head>
 <body>
-    <div class="bg-animation"></div>
-    <div class="particles" id="particles"></div>
-    
     <div class="login-container">
-        <div class="title-section">
-            <span class="icon">🔐</span>
-            
-            <div class="title-3d">
-                <span class="title-text" id="titleText"></span>
-                <span class="cursor" id="cursor"></span>
-            </div>
-            
-            <div class="subtitle-3d">
-                <span id="subText"></span>
-                <span class="sub-cursor" id="subCursor"></span>
-            </div>
-            
-            <span class="version-badge">✦ v4.0 ✦</span>
-        </div>
-        
+        <h1>🔐 RIDOL FB TOOL</h1>
+        <div class="subtitle">Admin Authentication • v4.0</div>
+        <div style="text-align:center"><span class="db-badge">🍃 Supabase</span></div>
         {% if error %}
         <div class="error-msg">{{ error }}</div>
         {% endif %}
-        
         <form method="POST" action="/admin">
             <div class="form-group">
                 <label>🔑 Admin Password</label>
-                <div class="input-wrapper">
-                    <span class="lock-icon">🔒</span>
-                    <input type="password" name="password" placeholder="Enter your admin password" required autofocus>
-                </div>
+                <input type="password" name="password" placeholder="Enter admin password" required autofocus>
             </div>
             <button type="submit" class="btn-login">🚀 Access Panel</button>
         </form>
-        
-        <div class="hint">
-            <span>🔑 Hint: Admin Password</span>
-        </div>
-        
-        <div class="login-footer">
-            <span class="brand">✦ RIDOL FB TOOL ✦</span> • v4.0
-        </div>
+        <div class="hint"><span>🔑 Hint: Admin Password</span></div>
+        <div class="footer"><span class="brand">RIDOL FB TOOL</span> • v4.0</div>
     </div>
-    
-    <script>
-        const titleText = "RIDOL FB TOOL";
-        const subText = "ADMIN AUTHENTICATION";
-        
-        let titleIndex = 0;
-        let subIndex = 0;
-        let isTitleComplete = false;
-        
-        function typeTitle() {
-            if (titleIndex < titleText.length) {
-                document.getElementById('titleText').textContent += titleText.charAt(titleIndex);
-                titleIndex++;
-                setTimeout(typeTitle, 80 + Math.random() * 40);
-            } else {
-                isTitleComplete = true;
-                document.getElementById('cursor').style.display = 'none';
-                setTimeout(typeSubtitle, 300);
-            }
-        }
-        
-        function typeSubtitle() {
-            if (subIndex < subText.length) {
-                document.getElementById('subText').textContent += subText.charAt(subIndex);
-                subIndex++;
-                setTimeout(typeSubtitle, 50 + Math.random() * 30);
-            } else {
-                document.getElementById('subCursor').style.display = 'none';
-            }
-        }
-        
-        window.onload = function() {
-            document.getElementById('titleText').textContent = '';
-            document.getElementById('subText').textContent = '';
-            setTimeout(typeTitle, 500);
-        };
-        
-        (function createParticles() {
-            const container = document.getElementById('particles');
-            for (let i = 0; i < 50; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.width = (Math.random() * 3 + 2) + 'px';
-                particle.style.height = particle.style.width;
-                particle.style.animationDuration = (Math.random() * 20 + 10) + 's';
-                particle.style.animationDelay = (Math.random() * 10) + 's';
-                particle.style.opacity = Math.random() * 0.3 + 0.1;
-                container.appendChild(particle);
-            }
-        })();
-    </script>
 </body>
 </html>'''
-
-# ============================================================
-# ============ ADMIN HTML ============
-# ============================================================
 
 ADMIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Panel - Ridol FB Tool</title>
+    <title>🔐 Admin Panel - Supabase</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            background: #0a0a1a;
-            color: #fff;
-            padding: 20px;
-            min-height: 100vh;
-            font-family: 'Orbitron', sans-serif;
-            perspective: 1200px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            padding: 25px 30px;
-            background: rgba(17, 17, 34, 0.85);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            border: 1px solid rgba(0, 255, 136, 0.1);
-            transform: rotateX(2deg) translateZ(20px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-        
-        .header:hover {
-            transform: rotateX(0deg) translateZ(40px);
-            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 40px rgba(0, 255, 136, 0.05);
-        }
-        
-        .header-left h1 {
-            font-size: 22px;
-            font-weight: 900;
-            background: linear-gradient(135deg, #00ff88, #00ff88 40%, #4488ff 70%, #00ff88);
-            background-size: 300% 300%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradientMove 3s ease-in-out infinite;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            letter-spacing: 2px;
-        }
-        
-        @keyframes gradientMove {
-            0%, 100% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-        }
-        
-        .header-left .subtitle {
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 10px;
-            letter-spacing: 4px;
-            margin-top: 5px;
-        }
-        
-        .header-left .version-badge {
-            display: inline-block;
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.15);
-            padding: 2px 14px;
-            border-radius: 20px;
-            color: #00ff88;
-            font-size: 9px;
-            margin-left: 10px;
-            font-weight: 700;
-            letter-spacing: 2px;
-        }
-        
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .header-right .badge {
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.15);
-            padding: 6px 16px;
-            border-radius: 20px;
-            color: #00ff88;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 2px;
-        }
-        
-        .btn-logout {
-            background: rgba(255, 68, 68, 0.1);
-            border: 1px solid rgba(255, 68, 68, 0.2);
-            color: #ff4444;
-            padding: 10px 24px;
-            border-radius: 12px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 11px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s ease;
-            letter-spacing: 2px;
-        }
-        
-        .btn-logout:hover {
-            background: rgba(255, 68, 68, 0.2);
-            transform: translateZ(10px);
-            box-shadow: 0 10px 30px rgba(255, 68, 68, 0.1);
-        }
-        
-        .card {
-            background: rgba(17, 17, 34, 0.85);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 28px;
-            margin-bottom: 24px;
-            border: 1px solid rgba(0, 255, 136, 0.05);
-            transform: rotateX(2deg) translateZ(10px);
-            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .card:hover {
-            transform: rotateX(0deg) translateZ(30px);
-            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 255, 136, 0.03);
-            border-color: rgba(0, 255, 136, 0.1);
-        }
-        
-        .card h2 {
-            color: #00ff88;
-            font-size: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 700;
-            letter-spacing: 3px;
-        }
-        
-        .card h2 .icon { font-size: 20px; }
-        
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 15px;
-        }
-        
-        .stat-box {
-            text-align: center;
-            padding: 20px 15px;
-            background: rgba(26, 26, 46, 0.4);
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.02);
-            transition: all 0.3s ease;
-            transform: translateZ(5px);
-        }
-        
-        .stat-box:hover {
-            transform: translateZ(20px);
-            border-color: rgba(0, 255, 136, 0.05);
-        }
-        
-        .stat-box .number {
-            font-size: 28px;
-            font-weight: 900;
-        }
-        
-        .stat-box .label {
-            color: rgba(255, 255, 255, 0.2);
-            font-size: 9px;
-            margin-top: 6px;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: #0a0a1a; color: #fff; padding: 20px; min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .header h1 { color: #00ff88; font-size: 20px; }
+        .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .header .db-badge { background: #3b82f6; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #3b82f6; }
+        .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
+        .btn-logout:hover { background: #cc0000; }
+        .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
+        .card h2 { color: #00ff88; font-size: 16px; margin-bottom: 15px; }
         .flex { display: flex; gap: 15px; flex-wrap: wrap; }
-        .flex-grow { flex: 1; min-width: 180px; }
-        
+        .flex-grow { flex: 1; min-width: 200px; }
         .form-group { margin-bottom: 15px; }
-        .form-group label {
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 9px;
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }
-        
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 14px 18px;
-            background: rgba(26, 26, 46, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            color: #fff;
-            font-size: 13px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s ease;
-            outline: none;
-        }
-        
-        .form-group input:focus, .form-group select:focus {
-            border-color: #00ff88;
-            box-shadow: 0 0 30px rgba(0, 255, 136, 0.05);
-            transform: translateZ(10px);
-        }
-        
-        .btn {
-            padding: 14px 28px;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 12px;
-            font-family: 'Orbitron', sans-serif;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            letter-spacing: 2px;
-            transform: translateZ(5px);
-        }
-        
-        .btn:hover { transform: translateZ(20px) scale(1.02); }
-        
-        .btn-green { background: linear-gradient(135deg, #00ff88, #00cc77); color: #000; }
-        .btn-green:hover { box-shadow: 0 15px 40px rgba(0, 255, 136, 0.3); }
-        
-        .btn-red { background: linear-gradient(135deg, #ff4444, #cc0000); color: #fff; }
-        .btn-red:hover { box-shadow: 0 15px 40px rgba(255, 68, 68, 0.3); }
-        
-        .btn-blue { background: linear-gradient(135deg, #4488ff, #2255cc); color: #fff; }
-        .btn-blue:hover { box-shadow: 0 15px 40px rgba(68, 136, 255, 0.3); }
-        
-        .btn-orange { background: linear-gradient(135deg, #ff8800, #cc6600); color: #fff; }
-        .btn-orange:hover { box-shadow: 0 15px 40px rgba(255, 136, 0, 0.3); }
-        
-        .btn-purple { background: linear-gradient(135deg, #aa44ff, #7722cc); color: #fff; }
-        .btn-purple:hover { box-shadow: 0 15px 40px rgba(170, 68, 255, 0.3); }
-        
-        .btn-sm { padding: 8px 14px; font-size: 9px; }
-        
-        .msg {
-            padding: 16px 22px;
-            border-radius: 14px;
-            margin: 10px 0;
-            display: none;
-            font-weight: 700;
-            font-size: 12px;
-            letter-spacing: 2px;
-            transform: translateZ(10px);
-        }
-        .msg-success { background: rgba(0, 255, 136, 0.08); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.15); }
-        .msg-error { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
-        .msg-info { background: rgba(68, 136, 255, 0.08); color: #4488ff; border: 1px solid rgba(68, 136, 255, 0.15); }
-        
-        .new-key-box {
-            margin-top: 18px;
-            padding: 24px;
-            background: rgba(0, 255, 136, 0.03);
-            border-radius: 14px;
-            border: 2px solid rgba(0, 255, 136, 0.15);
-            display: none;
-            transform: translateZ(10px);
-        }
-        
-        .new-key-box .key {
-            font-size: 18px;
-            font-family: monospace;
-            color: #00ff88;
-            display: block;
-            margin: 12px 0;
-            padding: 16px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
-            word-break: break-all;
-            letter-spacing: 2px;
-        }
-        
-        .table-wrapper { overflow-x: auto; margin-top: 10px; }
+        .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+        .form-group input:focus { border-color: #00ff88; }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn:hover { transform: scale(1.02); }
+        .btn-green { background: #00ff88; color: #000; }
+        .btn-red { background: #ff4444; color: #fff; }
+        .btn-blue { background: #3b82f6; color: #fff; }
+        .btn-orange { background: #ff8800; color: #fff; }
+        .btn-purple { background: #aa44ff; color: #fff; }
+        .btn-sm { padding: 6px 12px; font-size: 11px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; }
+        .stat-box { text-align: center; padding: 15px; background: #1a1a2e; border-radius: 8px; }
+        .stat-box .number { font-size: 28px; font-weight: bold; }
+        .stat-box .label { color: #888; font-size: 11px; margin-top: 5px; }
+        .table-wrapper { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
-        th, td {
-            padding: 12px 14px;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            font-size: 11px;
-        }
-        th {
-            color: rgba(0, 255, 136, 0.4);
-            font-weight: 700;
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
-        td code {
-            background: rgba(26, 26, 46, 0.3);
-            padding: 2px 10px;
-            border-radius: 6px;
-            font-size: 9px;
-            font-family: monospace;
-        }
-        
-        .badge {
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-        .badge-active { background: rgba(0, 255, 136, 0.08); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.15); }
-        .badge-expired { background: rgba(255, 68, 68, 0.08); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.15); }
-        .badge-banned { background: rgba(255, 136, 0, 0.08); color: #ff8800; border: 1px solid rgba(255, 136, 0, 0.15); }
-        
-        .search-box {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 18px;
-            flex-wrap: wrap;
-        }
-        .search-box input {
-            flex: 1;
-            min-width: 180px;
-            padding: 12px 18px;
-            background: rgba(26, 26, 46, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            color: #fff;
-            font-size: 12px;
-            font-family: 'Orbitron', sans-serif;
-            outline: none;
-            transition: all 0.3s ease;
-        }
-        .search-box input:focus {
-            border-color: #00ff88;
-            transform: translateZ(10px);
-        }
-        
-        .upload-area {
-            border: 2px dashed rgba(0, 255, 136, 0.08);
-            border-radius: 14px;
-            padding: 30px;
-            text-align: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        .upload-area:hover {
-            border-color: rgba(0, 255, 136, 0.2);
-            background: rgba(0, 255, 136, 0.02);
-        }
-        .upload-area.dragover {
-            border-color: #00ff88;
-            background: rgba(0, 255, 136, 0.05);
-        }
-        .upload-area .icon { font-size: 36px; display: block; margin-bottom: 10px; }
-        .upload-area p { color: rgba(255, 255, 255, 0.2); font-size: 11px; letter-spacing: 2px; }
-        .upload-area .supported { color: rgba(255, 255, 255, 0.08); font-size: 9px; margin-top: 5px; }
-        
-        .sound-list-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            background: rgba(26, 26, 46, 0.2);
-            border-radius: 10px;
-            margin-bottom: 8px;
-            transition: all 0.3s ease;
-        }
-        .sound-list-item:hover {
-            background: rgba(26, 26, 46, 0.4);
-            transform: translateZ(10px);
-        }
-        .sound-list-item .info { display: flex; gap: 15px; align-items: center; }
-        .sound-list-item .info .name { font-size: 12px; }
-        .sound-list-item .info .size { color: rgba(255, 255, 255, 0.15); font-size: 9px; }
-        
-        .footer {
-            text-align: center;
-            color: rgba(255, 255, 255, 0.03);
-            font-size: 9px;
-            margin-top: 40px;
-            padding: 20px;
-            letter-spacing: 5px;
-        }
-        
-        .status-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 8px;
-            animation: pulse 2s infinite;
-        }
-        .status-dot.online { background: #00ff88; }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        
-        @media (max-width: 768px) {
-            .header { flex-direction: column; align-items: flex-start; }
-            .header-right { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
-            .card { padding: 20px; }
-            .stat-box .number { font-size: 22px; }
-        }
-        @media (max-width: 480px) {
-            body { padding: 10px; }
-            .header-left h1 { font-size: 16px; }
-            .card { padding: 16px; }
-            .stats { grid-template-columns: repeat(2, 1fr); }
-        }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
+        th { color: #00ff88; font-size: 11px; text-transform: uppercase; }
+        td code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+        .badge { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
+        .badge-active { background: #003311; color: #00ff88; }
+        .badge-expired { background: #330000; color: #ff4444; }
+        .badge-banned { background: #331100; color: #ff8800; }
+        .msg { padding: 12px 16px; border-radius: 8px; margin: 10px 0; display: none; font-weight: bold; }
+        .msg-success { background: #003311; color: #00ff88; border: 1px solid #00ff88; }
+        .msg-error { background: #330000; color: #ff4444; border: 1px solid #ff4444; }
+        .msg-info { background: #001133; color: #3b82f6; border: 1px solid #3b82f6; }
+        .new-key-box { margin-top: 15px; padding: 20px; background: #1a1a2e; border-radius: 8px; border: 2px solid #00ff88; display: none; }
+        .new-key-box .key { font-size: 20px; font-family: monospace; color: #00ff88; display: block; margin: 10px 0; padding: 10px; background: #000; border-radius: 6px; word-break: break-all; }
+        .upload-area { border: 2px dashed #1a1a2e; border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; }
+        .upload-area:hover { border-color: #00ff88; background: rgba(0,255,136,0.02); }
+        .upload-area.dragover { border-color: #00ff88; background: rgba(0,255,136,0.05); }
+        .upload-area .icon { font-size: 32px; display: block; margin-bottom: 10px; }
+        .upload-area p { color: #666; font-size: 13px; }
+        .upload-area .supported { color: #444; font-size: 11px; margin-top: 5px; }
+        .sound-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #1a1a2e; border-radius: 8px; margin-bottom: 8px; }
+        .sound-item .type { background: #222; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .search-box input { flex: 1; min-width: 180px; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 13px; outline: none; }
+        .search-box input:focus { border-color: #00ff88; }
+        .footer { text-align: center; color: #333; font-size: 11px; margin-top: 30px; }
+        .api-info { background: #1a1a2e; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #888; margin-top: 10px; }
+        .api-info code { color: #00ff88; }
+        @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .stats { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div class="header-left">
-                <h1>
-                    <span>🔐</span>
-                    RIDOL FB TOOL
-                    <span class="version-badge">✦ v4.0 ✦</span>
-                </h1>
-                <div class="subtitle">
-                    <span class="status-dot online"></span>
-                    ADMIN PANEL • LICENSE MANAGEMENT
+            <div>
+                <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
+                <div style="color:#666;font-size:12px;margin-top:3px">
+                    Admin Panel • <span class="db-badge">🍃 Supabase Storage</span>
                 </div>
             </div>
-            <div class="header-right">
+            <div style="display:flex;gap:10px;align-items:center">
                 <span class="badge">👑 ADMIN</span>
                 <a href="/admin/logout"><button class="btn-logout">🚪 LOGOUT</button></a>
             </div>
@@ -1371,21 +801,40 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         <div id="msg" class="msg"></div>
         
-        <!-- Sound Upload -->
         <div class="card">
-            <h2><span class="icon">🎵</span> Custom Background Sound</h2>
+            <h2>🔌 Supabase API Endpoints</h2>
+            <div class="api-info">
+                <code>/api/v1/sound/status</code> - Check sound status<br>
+                <code>/api/v1/sound/download</code> - Download sound<br>
+                <code>/api/v1/sound/upload</code> - Upload MP3/WAV (Stored in Supabase DB)<br>
+                <code>/api/v1/sound/delete</code> - Delete sound<br>
+                <code>/api/v1/license/verify</code> - Verify license<br>
+                <code>/api/v1/device/register</code> - Register device
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>🎵 Custom Sound Upload (MP3 / WAV / OGG)</h2>
+            <div style="background:#1a1a2e; padding:10px; border-radius:8px; margin-bottom:15px; color:#888; font-size:12px;">
+                ⚡ Files are stored directly in <strong style="color:#3b82f6;">Supabase Database</strong> (Base64)
+            </div>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
                 <span class="icon">📤</span>
                 <p>Drop your MP3 / WAV / OGG file here</p>
-                <p class="supported">or click to browse • Max 50MB</p>
+                <p class="supported">or click to browse • Max 50MB • Stored in Supabase</p>
                 <input type="file" id="fileInput" accept=".mp3,.wav,.ogg" style="display:none" onchange="uploadSound(this.files)">
             </div>
             <div style="margin-top:15px" id="soundList"></div>
+            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
+                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Link</button>
+                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Status</button>
+                <button class="btn btn-green" onclick="testConnection()">🔌 Test</button>
+            </div>
         </div>
         
-        <!-- Create License -->
         <div class="card">
-            <h2><span class="icon">➕</span> Create License</h2>
+            <h2>➕ Create License</h2>
             <div class="flex">
                 <div class="flex-grow">
                     <div class="form-group">
@@ -1411,21 +860,19 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <!-- Statistics -->
         <div class="card">
-            <h2><span class="icon">📊</span> Statistics</h2>
+            <h2>📊 Statistics</h2>
             <div class="stats">
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_total">0</div><div class="label">Total</div></div>
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">✅ Active</div></div>
                 <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">⏰ Expired</div></div>
                 <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">🚫 Banned</div></div>
-                <div class="stat-box"><div class="number" style="color:#4488ff" id="s_devices">0</div><div class="label">📱 Devices</div></div>
+                <div class="stat-box"><div class="number" style="color:#3b82f6" id="s_devices">0</div><div class="label">📱 Devices</div></div>
             </div>
         </div>
         
-        <!-- License List -->
         <div class="card">
-            <h2><span class="icon">👥</span> License Management</h2>
+            <h2>👥 License Management</h2>
             <div class="search-box">
                 <input type="text" id="search" placeholder="🔍 Search by key, device, or notes..." onkeyup="if(event.key==='Enter')searchLic()">
                 <button class="btn btn-blue" onclick="searchLic()">🔍 SEARCH</button>
@@ -1451,141 +898,217 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <div class="footer">✦ RIDOL FB TOOL v4.0 • Supabase ✦</div>
+        <div class="footer">✦ RIDOL FB TOOL v4.0 • Supabase Storage ✦</div>
     </div>
     
     <script>
-        let allUsers = {};
-        let filteredUsers = {};
-        let lastCreatedKey = '';
+        var allUsers = {};
+        var filteredUsers = {};
+        var lastCreatedKey = '';
         
         function showMsg(text, type) {
-            const el = document.getElementById('msg');
+            var el = document.getElementById('msg');
             el.textContent = text;
             el.className = 'msg msg-' + type;
             el.style.display = 'block';
-            setTimeout(() => { el.style.display = 'none'; }, 6000);
+            setTimeout(function() { el.style.display = 'none'; }, 6000);
         }
         
-        async function apiCall(url, method, data) {
-            try {
-                const res = await fetch(url, {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: data ? JSON.stringify(data) : undefined
-                });
+        function apiCall(url, method, data) {
+            return fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: data ? JSON.stringify(data) : undefined
+            }).then(function(res) {
                 if (res.status === 401 || res.status === 302) {
                     window.location.href = '/admin';
                     return null;
                 }
-                return await res.json();
-            } catch (e) {
+                return res.json();
+            }).catch(function(e) {
                 showMsg('❌ Network Error: ' + e.message, 'error');
                 return null;
-            }
+            });
         }
         
-        // Sound Functions
-        const dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
-        dropZone.addEventListener('drop', (e) => {
+        // ===== TEST CONNECTION =====
+        function testConnection() {
+            showMsg('🔌 Testing Supabase connection...', 'info');
+            fetch('/api/v1/ping')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.status === 'online') {
+                        showMsg('✅ Server reachable! Storage: ' + data.storage, 'success');
+                    } else {
+                        showMsg('❌ Server error', 'error');
+                    }
+                })
+                .catch(function(e) {
+                    showMsg('❌ Connection failed: ' + e.message, 'error');
+                });
+        }
+        
+        // ===== SOUND FUNCTIONS =====
+        var dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', function(e) {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
         });
         
-        async function uploadSound(files) {
+        function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
-            const file = files[0];
-            const ext = file.name.split('.').pop().toLowerCase();
+            var file = files[0];
+            var ext = file.name.split('.').pop().toLowerCase();
             if (!['mp3', 'wav', 'ogg'].includes(ext)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
             if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
-            const formData = new FormData();
+            var formData = new FormData();
             formData.append('file', file);
-            try {
-                showMsg('⏳ Uploading...', 'info');
-                const res = await fetch('/api/sounds/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); }
-                else { showMsg('❌ ' + data.message, 'error'); }
-            } catch (e) { showMsg('❌ Upload failed', 'error'); }
+            showMsg('⏳ Uploading to Supabase Database...', 'info');
+            
+            fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showMsg('✅ ' + data.message + ' (' + data.original_name + ' | ' + (data.size / 1024).toFixed(2) + ' KB)', 'success');
+                        loadSounds();
+                        checkSoundStatus();
+                    } else {
+                        showMsg('❌ ' + data.message, 'error');
+                    }
+                })
+                .catch(function(e) { showMsg('❌ Upload failed: ' + e.message, 'error'); });
         }
         
-        async function loadSounds() {
-            try {
-                const res = await fetch('/api/sounds/list');
-                const data = await res.json();
-                const list = document.getElementById('soundList');
-                if (data.sounds && data.sounds.length > 0) {
-                    let html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS:</strong></div>';
-                    data.sounds.forEach(s => {
-                        html += `
-                            <div class="sound-list-item">
-                                <div class="info"><span style="font-size:18px">🎵</span><span class="name">${s.name}</span><span class="size">${s.size_mb} MB</span></div>
-                                <div style="display:flex;gap:8px">
-                                    <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶ PLAY</button>
-                                    <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
-                                </div>
-                            </div>
-                        `;
-                    });
-                    list.innerHTML = html;
-                } else {
-                    list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No custom sounds uploaded</div>';
-                }
-            } catch (e) {}
+        function loadSounds() {
+            fetch('/api/v1/sound/status')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var list = document.getElementById('soundList');
+                    if (data.sounds && data.sounds.length > 0) {
+                        var html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS (Supabase DB):</strong></div>';
+                        data.sounds.forEach(function(s) {
+                            var ext = s.name.split('.').pop().toUpperCase();
+                            html += '<div class="sound-item">' +
+                                '<div class="info"><span style="font-size:18px">🎵</span><span class="name">' + s.name + '</span><span class="type">' + ext + '</span><span class="size">' + s.size_mb + ' MB</span></div>' +
+                                '<div style="display:flex;gap:8px">' +
+                                '<button class="btn btn-blue btn-sm" onclick="playSound(\'' + s.name + '\')">▶ PLAY</button>' +
+                                '<button class="btn btn-green btn-sm" onclick="copySingleLink(\'' + s.name + '\')">📋</button>' +
+                                '<button class="btn btn-red btn-sm" onclick="deleteSound(\'' + s.name + '\')">✕</button>' +
+                                '</div></div>';
+                        });
+                        list.innerHTML = html;
+                    } else {
+                        list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No sounds in Supabase</div>';
+                    }
+                })
+                .catch(function(e) { showMsg('❌ Failed to load sounds', 'error'); });
         }
         
-        async function playSound(filename) {
-            try {
-                const res = await fetch('/api/sounds/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
-                if (res.ok) {
-                    const blob = await res.blob();
-                    const audio = new Audio(URL.createObjectURL(blob));
-                    audio.play();
-                    showMsg('▶ Playing: ' + filename, 'info');
-                }
-            } catch (e) { showMsg('❌ Play failed', 'error'); }
+        function playSound(filename) {
+            var url = window.location.origin + '/api/v1/sound/download/' + filename;
+            var audio = new Audio(url);
+            audio.play();
+            showMsg('▶ Playing: ' + filename, 'info');
         }
         
-        async function deleteSound(filename) {
+        function copySingleLink(filename) {
+            var url = window.location.origin + '/api/v1/sound/download/' + filename;
+            navigator.clipboard.writeText(url).then(function() {
+                showMsg('📋 Link copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showMsg('📋 Link copied!', 'success');
+            });
+        }
+        
+        function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
-            try {
-                const res = await fetch('/api/sounds/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
-                const data = await res.json();
-                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); }
+            fetch('/api/v1/sound/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
                 else { showMsg('❌ ' + data.message, 'error'); }
-            } catch (e) { showMsg('❌ Delete failed', 'error'); }
+            })
+            .catch(function(e) { showMsg('❌ Delete failed', 'error'); });
         }
         
-        // License Functions
-        async function createLic() {
-            const days = parseInt(document.getElementById('days').value) || 30;
-            const notes = document.getElementById('notes').value || '';
+        function copyDownloadLink() {
+            var url = window.location.origin + '/api/v1/sound/download';
+            navigator.clipboard.writeText(url).then(function() {
+                showMsg('📋 Download link copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showMsg('📋 Link copied!', 'success');
+            });
+        }
+        
+        function checkSoundStatus() {
+            showMsg('📊 Checking Supabase sound status...', 'info');
+            fetch('/api/v1/sound/status')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.exists) {
+                        showMsg('✅ Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
+                    } else {
+                        showMsg('❌ No sound in Supabase', 'error');
+                    }
+                })
+                .catch(function(e) { showMsg('❌ Status check failed: ' + e.message, 'error'); });
+        }
+        
+        function refreshSounds() {
+            showMsg('🔄 Refreshing...', 'info');
+            loadSounds();
+            checkSoundStatus();
+        }
+        
+        // ===== LICENSE FUNCTIONS =====
+        function createLic() {
+            var days = parseInt(document.getElementById('days').value) || 30;
+            var notes = document.getElementById('notes').value || '';
             if (days < 1) { showMsg('❌ At least 1 day', 'error'); return; }
             if (days > 365) { showMsg('❌ Max 365 days', 'error'); return; }
             
             showMsg('⏳ Generating...', 'info');
-            const result = await apiCall('/admin/create', 'POST', { days, notes });
-            if (result && result.success) {
-                lastCreatedKey = result.license_key;
-                document.getElementById('key_display').textContent = lastCreatedKey;
-                document.getElementById('new_key').style.display = 'block';
-                showMsg('✅ ' + result.message, 'success');
-                refreshAll();
-            } else {
-                showMsg(result ? result.message : '❌ Failed', 'error');
-                document.getElementById('new_key').style.display = 'none';
-            }
+            apiCall('/admin/create', 'POST', { days: days, notes: notes })
+                .then(function(result) {
+                    if (result && result.success) {
+                        lastCreatedKey = result.license_key;
+                        document.getElementById('key_display').textContent = lastCreatedKey;
+                        document.getElementById('new_key').style.display = 'block';
+                        showMsg('✅ ' + result.message, 'success');
+                        refreshAll();
+                    } else {
+                        showMsg(result ? result.message : '❌ Failed', 'error');
+                        document.getElementById('new_key').style.display = 'none';
+                    }
+                });
         }
         
         function copyKey() {
-            const key = document.getElementById('key_display').textContent;
-            navigator.clipboard.writeText(key).then(() => showMsg('📋 Copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var key = document.getElementById('key_display').textContent;
+            navigator.clipboard.writeText(key).then(function() {
+                showMsg('📋 Copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = key;
                 document.body.appendChild(ta);
                 ta.select();
@@ -1603,78 +1126,83 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        async function toggleBan(key, isBanned) {
-            const action = isBanned ? 'unban' : 'ban';
+        function toggleBan(key, isBanned) {
+            var action = isBanned ? 'unban' : 'ban';
             showMsg('⏳ Processing...', 'info');
-            const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            apiCall('/admin/' + action, 'POST', { license_key: key })
+                .then(function(result) {
+                    if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+                    else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+                });
         }
         
-        async function deleteLic(key) {
+        function deleteLic(key) {
             if (!confirm('⚠️ Delete ' + key + '?')) return;
             showMsg('⏳ Deleting...', 'info');
-            const result = await apiCall('/admin/delete', 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            apiCall('/admin/delete', 'POST', { license_key: key })
+                .then(function(result) {
+                    if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+                    else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+                });
         }
         
         function renderTable(users) {
-            const tbody = document.getElementById('tbody');
+            var tbody = document.getElementById('tbody');
             tbody.innerHTML = '';
-            const now = new Date();
-            const keys = Object.keys(users);
+            var now = new Date();
+            var keys = Object.keys(users);
             if (keys.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.05);padding:40px;letter-spacing:3px">No licenses found</td></tr>';
                 return;
             }
-            keys.forEach(key => {
-                const u = users[key];
-                const expires = u.expires_at ? new Date(u.expires_at) : null;
-                const isExpired = expires && now > expires;
-                const isBanned = u.banned || false;
-                let status = 'Active', badge = 'badge-active';
+            keys.forEach(function(key) {
+                var u = users[key];
+                var expires = u.expires_at ? new Date(u.expires_at) : null;
+                var isExpired = expires && now > expires;
+                var isBanned = u.banned || false;
+                var status = 'Active';
+                var badge = 'badge-active';
                 if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
                 else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><code>${key}</code></td>
-                    <td style="font-size:10px">${u.expires_at || 'Never'}</td>
-                    <td><span class="badge ${badge}">${status}</span></td>
-                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.device || '-'}</td>
-                    <td style="font-size:9px;color:rgba(255,255,255,0.1)">${u.created_at || '-'}</td>
-                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.notes || '-'}</td>
-                    <td style="text-align:center;white-space:nowrap">
-                        <button class="btn ${isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="toggleBan('${key}', ${isBanned})" style="margin:2px">${isBanned ? 'UNBAN' : 'BAN'}</button>
-                        <button class="btn btn-red btn-sm" onclick="deleteLic('${key}')" style="margin:2px">✕</button>
-                    </td>
-                `;
+                var tr = document.createElement('tr');
+                tr.innerHTML = '<td><code>' + key + '</code></td>' +
+                    '<td style="font-size:10px">' + (u.expires_at || 'Never') + '</td>' +
+                    '<td><span class="badge ' + badge + '">' + status + '</span></td>' +
+                    '<td style="font-size:10px;color:rgba(255,255,255,0.15)">' + (u.device || '-') + '</td>' +
+                    '<td style="font-size:9px;color:rgba(255,255,255,0.1)">' + (u.created_at || '-') + '</td>' +
+                    '<td style="font-size:10px;color:rgba(255,255,255,0.15)">' + (u.notes || '-') + '</td>' +
+                    '<td style="text-align:center;white-space:nowrap">' +
+                    '<button class="btn ' + (isBanned ? 'btn-green' : 'btn-red') + ' btn-sm" onclick="toggleBan(\'' + key + '\',' + isBanned + ')" style="margin:2px">' + (isBanned ? 'UNBAN' : 'BAN') + '</button>' +
+                    '<button class="btn btn-red btn-sm" onclick="deleteLic(\'' + key + '\')" style="margin:2px">✕</button>' +
+                    '</td>';
                 tbody.appendChild(tr);
             });
         }
         
-        async function refreshAll() {
-            const data = await apiCall('/admin/data', 'GET');
-            if (!data) {
-                document.getElementById('tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ff4444;padding:40px">❌ Failed to load</td></tr>';
-                return;
-            }
-            allUsers = data.users || {};
-            filteredUsers = allUsers;
-            renderTable(filteredUsers);
-            document.getElementById('s_total').textContent = data.total || 0;
-            document.getElementById('s_active').textContent = data.active || 0;
-            document.getElementById('s_expired').textContent = data.expired || 0;
-            document.getElementById('s_banned').textContent = data.banned || 0;
-            document.getElementById('s_devices').textContent = data.device_count || 0;
+        function refreshAll() {
+            apiCall('/admin/data', 'GET')
+                .then(function(data) {
+                    if (!data) {
+                        document.getElementById('tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ff4444;padding:40px">❌ Failed to load</td></tr>';
+                        return;
+                    }
+                    allUsers = data.users || {};
+                    filteredUsers = allUsers;
+                    renderTable(filteredUsers);
+                    document.getElementById('s_total').textContent = data.total || 0;
+                    document.getElementById('s_active').textContent = data.active || 0;
+                    document.getElementById('s_expired').textContent = data.expired || 0;
+                    document.getElementById('s_banned').textContent = data.banned || 0;
+                    document.getElementById('s_devices').textContent = data.device_count || 0;
+                });
         }
         
         function searchLic() {
-            const q = document.getElementById('search').value.toLowerCase().trim();
+            var q = document.getElementById('search').value.toLowerCase().trim();
             if (!q) { filteredUsers = allUsers; renderTable(filteredUsers); return; }
             filteredUsers = {};
-            Object.keys(allUsers).forEach(key => {
-                const u = allUsers[key];
+            Object.keys(allUsers).forEach(function(key) {
+                var u = allUsers[key];
                 if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
                     filteredUsers[key] = u;
                 }
@@ -1685,6 +1213,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         
         refreshAll();
         loadSounds();
+        setTimeout(checkSoundStatus, 1000);
         setInterval(refreshAll, 30000);
     </script>
 </body>
