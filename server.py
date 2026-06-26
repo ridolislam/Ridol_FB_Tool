@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Supabase Only
+Ridol FB Tool License Server v4.0 - Supabase Only (Fixed Regex)
 Author: Ridol Islam
 License: MIT
 """
@@ -400,6 +400,7 @@ def api_upload_sound():
         logger.info(f"[+] Filename: {file.filename}")
         logger.info(f"[+] Content Type: {file.content_type}")
         
+        # Using .lower() and checking extension properly
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ['.mp3', '.wav', '.ogg']:
             error_msg = f'Invalid file type: {ext}. Only MP3, WAV, OGG allowed.'
@@ -675,7 +676,7 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ==================== HTML TEMPLATES ====================
+# ==================== HTML TEMPLATES (FIXED REGEX) ====================
 
 LOGIN_HTML = '''<!DOCTYPE html>
 <html>
@@ -907,125 +908,132 @@ ADMIN_HTML = '''<!DOCTYPE html>
     </div>
     
     <script>
-        let allUsers = {};
-        let filteredUsers = {};
-        let lastCreatedKey = '';
+        var allUsers = {};
+        var filteredUsers = {};
+        var lastCreatedKey = '';
         
         function showMsg(text, type) {
-            const el = document.getElementById('msg');
+            var el = document.getElementById('msg');
             el.textContent = text;
             el.className = 'msg msg-' + type;
             el.style.display = 'block';
-            setTimeout(() => { el.style.display = 'none'; }, 6000);
+            setTimeout(function() { el.style.display = 'none'; }, 6000);
         }
         
-        async function apiCall(url, method, data) {
-            try {
-                const res = await fetch(url, {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: data ? JSON.stringify(data) : undefined
-                });
+        function apiCall(url, method, data) {
+            return fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: data ? JSON.stringify(data) : undefined
+            }).then(function(res) {
                 if (res.status === 401 || res.status === 302) {
                     window.location.href = '/admin';
                     return null;
                 }
-                return await res.json();
-            } catch (e) {
+                return res.json();
+            }).catch(function(e) {
                 showMsg('❌ Network Error: ' + e.message, 'error');
                 return null;
-            }
+            });
         }
         
         // ===== TEST CONNECTION =====
-        async function testConnection() {
+        function testConnection() {
             showMsg('🔌 Testing Supabase connection...', 'info');
-            try {
-                const res = await fetch('/api/v1/ping');
-                const data = await res.json();
-                if (data.status === 'online') {
-                    showMsg('✅ Server reachable! DB: ' + data.database, 'success');
-                } else {
-                    showMsg('❌ Server error', 'error');
-                }
-            } catch (e) {
-                showMsg('❌ Connection failed: ' + e.message, 'error');
-            }
+            fetch('/api/v1/ping')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.status === 'online') {
+                        showMsg('✅ Server reachable! DB: ' + data.database, 'success');
+                    } else {
+                        showMsg('❌ Server error', 'error');
+                    }
+                })
+                .catch(function(e) {
+                    showMsg('❌ Connection failed: ' + e.message, 'error');
+                });
         }
         
         // ===== SOUND FUNCTIONS =====
-        const dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
-        dropZone.addEventListener('drop', (e) => {
+        var dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', function(e) {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
         });
         
-        async function uploadSound(files) {
+        function uploadSound(files) {
             if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
-            const file = files[0];
-            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
+            var file = files[0];
+            var fileName = file.name;
+            var fileExt = fileName.split('.').pop().toLowerCase();
+            
+            // FIXED: Using indexOf instead of regex to avoid escape issues
+            if (!['mp3', 'wav', 'ogg'].includes(fileExt)) {
+                showMsg('❌ Only MP3, WAV, OGG allowed', 'error');
+                return;
+            }
+            
             if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
-            const formData = new FormData();
+            var formData = new FormData();
             formData.append('file', file);
-            try {
-                showMsg('⏳ Uploading to Supabase...', 'info');
-                const res = await fetch('/api/v1/sound/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.success) { 
-                    showMsg('✅ ' + data.message + ' (' + data.original_name + ')', 'success'); 
-                    loadSounds(); 
-                    checkSoundStatus();
-                } else { 
-                    showMsg('❌ ' + data.message, 'error'); 
-                }
-            } catch (e) { showMsg('❌ Upload failed: ' + e.message, 'error'); }
+            showMsg('⏳ Uploading to Supabase...', 'info');
+            
+            fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showMsg('✅ ' + data.message + ' (' + data.original_name + ')', 'success');
+                        loadSounds();
+                        checkSoundStatus();
+                    } else {
+                        showMsg('❌ ' + data.message, 'error');
+                    }
+                })
+                .catch(function(e) { showMsg('❌ Upload failed: ' + e.message, 'error'); });
         }
         
-        async function loadSounds() {
-            try {
-                const res = await fetch('/api/v1/sound/status');
-                const data = await res.json();
-                const list = document.getElementById('soundList');
-                if (data.sounds && data.sounds.length > 0) {
-                    let html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS (Supabase):</strong></div>';
-                    data.sounds.forEach(s => {
-                        const ext = s.name.split('.').pop().toUpperCase();
-                        html += `
-                            <div class="sound-item">
-                                <div class="info"><span style="font-size:18px">🎵</span><span class="name">${s.name}</span><span class="type">${ext}</span><span class="size">${s.size_mb} MB</span></div>
-                                <div style="display:flex;gap:8px">
-                                    <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶ PLAY</button>
-                                    <button class="btn btn-green btn-sm" onclick="copySingleLink('${s.name}')">📋</button>
-                                    <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
-                                </div>
-                            </div>
-                        `;
-                    });
-                    list.innerHTML = html;
-                } else {
-                    list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No sounds in Supabase</div>';
-                }
-            } catch (e) { showMsg('❌ Failed to load sounds', 'error'); }
+        function loadSounds() {
+            fetch('/api/v1/sound/status')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var list = document.getElementById('soundList');
+                    if (data.sounds && data.sounds.length > 0) {
+                        var html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS (Supabase):</strong></div>';
+                        data.sounds.forEach(function(s) {
+                            var ext = s.name.split('.').pop().toUpperCase();
+                            html += '<div class="sound-item">' +
+                                '<div class="info"><span style="font-size:18px">🎵</span><span class="name">' + s.name + '</span><span class="type">' + ext + '</span><span class="size">' + s.size_mb + ' MB</span></div>' +
+                                '<div style="display:flex;gap:8px">' +
+                                '<button class="btn btn-blue btn-sm" onclick="playSound(\'' + s.name + '\')">▶ PLAY</button>' +
+                                '<button class="btn btn-green btn-sm" onclick="copySingleLink(\'' + s.name + '\')">📋</button>' +
+                                '<button class="btn btn-red btn-sm" onclick="deleteSound(\'' + s.name + '\')">✕</button>' +
+                                '</div></div>';
+                        });
+                        list.innerHTML = html;
+                    } else {
+                        list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No sounds in Supabase</div>';
+                    }
+                })
+                .catch(function(e) { showMsg('❌ Failed to load sounds', 'error'); });
         }
         
-        async function playSound(filename) {
-            try {
-                const url = window.location.origin + '/api/v1/sound/download/' + filename;
-                const audio = new Audio(url);
-                audio.play();
-                showMsg('▶ Playing: ' + filename, 'info');
-            } catch (e) { showMsg('❌ Play failed: ' + e.message, 'error'); }
+        function playSound(filename) {
+            var url = window.location.origin + '/api/v1/sound/download/' + filename;
+            var audio = new Audio(url);
+            audio.play();
+            showMsg('▶ Playing: ' + filename, 'info');
         }
         
         function copySingleLink(filename) {
-            const url = window.location.origin + '/api/v1/sound/download/' + filename;
-            navigator.clipboard.writeText(url).then(() => showMsg('📋 Link copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var url = window.location.origin + '/api/v1/sound/download/' + filename;
+            navigator.clipboard.writeText(url).then(function() {
+                showMsg('📋 Link copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
                 ta.select();
@@ -1035,21 +1043,27 @@ ADMIN_HTML = '''<!DOCTYPE html>
             });
         }
         
-        async function deleteSound(filename) {
+        function deleteSound(filename) {
             if (!confirm('Delete ' + filename + '?')) return;
-            try {
-                const res = await fetch('/api/v1/sound/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
-                const data = await res.json();
+            fetch('/api/v1/sound/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
                 if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
                 else { showMsg('❌ ' + data.message, 'error'); }
-            } catch (e) { showMsg('❌ Delete failed', 'error'); }
+            })
+            .catch(function(e) { showMsg('❌ Delete failed', 'error'); });
         }
         
         function copyDownloadLink() {
-            const url = window.location.origin + '/api/v1/sound/download';
-            navigator.clipboard.writeText(url).then(() => showMsg('📋 Download link copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var url = window.location.origin + '/api/v1/sound/download';
+            navigator.clipboard.writeText(url).then(function() {
+                showMsg('📋 Download link copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
                 ta.select();
@@ -1059,51 +1073,55 @@ ADMIN_HTML = '''<!DOCTYPE html>
             });
         }
         
-        async function checkSoundStatus() {
-            try {
-                showMsg('📊 Checking Supabase sound status...', 'info');
-                const res = await fetch('/api/v1/sound/status');
-                const data = await res.json();
-                if (data.exists) {
-                    showMsg('✅ Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
-                } else {
-                    showMsg('❌ No sound in Supabase', 'error');
-                }
-            } catch (e) { showMsg('❌ Status check failed: ' + e.message, 'error'); }
+        function checkSoundStatus() {
+            showMsg('📊 Checking Supabase sound status...', 'info');
+            fetch('/api/v1/sound/status')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.exists) {
+                        showMsg('✅ Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
+                    } else {
+                        showMsg('❌ No sound in Supabase', 'error');
+                    }
+                })
+                .catch(function(e) { showMsg('❌ Status check failed: ' + e.message, 'error'); });
         }
         
-        async function refreshSounds() {
+        function refreshSounds() {
             showMsg('🔄 Refreshing...', 'info');
-            await loadSounds();
-            await checkSoundStatus();
+            loadSounds();
+            checkSoundStatus();
         }
         
         // ===== LICENSE FUNCTIONS =====
-        async function createLic() {
-            const days = parseInt(document.getElementById('days').value) || 30;
-            const notes = document.getElementById('notes').value || '';
+        function createLic() {
+            var days = parseInt(document.getElementById('days').value) || 30;
+            var notes = document.getElementById('notes').value || '';
             if (days < 1) { showMsg('❌ At least 1 day', 'error'); return; }
             if (days > 365) { showMsg('❌ Max 365 days', 'error'); return; }
             
             showMsg('⏳ Generating...', 'info');
-            const result = await apiCall('/admin/create', 'POST', { days, notes });
-            if (result && result.success) {
-                lastCreatedKey = result.license_key;
-                document.getElementById('key_display').textContent = lastCreatedKey;
-                document.getElementById('new_key').style.display = 'block';
-                showMsg('✅ ' + result.message, 'success');
-                refreshAll();
-            } else {
-                showMsg(result ? result.message : '❌ Failed', 'error');
-                document.getElementById('new_key').style.display = 'none';
-            }
+            apiCall('/admin/create', 'POST', { days: days, notes: notes })
+                .then(function(result) {
+                    if (result && result.success) {
+                        lastCreatedKey = result.license_key;
+                        document.getElementById('key_display').textContent = lastCreatedKey;
+                        document.getElementById('new_key').style.display = 'block';
+                        showMsg('✅ ' + result.message, 'success');
+                        refreshAll();
+                    } else {
+                        showMsg(result ? result.message : '❌ Failed', 'error');
+                        document.getElementById('new_key').style.display = 'none';
+                    }
+                });
         }
         
         function copyKey() {
-            const key = document.getElementById('key_display').textContent;
-            navigator.clipboard.writeText(key).then(() => showMsg('📋 Copied!', 'success'))
-            .catch(() => {
-                const ta = document.createElement('textarea');
+            var key = document.getElementById('key_display').textContent;
+            navigator.clipboard.writeText(key).then(function() {
+                showMsg('📋 Copied!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
                 ta.value = key;
                 document.body.appendChild(ta);
                 ta.select();
@@ -1121,78 +1139,83 @@ ADMIN_HTML = '''<!DOCTYPE html>
             }
         }
         
-        async function toggleBan(key, isBanned) {
-            const action = isBanned ? 'unban' : 'ban';
+        function toggleBan(key, isBanned) {
+            var action = isBanned ? 'unban' : 'ban';
             showMsg('⏳ Processing...', 'info');
-            const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            apiCall('/admin/' + action, 'POST', { license_key: key })
+                .then(function(result) {
+                    if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+                    else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+                });
         }
         
-        async function deleteLic(key) {
+        function deleteLic(key) {
             if (!confirm('⚠️ Delete ' + key + '?')) return;
             showMsg('⏳ Deleting...', 'info');
-            const result = await apiCall('/admin/delete', 'POST', { license_key: key });
-            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
-            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+            apiCall('/admin/delete', 'POST', { license_key: key })
+                .then(function(result) {
+                    if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+                    else { showMsg(result ? result.message : '❌ Failed', 'error'); }
+                });
         }
         
         function renderTable(users) {
-            const tbody = document.getElementById('tbody');
+            var tbody = document.getElementById('tbody');
             tbody.innerHTML = '';
-            const now = new Date();
-            const keys = Object.keys(users);
+            var now = new Date();
+            var keys = Object.keys(users);
             if (keys.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.05);padding:40px;letter-spacing:3px">No licenses found</td></tr>';
                 return;
             }
-            keys.forEach(key => {
-                const u = users[key];
-                const expires = u.expires_at ? new Date(u.expires_at) : null;
-                const isExpired = expires && now > expires;
-                const isBanned = u.banned || false;
-                let status = 'Active', badge = 'badge-active';
+            keys.forEach(function(key) {
+                var u = users[key];
+                var expires = u.expires_at ? new Date(u.expires_at) : null;
+                var isExpired = expires && now > expires;
+                var isBanned = u.banned || false;
+                var status = 'Active';
+                var badge = 'badge-active';
                 if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
                 else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><code>${key}</code></td>
-                    <td style="font-size:10px">${u.expires_at || 'Never'}</td>
-                    <td><span class="badge ${badge}">${status}</span></td>
-                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.device || '-'}</td>
-                    <td style="font-size:9px;color:rgba(255,255,255,0.1)">${u.created_at || '-'}</td>
-                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.notes || '-'}</td>
-                    <td style="text-align:center;white-space:nowrap">
-                        <button class="btn ${isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="toggleBan('${key}', ${isBanned})" style="margin:2px">${isBanned ? 'UNBAN' : 'BAN'}</button>
-                        <button class="btn btn-red btn-sm" onclick="deleteLic('${key}')" style="margin:2px">✕</button>
-                    </td>
-                `;
+                var tr = document.createElement('tr');
+                tr.innerHTML = '<td><code>' + key + '</code></td>' +
+                    '<td style="font-size:10px">' + (u.expires_at || 'Never') + '</td>' +
+                    '<td><span class="badge ' + badge + '">' + status + '</span></td>' +
+                    '<td style="font-size:10px;color:rgba(255,255,255,0.15)">' + (u.device || '-') + '</td>' +
+                    '<td style="font-size:9px;color:rgba(255,255,255,0.1)">' + (u.created_at || '-') + '</td>' +
+                    '<td style="font-size:10px;color:rgba(255,255,255,0.15)">' + (u.notes || '-') + '</td>' +
+                    '<td style="text-align:center;white-space:nowrap">' +
+                    '<button class="btn ' + (isBanned ? 'btn-green' : 'btn-red') + ' btn-sm" onclick="toggleBan(\'' + key + '\',' + isBanned + ')" style="margin:2px">' + (isBanned ? 'UNBAN' : 'BAN') + '</button>' +
+                    '<button class="btn btn-red btn-sm" onclick="deleteLic(\'' + key + '\')" style="margin:2px">✕</button>' +
+                    '</td>';
                 tbody.appendChild(tr);
             });
         }
         
-        async function refreshAll() {
-            const data = await apiCall('/admin/data', 'GET');
-            if (!data) {
-                document.getElementById('tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ff4444;padding:40px">❌ Failed to load</td></tr>';
-                return;
-            }
-            allUsers = data.users || {};
-            filteredUsers = allUsers;
-            renderTable(filteredUsers);
-            document.getElementById('s_total').textContent = data.total || 0;
-            document.getElementById('s_active').textContent = data.active || 0;
-            document.getElementById('s_expired').textContent = data.expired || 0;
-            document.getElementById('s_banned').textContent = data.banned || 0;
-            document.getElementById('s_devices').textContent = data.device_count || 0;
+        function refreshAll() {
+            apiCall('/admin/data', 'GET')
+                .then(function(data) {
+                    if (!data) {
+                        document.getElementById('tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ff4444;padding:40px">❌ Failed to load</td></tr>';
+                        return;
+                    }
+                    allUsers = data.users || {};
+                    filteredUsers = allUsers;
+                    renderTable(filteredUsers);
+                    document.getElementById('s_total').textContent = data.total || 0;
+                    document.getElementById('s_active').textContent = data.active || 0;
+                    document.getElementById('s_expired').textContent = data.expired || 0;
+                    document.getElementById('s_banned').textContent = data.banned || 0;
+                    document.getElementById('s_devices').textContent = data.device_count || 0;
+                });
         }
         
         function searchLic() {
-            const q = document.getElementById('search').value.toLowerCase().trim();
+            var q = document.getElementById('search').value.toLowerCase().trim();
             if (!q) { filteredUsers = allUsers; renderTable(filteredUsers); return; }
             filteredUsers = {};
-            Object.keys(allUsers).forEach(key => {
-                const u = allUsers[key];
+            Object.keys(allUsers).forEach(function(key) {
+                var u = allUsers[key];
                 if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
                     filteredUsers[key] = u;
                 }
