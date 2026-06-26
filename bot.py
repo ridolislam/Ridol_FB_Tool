@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v4.0 - Firebase Integration
+Ridol FB Tool v4.0 - Complete Audio Experience Edition
 Author: Ridol Islam
 License: MIT
 """
@@ -31,6 +31,11 @@ LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v4.0'
 
+# ==================== GITHUB SOUND CONFIG ====================
+GITHUB_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/sounds"
+GITHUB_CUSTOM_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/custom_sounds"
+
+os.makedirs(SOUND_DIR, exist_ok=True)
 os.makedirs(CUSTOM_SOUND_DIR, exist_ok=True)
 
 # ==================== COLOR CODES ====================
@@ -59,7 +64,6 @@ class Color:
 def server_request(endpoint, method='GET', data=None):
     """Make request to server API"""
     url = f"{LICENSE_SERVER}/api/v1/{endpoint}"
-    
     headers = {'Content-Type': 'application/json'}
     
     try:
@@ -67,105 +71,108 @@ def server_request(endpoint, method='GET', data=None):
             response = requests.get(url, headers=headers, timeout=15)
         elif method == 'POST':
             response = requests.post(url, headers=headers, json=data, timeout=15)
-        elif method == 'DELETE':
-            response = requests.delete(url, headers=headers, timeout=15)
         else:
             return None
         
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
-        else:
-            print(f"{Color.RED}[-] Server Error ({response.status_code}){Color.RESET}")
-            return None
-            
+        return None
     except Exception as e:
-        print(f"{Color.RED}[-] Server Request Error: {e}{Color.RESET}")
+        print(f"{Color.RED}[-] Server Error: {e}{Color.RESET}")
         return None
 
-def server_verify_license(license_key, device_serial):
-    """Verify license using server API"""
-    try:
-        result = server_request("license/verify", 'POST', {
-            'license_key': license_key,
-            'device_serial': device_serial
-        })
-        if result:
-            return result
-        return {'valid': False, 'message': 'Server error'}
-    except Exception as e:
-        return {'valid': False, 'message': f'Error: {str(e)}'}
+def verify_license(key, device_serial):
+    """Verify license using server"""
+    result = server_request("license/verify", 'POST', {
+        'license_key': key,
+        'device_serial': device_serial
+    })
+    if result:
+        return result
+    return {'valid': False, 'message': 'Server error'}
 
-def server_check_sound_status():
-    """Check if sound exists on server"""
-    try:
-        result = server_request("sound/status", 'GET')
-        if result:
-            return result
-        return {'exists': False, 'sounds': []}
-    except:
-        return {'exists': False, 'sounds': []}
+def register_device(device_serial, license_key):
+    """Register device with server"""
+    result = server_request("device/register", 'POST', {
+        'device_serial': device_serial,
+        'license_key': license_key
+    })
+    if result:
+        return result
+    return {'success': False, 'message': 'Server error'}
 
-def server_download_sound():
-    """Download sound from server"""
-    try:
-        status = server_check_sound_status()
-        if not status.get('exists'):
-            print(f"{Color.YELLOW}[!] No sound on server{Color.RESET}")
-            return None
-        
-        sounds = status.get('sounds', [])
-        if not sounds:
-            return None
-        
-        filename = None
-        for s in sounds:
-            if s['name'].endswith('.mp3'):
-                filename = s['name']
-                break
-        if not filename:
-            filename = sounds[0]['name']
-        
-        download_url = f"{LICENSE_SERVER}/api/v1/sound/download/{filename}"
-        print(f"{Color.CYAN}[*] Downloading {filename} from server...{Color.RESET}")
-        
-        response = requests.get(download_url, stream=True, timeout=30)
-        if response.status_code != 200:
-            print(f"{Color.RED}[-] Download failed: {response.status_code}{Color.RESET}")
-            return None
-        
+# ==================== GITHUB SOUND DOWNLOAD ====================
+
+def download_sound_from_github(filename, is_custom=False):
+    """Download sound file from GitHub"""
+    if is_custom:
+        url = f"{GITHUB_CUSTOM_SOUND_URL}/{filename}"
         filepath = os.path.join(CUSTOM_SOUND_DIR, filename)
-        total_size = int(response.headers.get('content-length', 0))
+    else:
+        url = f"{GITHUB_SOUND_URL}/{filename}"
+        filepath = os.path.join(SOUND_DIR, filename)
+    
+    try:
+        print(f"{Color.CYAN}[*] Downloading {filename} from GitHub...{Color.RESET}")
+        response = requests.get(url, stream=True, timeout=30)
+        
+        if response.status_code != 200:
+            print(f"{Color.YELLOW}[!] {filename} not found on GitHub (404){Color.RESET}")
+            return None
         
         with open(filepath, 'wb') as f:
-            if total_size == 0:
-                f.write(response.content)
-            else:
-                downloaded = 0
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    progress = int((downloaded / total_size) * 100)
-                    print(f'\r{Color.CYAN}[*] Downloading: {progress}%{Color.RESET}', end='', flush=True)
+            f.write(response.content)
         
-        print(f'\n{Color.GREEN}[+] Sound downloaded successfully! ({filename}){Color.RESET}')
+        print(f"{Color.GREEN}[+] Downloaded: {filename}{Color.RESET}")
         return filepath
-        
     except Exception as e:
         print(f"{Color.RED}[-] Download error: {e}{Color.RESET}")
         return None
 
-def server_register_device(device_serial, license_key):
-    """Register device with server"""
-    try:
-        result = server_request("device/register", 'POST', {
-            'device_serial': device_serial,
-            'license_key': license_key
-        })
-        if result:
-            return result
-        return {'success': False, 'message': 'Server error'}
-    except:
-        return {'success': False, 'message': 'Connection failed'}
+def download_all_sounds():
+    """Download all default sound files from GitHub"""
+    sounds = [
+        'binary_rain.wav',
+        'startup.wav',
+        'click.wav',
+        'success.wav',
+        'fail.wav',
+        'done.wav'
+    ]
+    
+    print(f"{Color.CYAN}[*] Checking default sounds...{Color.RESET}")
+    
+    for sound in sounds:
+        filepath = os.path.join(SOUND_DIR, sound)
+        if not os.path.exists(filepath):
+            download_sound_from_github(sound, is_custom=False)
+        else:
+            print(f"{Color.DIM}[*] {sound} already exists{Color.RESET}")
+
+def download_custom_background():
+    """Download custom background MP3 from GitHub"""
+    custom_mp3 = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
+    custom_wav = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
+    
+    # Check if custom sound already exists
+    if os.path.exists(custom_mp3) or os.path.exists(custom_wav):
+        print(f"{Color.DIM}[*] Custom background sound already exists{Color.RESET}")
+        return True
+    
+    print(f"{Color.CYAN}[*] Checking for custom background MP3...{Color.RESET}")
+    
+    # Try to download MP3
+    result = download_sound_from_github('background.mp3', is_custom=True)
+    if result:
+        return True
+    
+    # Try WAV as fallback
+    result = download_sound_from_github('background.wav', is_custom=True)
+    if result:
+        return True
+    
+    print(f"{Color.YELLOW}[!] No custom background sound found on GitHub{Color.RESET}")
+    return False
 
 # ==================== 3D TITLE ====================
 class TitleAnimation:
@@ -179,7 +186,7 @@ class TitleAnimation:
         print(border_top)
         print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
         
-        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}Firebase Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}GitHub Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
         print(title_line1)
         
         subtitle = f"{Color.CYAN}|{Color.RESET}  {Color.DIM}Complete Audio Experience{Color.RESET}  {Color.CYAN}|{Color.RESET}"
@@ -200,8 +207,14 @@ class TitleAnimation:
         status_line = f"{Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {status_color}Server: {status_text}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
         print(status_line)
         
-        server_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}@ {Color.RESET}Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
-        print(server_line)
+        # Check custom sound status
+        custom_exists = os.path.exists(os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')) or \
+                       os.path.exists(os.path.join(CUSTOM_SOUND_DIR, 'background.wav'))
+        custom_status = "🎵 Custom" if custom_exists else "Default"
+        custom_color = Color.GREEN if custom_exists else Color.DIM
+        
+        custom_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}🎵{Color.RESET} Sound: {custom_color}{custom_status}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(custom_line)
         
         print(border_bottom)
         print()
@@ -219,6 +232,12 @@ class AudioEngine:
         self.background_file = None
         os.makedirs(self.sound_dir, exist_ok=True)
         os.makedirs(self.custom_sound_dir, exist_ok=True)
+        
+        # Download default sounds
+        download_all_sounds()
+        
+        # Download custom background
+        download_custom_background()
     
     def _check_voice(self):
         try:
@@ -242,11 +261,19 @@ class AudioEngine:
         if not self.sound_available:
             return
         
+        # Check default sound dir first
         filepath = os.path.join(self.sound_dir, filename)
         if not os.path.exists(filepath):
+            # Check custom sound dir
             filepath = os.path.join(self.custom_sound_dir, filename)
             if not os.path.exists(filepath):
-                return
+                # Try to download from GitHub
+                if filename.endswith('.mp3'):
+                    download_sound_from_github(filename, is_custom=True)
+                else:
+                    download_sound_from_github(filename, is_custom=False)
+                if not os.path.exists(filepath):
+                    return
         
         if filename.endswith('.mp3'):
             try:
@@ -262,71 +289,34 @@ class AudioEngine:
         except:
             pass
     
-    def play_startup(self):
-        if os.path.exists(os.path.join(self.sound_dir, 'startup.mp3')):
-            self.play_sound('startup.mp3', '-3')
-        else:
-            self.play_sound('startup.wav', '-3')
-    
-    def play_click(self):
-        if os.path.exists(os.path.join(self.sound_dir, 'click.mp3')):
-            self.play_sound('click.mp3', '-8')
-        else:
-            self.play_sound('click.wav', '-8')
-    
-    def play_success(self):
-        if os.path.exists(os.path.join(self.sound_dir, 'success.mp3')):
-            self.play_sound('success.mp3', '-5')
-        else:
-            self.play_sound('success.wav', '-5')
-    
-    def play_fail(self):
-        if os.path.exists(os.path.join(self.sound_dir, 'fail.mp3')):
-            self.play_sound('fail.mp3', '-5')
-        else:
-            self.play_sound('fail.wav', '-5')
-    
-    def play_done(self):
-        if os.path.exists(os.path.join(self.sound_dir, 'done.mp3')):
-            self.play_sound('done.mp3', '-3')
-        else:
-            self.play_sound('done.wav', '-3')
-    
-    def download_background_sound(self):
-        return server_download_sound()
+    def play_startup(self): self.play_sound('startup.wav', '-3')
+    def play_click(self): self.play_sound('click.wav', '-8')
+    def play_success(self): self.play_sound('success.wav', '-5')
+    def play_fail(self): self.play_sound('fail.wav', '-5')
+    def play_done(self): self.play_sound('done.wav', '-3')
     
     def play_background_loop(self):
         if not self.sound_available:
             return
         
-        custom_files = []
-        if os.path.exists(self.custom_sound_dir):
-            for f in os.listdir(self.custom_sound_dir):
-                if f.endswith(('.mp3', '.wav', '.ogg')):
-                    custom_files.append(f)
+        # Check for custom background first
+        custom_mp3 = os.path.join(self.custom_sound_dir, 'background.mp3')
+        custom_wav = os.path.join(self.custom_sound_dir, 'background.wav')
+        default_bg = os.path.join(self.sound_dir, 'binary_rain.wav')
         
-        if not custom_files:
-            print(f"{Color.CYAN}[*] No custom sound found. Downloading from server...{Color.RESET}")
-            self.download_background_sound()
-            if os.path.exists(self.custom_sound_dir):
-                for f in os.listdir(self.custom_sound_dir):
-                    if f.endswith(('.mp3', '.wav', '.ogg')):
-                        custom_files.append(f)
-        
-        bg_file = None
-        if custom_files:
-            for f in custom_files:
-                if f.endswith('.mp3'):
-                    bg_file = os.path.join(self.custom_sound_dir, f)
-                    break
-            if not bg_file:
-                bg_file = os.path.join(self.custom_sound_dir, custom_files[0])
-            print(f"{Color.GREEN}[+] Playing custom sound: {os.path.basename(bg_file)}{Color.RESET}")
+        if os.path.exists(custom_mp3):
+            bg_file = custom_mp3
+            print(f"{Color.GREEN}[+] Playing custom MP3 background{Color.RESET}")
+        elif os.path.exists(custom_wav):
+            bg_file = custom_wav
+            print(f"{Color.GREEN}[+] Playing custom WAV background{Color.RESET}")
         else:
-            bg_file = os.path.join(self.sound_dir, 'binary_rain.wav')
+            bg_file = default_bg
             if not os.path.exists(bg_file):
-                return
-            print(f"{Color.DIM}[*] Playing default sound{Color.RESET}")
+                download_sound_from_github('binary_rain.wav', is_custom=False)
+                if not os.path.exists(bg_file):
+                    return
+            print(f"{Color.DIM}[*] Playing default background{Color.RESET}")
         
         self.background_file = bg_file
         self.bg_playing = True
@@ -458,7 +448,7 @@ class LicenseManager:
     
     def verify(self, key):
         print(f'  {Color.YELLOW}[*] Verifying license via server...{Color.RESET}')
-        result = server_verify_license(key, self.get_device_serial())
+        result = verify_license(key, self.get_device_serial())
         if result.get('valid'):
             print(f'  {Color.GREEN}[+] License Active! Expires: {result.get("expires_at", "N/A")}{Color.RESET}')
             self.set_license_key(key)
@@ -469,7 +459,7 @@ class LicenseManager:
     
     def register_device(self, device_serial):
         print(f'  {Color.CYAN}[*] Registering device via server...{Color.RESET}')
-        result = server_register_device(device_serial, self.get_license_key())
+        result = register_device(device_serial, self.get_license_key())
         if result.get('success'):
             self.set_device_serial(device_serial)
             print(f'  {Color.GREEN}[+] Device registered successfully{Color.RESET}')
@@ -639,7 +629,6 @@ class MainMenu:
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}*{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
         
-        # Check server connection
         try:
             result = server_request("ping", 'GET')
             connected = result is not None
@@ -789,7 +778,6 @@ class MainMenu:
                         print(f'    Database: {result.get("database", "N/A")}')
                         print(f'    Licenses: {result.get("license_count", 0)}')
                         print(f'    Devices: {result.get("device_count", 0)}')
-                        print(f'    Sounds: {len(result.get("sound_files", []))}')
                     else:
                         print(f'\n  {Color.RED}[-] Server not reachable{Color.RESET}')
                 except Exception as e:
@@ -897,10 +885,8 @@ class MainMenu:
             if result:
                 print(f'\n{Color.CYAN}Server Status:{Color.RESET}')
                 print(f'  Database: {result.get("database", "N/A")}')
-                print(f'  Storage: {result.get("storage", "N/A")}')
                 print(f'  Licenses: {result.get("license_count", 0)}')
                 print(f'  Devices: {result.get("device_count", 0)}')
-                print(f'  Sounds: {len(result.get("sound_files", []))}')
             else:
                 print(f'\n{Color.RED}Server: OFFLINE{Color.RESET}')
         except:
@@ -920,7 +906,7 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Test Voice Feedback             {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Toggle Background Audio         {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Audio Status                    {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Download Sound from Server      {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Re-download Sounds from GitHub  {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -951,14 +937,20 @@ class MainMenu:
                 print(f'\n{self.audio.get_status()}')
                 press_enter()
             elif choice == '5':
-                print(f'\n  {Color.CYAN}Downloading sound from server...{Color.RESET}')
+                print(f'\n  {Color.CYAN}Re-downloading all sounds from GitHub...{Color.RESET}')
                 self.audio.stop_background_sound()
-                if os.path.exists(self.audio.custom_sound_dir):
-                    for f in os.listdir(self.audio.custom_sound_dir):
-                        if f.endswith(('.mp3', '.wav', '.ogg')):
-                            os.remove(os.path.join(self.audio.custom_sound_dir, f))
-                server_download_sound()
+                # Delete all default sounds
+                for f in os.listdir(self.audio.sound_dir):
+                    if f.endswith(('.wav', '.mp3', '.ogg')):
+                        os.remove(os.path.join(self.audio.sound_dir, f))
+                # Delete custom sounds
+                for f in os.listdir(self.audio.custom_sound_dir):
+                    if f.endswith(('.wav', '.mp3', '.ogg')):
+                        os.remove(os.path.join(self.audio.custom_sound_dir, f))
+                download_all_sounds()
+                download_custom_background()
                 self.audio.play_background()
+                print(f'  {Color.GREEN}[+] Sounds re-downloaded!{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -1019,10 +1011,10 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  4. Connect your device (Option 1)              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  5. Start the bot (Option 4)                    {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}
- {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Firebase Features{Color.RESET}{Color.CYAN}            |{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - License verification via Firebase            {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Sound storage in Firebase Storage            {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Device registration via Firebase             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                       |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - License stored in MongoDB                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Sounds from GitHub                           {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - Custom MP3 support                          {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  - Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}{Color.CYAN}  |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         press_enter()
@@ -1046,17 +1038,11 @@ if __name__ == '__main__':
             print(f'{Color.YELLOW}[!] mpv not found - install: pkg install mpv{Color.RESET}')
             print(f'{Color.YELLOW}[!] Only WAV files will play{Color.RESET}')
         
-        print(f'{Color.CYAN}[*] Initializing Server Connection...{Color.RESET}')
+        print(f'{Color.CYAN}[*] Initializing...{Color.RESET}')
         
-        # Test server connection
-        try:
-            result = server_request("ping", 'GET')
-            if result:
-                print(f'{Color.GREEN}[+] Server Connected! (Firebase){Color.RESET}')
-            else:
-                print(f'{Color.YELLOW}[!] Server connection failed. Some features may not work.{Color.RESET}')
-        except Exception as e:
-            print(f'{Color.YELLOW}[!] Server error: {e}{Color.RESET}')
+        # Download all sounds
+        download_all_sounds()
+        download_custom_background()
         
         time.sleep(1)
         

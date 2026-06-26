@@ -1,56 +1,48 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Firebase Integration
+Ridol FB Tool License Server v4.0 - MongoDB + GitHub Music
 Author: Ridol Islam
 License: MIT
 """
 
-from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
+from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for
 from flask_cors import CORS
 import os
 import sys
 import json
 import uuid
-import base64
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
-import io
-import requests
-import traceback
 
-# ==================== FIREBASE CONFIGURATION ====================
+# ==================== MONGODB CONNECTION ====================
+MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
+
 try:
-    import firebase_admin
-    from firebase_admin import credentials, firestore, storage, auth
-    FIREBASE_AVAILABLE = True
+    from pymongo import MongoClient
+    MONGO_AVAILABLE = True
 except ImportError:
-    FIREBASE_AVAILABLE = False
-    print("[-] Firebase not installed. Install: pip install firebase-admin")
+    MONGO_AVAILABLE = False
+    print("[-] pymongo not installed. Install: pip install pymongo")
 
-# Initialize Firebase
-firebase_db = None
-firebase_bucket = None
+db = None
+users_collection = None
+devices_collection = None
 
-if FIREBASE_AVAILABLE:
+if MONGO_AVAILABLE:
     try:
-        # Load Firebase config
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'firebase_config.json')
-        
-        if os.path.exists(config_path):
-            cred = credentials.Certificate(config_path)
-            firebase_admin.initialize_app(cred, {
-                'storageBucket': 'ridol-fb-tool.firebasestorage.app'
-            })
-            firebase_db = firestore.client()
-            firebase_bucket = storage.bucket()
-            print("[+] Firebase Connected Successfully!")
-        else:
-            print("[-] firebase_config.json not found!")
-            FIREBASE_AVAILABLE = False
+        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
+        db = client['ridol_fb_tool']
+        users_collection = db['users']
+        devices_collection = db['devices']
+        client.admin.command('ping')
+        print("[+] MongoDB Connected Successfully!")
+        print(f"[+] Database: {db.name}")
     except Exception as e:
-        print(f"[-] Firebase Error: {e}")
-        FIREBASE_AVAILABLE = False
+        print(f"[-] MongoDB Connection Error: {e}")
+        db = None
+        users_collection = None
+        devices_collection = None
 
 app = Flask(__name__)
 CORS(app)
@@ -60,164 +52,81 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 ADMIN_PASSWORD = 'Ridol123@'
 
-# ==================== FIREBASE DATABASE FUNCTIONS ====================
+# ==================== GITHUB SOUND CONFIG ====================
+GITHUB_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/sounds"
 
-def firebase_get_user(license_key):
-    """Get user by license key from Firebase"""
-    if firebase_db:
+# ==================== DATABASE FUNCTIONS ====================
+
+def get_user(license_key):
+    if users_collection:
         try:
-            doc = firebase_db.collection('users').document(license_key).get()
-            if doc.exists:
-                return doc.to_dict()
-        except Exception as e:
-            print(f"[-] Firebase get user error: {e}")
+            return users_collection.find_one({'license_key': license_key}, {'_id': 0})
+        except:
+            pass
     return None
 
-def firebase_get_users():
-    """Get all users from Firebase"""
-    if firebase_db:
+def get_users():
+    if users_collection:
         try:
-            docs = firebase_db.collection('users').stream()
-            users = []
-            for doc in docs:
-                user = doc.to_dict()
-                user['license_key'] = doc.id
-                users.append(user)
-            return users
-        except Exception as e:
-            print(f"[-] Firebase get users error: {e}")
+            return list(users_collection.find({}, {'_id': 0}))
+        except:
+            pass
     return []
 
-def firebase_save_user(user_data):
-    """Save user to Firebase"""
-    if firebase_db:
+def get_devices():
+    if devices_collection:
         try:
-            license_key = user_data['license_key']
+            return list(devices_collection.find({}, {'_id': 0}))
+        except:
+            pass
+    return []
+
+def get_device(device_serial):
+    if devices_collection:
+        try:
+            return devices_collection.find_one({'device_serial': device_serial}, {'_id': 0})
+        except:
+            pass
+    return None
+
+def save_user(user_data):
+    if users_collection:
+        try:
             if 'created_at' not in user_data:
                 user_data['created_at'] = datetime.now().isoformat()
-            firebase_db.collection('users').document(license_key).set(user_data)
+            users_collection.update_one(
+                {'license_key': user_data['license_key']},
+                {'$set': user_data},
+                upsert=True
+            )
             return True
-        except Exception as e:
-            print(f"[-] Firebase save user error: {e}")
+        except:
+            pass
     return False
 
-def firebase_delete_user(license_key):
-    """Delete user from Firebase"""
-    if firebase_db:
+def save_device(device_data):
+    if devices_collection:
         try:
-            firebase_db.collection('users').document(license_key).delete()
-            return True
-        except Exception as e:
-            print(f"[-] Firebase delete user error: {e}")
-    return False
-
-def firebase_get_devices():
-    """Get all devices from Firebase"""
-    if firebase_db:
-        try:
-            docs = firebase_db.collection('devices').stream()
-            devices = []
-            for doc in docs:
-                device = doc.to_dict()
-                device['device_serial'] = doc.id
-                devices.append(device)
-            return devices
-        except Exception as e:
-            print(f"[-] Firebase get devices error: {e}")
-    return []
-
-def firebase_get_device(device_serial):
-    """Get device by serial from Firebase"""
-    if firebase_db:
-        try:
-            doc = firebase_db.collection('devices').document(device_serial).get()
-            if doc.exists:
-                return doc.to_dict()
-        except Exception as e:
-            print(f"[-] Firebase get device error: {e}")
-    return None
-
-def firebase_save_device(device_data):
-    """Save device to Firebase"""
-    if firebase_db:
-        try:
-            device_serial = device_data['device_serial']
             if 'created_at' not in device_data:
                 device_data['created_at'] = datetime.now().isoformat()
-            firebase_db.collection('devices').document(device_serial).set(device_data)
+            devices_collection.update_one(
+                {'device_serial': device_data['device_serial']},
+                {'$set': device_data},
+                upsert=True
+            )
             return True
-        except Exception as e:
-            print(f"[-] Firebase save device error: {e}")
+        except:
+            pass
     return False
 
-# ==================== FIREBASE STORAGE FUNCTIONS ====================
-
-def firebase_upload_sound(file_data, filename):
-    """Upload sound file to Firebase Storage"""
-    if firebase_bucket:
+def delete_user(license_key):
+    if users_collection:
         try:
-            blob = firebase_bucket.blob(f'sounds/{filename}')
-            blob.upload_from_string(file_data, content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav')
-            blob.make_public()
-            
-            # Save metadata to Firestore
-            sound_data = {
-                'filename': filename,
-                'size': len(file_data),
-                'uploaded_at': datetime.now().isoformat(),
-                'url': blob.public_url,
-                'content_type': 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
-            }
-            firebase_db.collection('sounds').document(filename).set(sound_data)
-            
-            return blob.public_url
-        except Exception as e:
-            print(f"[-] Firebase upload error: {e}")
-    return None
-
-def firebase_get_sound(filename):
-    """Get sound file from Firebase Storage"""
-    if firebase_bucket:
-        try:
-            blob = firebase_bucket.blob(f'sounds/{filename}')
-            if blob.exists():
-                return blob.download_as_bytes()
-        except Exception as e:
-            print(f"[-] Firebase get sound error: {e}")
-    return None
-
-def firebase_delete_sound(filename):
-    """Delete sound file from Firebase Storage"""
-    if firebase_bucket:
-        try:
-            blob = firebase_bucket.blob(f'sounds/{filename}')
-            if blob.exists():
-                blob.delete()
-                firebase_db.collection('sounds').document(filename).delete()
-                return True
-        except Exception as e:
-            print(f"[-] Firebase delete sound error: {e}")
+            users_collection.delete_one({'license_key': license_key})
+            return True
+        except:
+            pass
     return False
-
-def firebase_get_all_sounds():
-    """Get all sound metadata from Firebase"""
-    if firebase_db:
-        try:
-            docs = firebase_db.collection('sounds').stream()
-            sounds = []
-            for doc in docs:
-                sound = doc.to_dict()
-                sounds.append({
-                    'name': sound.get('filename', doc.id),
-                    'size': sound.get('size', 0),
-                    'size_mb': round(sound.get('size', 0) / (1024 * 1024), 2),
-                    'uploaded_at': sound.get('uploaded_at', 'N/A'),
-                    'url': sound.get('url', '')
-                })
-            return sounds
-        except Exception as e:
-            print(f"[-] Firebase get sounds error: {e}")
-    return []
 
 # ==================== LICENSE FUNCTIONS ====================
 
@@ -225,7 +134,7 @@ def generate_license_key():
     return f'RIDOL-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:8].upper()}'
 
 def validate_license(key, device_serial):
-    user = firebase_get_user(key)
+    user = get_user(key)
     if not user:
         return {'valid': False, 'message': 'Invalid license key'}
     if user.get('banned', False):
@@ -243,7 +152,7 @@ def validate_license(key, device_serial):
             'license_key': key,
             'last_seen': datetime.now().isoformat()
         }
-        firebase_save_device(device_data)
+        save_device(device_data)
     return {
         'valid': True,
         'message': 'License active',
@@ -263,24 +172,15 @@ def login_required(f):
 
 @app.route('/')
 def home():
-    try:
-        users = firebase_get_users()
-        devices = firebase_get_devices()
-        sounds = firebase_get_all_sounds()
-        
-        return jsonify({
-            'server': 'Ridol FB Tool License Server',
-            'version': '4.0',
-            'status': 'online',
-            'database': 'Firebase Firestore',
-            'storage': 'Firebase Storage',
-            'users': len(users),
-            'devices': len(devices),
-            'sounds': len(sounds),
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'server': 'Ridol FB Tool License Server',
+        'version': '4.0',
+        'status': 'online',
+        'database': 'MongoDB',
+        'users': len(get_users()),
+        'devices': len(get_devices()),
+        'timestamp': datetime.now().isoformat()
+    })
 
 @app.route('/api/v1/ping')
 def ping():
@@ -288,194 +188,40 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': '4.0',
-        'database': 'Firebase Firestore',
-        'storage': 'Firebase Storage'
+        'database': 'MongoDB'
     })
 
 @app.route('/api/v1/status')
 def api_status():
-    try:
-        users = firebase_get_users()
-        devices = firebase_get_devices()
-        sounds = firebase_get_all_sounds()
-        
-        return jsonify({
-            'status': 'online',
-            'version': '4.0',
-            'timestamp': datetime.now().isoformat(),
-            'database': 'Firebase Firestore',
-            'storage': 'Firebase Storage',
-            'license_count': len(users),
-            'device_count': len(devices),
-            'sound_files': [s['name'] for s in sounds],
-            'sound_exists': len(sounds) > 0
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    users = get_users()
+    devices = get_devices()
+    return jsonify({
+        'status': 'online',
+        'version': '4.0',
+        'timestamp': datetime.now().isoformat(),
+        'database': 'MongoDB',
+        'license_count': len(users),
+        'device_count': len(devices)
+    })
 
-@app.route('/api/v1/sound/status')
-def api_sound_status():
-    try:
-        sounds = firebase_get_all_sounds()
-        return jsonify({
-            'exists': len(sounds) > 0,
-            'sounds': sounds,
-            'count': len(sounds)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/verify', methods=['POST'])
+def verify():
+    data = request.json
+    return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
 
-@app.route('/api/v1/sound/download/<filename>')
-def api_download_sound(filename):
-    try:
-        if not filename.endswith(('.mp3', '.wav', '.ogg')):
-            return jsonify({'error': 'Invalid file type'}), 400
-        
-        file_data = firebase_get_sound(filename)
-        if file_data:
-            mimetype = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
-            return send_file(
-                io.BytesIO(file_data),
-                as_attachment=True,
-                download_name=filename,
-                mimetype=mimetype
-            )
-        return jsonify({'error': 'File not found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/v1/sound/download')
-def api_download_sound_default():
-    try:
-        sounds = firebase_get_all_sounds()
-        if sounds:
-            for s in sounds:
-                if s['name'].endswith('.mp3'):
-                    return api_download_sound(s['name'])
-            return api_download_sound(sounds[0]['name'])
-        return jsonify({'error': 'No sound found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/v1/sound/upload', methods=['POST'])
-@login_required
-def api_upload_sound():
-    try:
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'message': 'No file uploaded'})
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'message': 'No file selected'})
-        
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in ['.mp3', '.wav', '.ogg']:
-            return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
-        
-        file_data = file.read()
-        file_size = len(file_data)
-        if file_size == 0:
-            return jsonify({'success': False, 'message': 'File is empty'})
-        
-        if file_size > 50 * 1024 * 1024:
-            return jsonify({'success': False, 'message': f'File too large: {file_size / (1024*1024):.2f} MB. Max 50 MB.'})
-        
-        filename = f'background{ext}'
-        
-        # Upload to Firebase Storage
-        url = firebase_upload_sound(file_data, filename)
-        
-        if url:
-            return jsonify({
-                'success': True,
-                'message': 'Sound uploaded successfully to Firebase!',
-                'filename': filename,
-                'original_name': file.filename,
-                'size': file_size,
-                'download_url': f'/api/v1/sound/download/{filename}',
-                'storage': 'Firebase Storage'
-            })
-        else:
-            return jsonify({'success': False, 'message': 'Failed to upload to Firebase'})
-            
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
-
-@app.route('/api/v1/sound/delete', methods=['POST'])
-@login_required
-def api_delete_sound():
-    try:
-        filename = request.json.get('filename', '')
-        if not filename:
-            return jsonify({'success': False, 'message': 'No filename provided'})
-        
-        if firebase_delete_sound(filename):
-            return jsonify({'success': True, 'message': 'Sound deleted from Firebase'})
-        return jsonify({'success': False, 'message': 'File not found'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/v1/license/verify', methods=['POST'])
-def api_verify_license():
-    try:
-        data = request.json
-        return jsonify(validate_license(data.get('license_key', ''), data.get('device_serial', '')))
-    except Exception as e:
-        return jsonify({'valid': False, 'message': str(e)})
-
-@app.route('/api/v1/license/status/<license_key>')
-def api_license_status(license_key):
-    try:
-        user = firebase_get_user(license_key)
-        if not user:
-            return jsonify({'exists': False, 'message': 'License not found'})
-        
-        return jsonify({
-            'exists': True,
-            'valid': not user.get('banned', False),
-            'expires_at': user.get('expires_at', 'Never'),
-            'device': user.get('device', ''),
-            'notes': user.get('notes', ''),
-            'created_at': user.get('created_at', '')
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/v1/device/register', methods=['POST'])
-def api_register_device():
-    try:
-        data = request.json
-        device_serial = data.get('device_serial', '')
-        license_key = data.get('license_key', '')
-        
-        if not device_serial:
-            return jsonify({'success': False, 'message': 'No device serial'})
-        
+@app.route('/register_device', methods=['POST'])
+def register_device():
+    data = request.json
+    device_serial = data.get('device_serial', '')
+    if device_serial:
         device_data = {
             'device_serial': device_serial,
-            'license_key': license_key,
+            'license_key': data.get('license_key', ''),
             'last_seen': datetime.now().isoformat()
         }
-        firebase_save_device(device_data)
+        save_device(device_data)
         return jsonify({'success': True, 'device_serial': device_serial})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/v1/device/status/<device_serial>')
-def api_device_status(device_serial):
-    try:
-        device = firebase_get_device(device_serial)
-        if not device:
-            return jsonify({'exists': False, 'message': 'Device not found'})
-        
-        return jsonify({
-            'exists': True,
-            'license_key': device.get('license_key', ''),
-            'last_seen': device.get('last_seen', ''),
-            'created_at': device.get('created_at', '')
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({'success': False, 'message': 'No device serial'})
 
 # ==================== ADMIN ROUTES ====================
 
@@ -503,41 +249,37 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    try:
-        users = firebase_get_users()
-        devices = firebase_get_devices()
-        
-        now = datetime.now()
-        total = len(users)
-        active = 0
-        expired = 0
-        banned = 0
-        
-        for user in users:
-            if user.get('banned', False):
-                banned += 1
-            elif user.get('expires_at', ''):
-                try:
-                    if now > datetime.fromisoformat(user['expires_at']):
-                        expired += 1
-                    else:
-                        active += 1
-                except:
+    users = get_users()
+    devices = get_devices()
+    now = datetime.now()
+    total = len(users)
+    active = 0
+    expired = 0
+    banned = 0
+    
+    for user in users:
+        if user.get('banned', False):
+            banned += 1
+        elif user.get('expires_at', ''):
+            try:
+                if now > datetime.fromisoformat(user['expires_at']):
+                    expired += 1
+                else:
                     active += 1
-            else:
+            except:
                 active += 1
-        
-        return jsonify({
-            'users': {u['license_key']: u for u in users},
-            'devices': {d['device_serial']: d for d in devices},
-            'total': total,
-            'active': active,
-            'expired': expired,
-            'banned': banned,
-            'device_count': len(devices)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        else:
+            active += 1
+    
+    return jsonify({
+        'users': {u['license_key']: u for u in users},
+        'devices': {d['device_serial']: d for d in devices},
+        'total': total,
+        'active': active,
+        'expired': expired,
+        'banned': banned,
+        'device_count': len(devices)
+    })
 
 @app.route('/admin/create', methods=['POST'])
 @login_required
@@ -562,14 +304,14 @@ def admin_create():
             'device': ''
         }
         
-        if firebase_save_user(user_data):
+        if save_user(user_data):
             return jsonify({
                 'success': True,
                 'message': f'✅ License created! Valid for {days} days.',
                 'license_key': key,
                 'expires_at': expires
             })
-        return jsonify({'success': False, 'message': 'Failed to save to Firebase'})
+        return jsonify({'success': False, 'message': 'Failed to save to database'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -581,12 +323,12 @@ def admin_ban():
         if not key:
             return jsonify({'success': False, 'message': 'No license key'})
         
-        user = firebase_get_user(key)
+        user = get_user(key)
         if not user:
             return jsonify({'success': False, 'message': 'License not found'})
         
         user['banned'] = True
-        firebase_save_user(user)
+        save_user(user)
         return jsonify({'success': True, 'message': '✅ License banned'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -599,12 +341,12 @@ def admin_unban():
         if not key:
             return jsonify({'success': False, 'message': 'No license key'})
         
-        user = firebase_get_user(key)
+        user = get_user(key)
         if not user:
             return jsonify({'success': False, 'message': 'License not found'})
         
         user['banned'] = False
-        firebase_save_user(user)
+        save_user(user)
         return jsonify({'success': True, 'message': '✅ License unbanned'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -617,7 +359,7 @@ def admin_delete():
         if not key:
             return jsonify({'success': False, 'message': 'No license key'})
         
-        if firebase_delete_user(key):
+        if delete_user(key):
             return jsonify({'success': True, 'message': '✅ License deleted'})
         return jsonify({'success': False, 'message': 'License not found'})
     except Exception as e:
@@ -636,32 +378,32 @@ LOGIN_HTML = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Login - Firebase</title>
+    <title>🔐 Admin Login - MongoDB</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
         body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
         .login-container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 420px; width: 100%; }
-        .login-container h1 { color: #ff9100; text-align: center; font-size: 24px; margin-bottom: 5px; }
+        .login-container h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
         .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
-        .db-badge { background: #ff9100; color: #fff; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
+        .db-badge { background: #003311; color: #00ff88; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
         .form-group { margin-bottom: 20px; }
         .form-group label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
         .form-group input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
-        .form-group input:focus { border-color: #ff9100; }
-        .btn-login { width: 100%; padding: 14px; background: #ff9100; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
-        .btn-login:hover { background: #e67e00; }
+        .form-group input:focus { border-color: #00ff88; }
+        .btn-login { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-login:hover { background: #00cc77; }
         .error-msg { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
         .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
         .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
-        .footer .brand { color: #ff9100; }
+        .footer .brand { color: #00ff88; }
     </style>
 </head>
 <body>
     <div class="login-container">
         <h1>🔐 RIDOL FB TOOL</h1>
         <div class="subtitle">Admin Authentication • v4.0</div>
-        <div style="text-align:center"><span class="db-badge">🔥 Firebase</span></div>
+        <div style="text-align:center"><span class="db-badge">🍃 MongoDB</span></div>
         {% if error %}
         <div class="error-msg">{{ error }}</div>
         {% endif %}
@@ -683,28 +425,28 @@ ADMIN_HTML = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Panel - Firebase</title>
+    <title>🔐 Admin Panel - MongoDB</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; min-height: 100vh; }
-        .container { max-width: 1400px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; }
         .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
-        .header h1 { color: #ff9100; font-size: 20px; }
-        .header .badge { background: #ff9100; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .header .db-badge { background: #ff9100; color: #000; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #ff9100; }
+        .header h1 { color: #00ff88; font-size: 20px; }
+        .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .header .db-badge { background: #003311; color: #00ff88; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #00ff88; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
         .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
-        .card h2 { color: #ff9100; font-size: 16px; margin-bottom: 15px; }
+        .card h2 { color: #00ff88; font-size: 16px; margin-bottom: 15px; }
         .flex { display: flex; gap: 15px; flex-wrap: wrap; }
         .flex-grow { flex: 1; min-width: 200px; }
         .form-group { margin-bottom: 15px; }
         .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
         .form-group input, .form-group select { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
-        .form-group input:focus { border-color: #ff9100; }
+        .form-group input:focus { border-color: #00ff88; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; }
         .btn:hover { transform: scale(1.02); }
-        .btn-green { background: #ff9100; color: #000; }
+        .btn-green { background: #00ff88; color: #000; }
         .btn-red { background: #ff4444; color: #fff; }
         .btn-blue { background: #4488ff; color: #fff; }
         .btn-orange { background: #ff8800; color: #fff; }
@@ -717,7 +459,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .table-wrapper { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
-        th { color: #ff9100; font-size: 11px; text-transform: uppercase; }
+        th { color: #00ff88; font-size: 11px; text-transform: uppercase; }
         td code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
         .badge { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
         .badge-active { background: #003311; color: #00ff88; }
@@ -727,22 +469,12 @@ ADMIN_HTML = '''<!DOCTYPE html>
         .msg-success { background: #003311; color: #00ff88; border: 1px solid #00ff88; }
         .msg-error { background: #330000; color: #ff4444; border: 1px solid #ff4444; }
         .msg-info { background: #001133; color: #4488ff; border: 1px solid #4488ff; }
-        .new-key-box { margin-top: 15px; padding: 20px; background: #1a1a2e; border-radius: 8px; border: 2px solid #ff9100; display: none; }
-        .new-key-box .key { font-size: 20px; font-family: monospace; color: #ff9100; display: block; margin: 10px 0; padding: 10px; background: #000; border-radius: 6px; word-break: break-all; }
-        .upload-area { border: 2px dashed #1a1a2e; border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; }
-        .upload-area:hover { border-color: #ff9100; background: rgba(255,145,0,0.02); }
-        .upload-area.dragover { border-color: #ff9100; background: rgba(255,145,0,0.05); }
-        .upload-area .icon { font-size: 32px; display: block; margin-bottom: 10px; }
-        .upload-area p { color: #666; font-size: 13px; }
-        .upload-area .supported { color: #444; font-size: 11px; margin-top: 5px; }
-        .sound-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #1a1a2e; border-radius: 8px; margin-bottom: 8px; }
-        .sound-item .type { background: #222; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+        .new-key-box { margin-top: 15px; padding: 20px; background: #1a1a2e; border-radius: 8px; border: 2px solid #00ff88; display: none; }
+        .new-key-box .key { font-size: 20px; font-family: monospace; color: #00ff88; display: block; margin: 10px 0; padding: 10px; background: #000; border-radius: 6px; word-break: break-all; }
         .search-box { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
         .search-box input { flex: 1; min-width: 180px; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 13px; outline: none; }
-        .search-box input:focus { border-color: #ff9100; }
+        .search-box input:focus { border-color: #00ff88; }
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 30px; }
-        .api-info { background: #1a1a2e; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #888; margin-top: 10px; }
-        .api-info code { color: #ff9100; }
         @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .stats { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
@@ -752,7 +484,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             <div>
                 <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
                 <div style="color:#666;font-size:12px;margin-top:3px">
-                    Admin Panel • <span class="db-badge">🔥 Firebase</span>
+                    Admin Panel • <span class="db-badge">🍃 MongoDB</span>
                 </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
@@ -762,38 +494,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         </div>
         
         <div id="msg" class="msg"></div>
-        
-        <div class="card">
-            <h2>🔌 Firebase API Endpoints</h2>
-            <div class="api-info">
-                <code>/api/v1/sound/status</code> - Check sound status<br>
-                <code>/api/v1/sound/download</code> - Download sound<br>
-                <code>/api/v1/sound/upload</code> - Upload MP3/WAV (Firebase Storage)<br>
-                <code>/api/v1/sound/delete</code> - Delete sound<br>
-                <code>/api/v1/license/verify</code> - Verify license<br>
-                <code>/api/v1/device/register</code> - Register device
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>🎵 Custom Sound Upload (MP3 / WAV / OGG)</h2>
-            <div style="background:#1a1a2e; padding:10px; border-radius:8px; margin-bottom:15px; color:#888; font-size:12px;">
-                ⚡ Files are stored in <strong style="color:#ff9100;">Firebase Storage</strong>
-            </div>
-            <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
-                <span class="icon">📤</span>
-                <p>Drop your MP3 / WAV / OGG file here</p>
-                <p class="supported">or click to browse • Max 50MB • Firebase Storage</p>
-                <input type="file" id="fileInput" accept=".mp3,.wav,.ogg" style="display:none" onchange="uploadSound(this.files)">
-            </div>
-            <div style="margin-top:15px" id="soundList"></div>
-            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
-                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
-                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Link</button>
-                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Status</button>
-                <button class="btn btn-green" onclick="testConnection()">🔌 Test</button>
-            </div>
-        </div>
         
         <div class="card">
             <h2>➕ Create License</h2>
@@ -813,7 +513,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
             <button class="btn btn-green" onclick="createLic()">⚡ GENERATE LICENSE</button>
             <div id="new_key" class="new-key-box">
-                <strong style="color:#ff9100">✅ License Created Successfully!</strong>
+                <strong style="color:#00ff88">✅ License Created Successfully!</strong>
                 <span class="key" id="key_display">RIDOL-XXXX-XXXX-XXXX</span>
                 <div class="flex" style="gap:10px">
                     <button class="btn btn-blue" onclick="copyKey()">📋 COPY</button>
@@ -825,8 +525,8 @@ ADMIN_HTML = '''<!DOCTYPE html>
         <div class="card">
             <h2>📊 Statistics</h2>
             <div class="stats">
-                <div class="stat-box"><div class="number" style="color:#ff9100" id="s_total">0</div><div class="label">Total</div></div>
-                <div class="stat-box"><div class="number" style="color:#ff9100" id="s_active">0</div><div class="label">✅ Active</div></div>
+                <div class="stat-box"><div class="number" style="color:#00ff88" id="s_total">0</div><div class="label">Total</div></div>
+                <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">✅ Active</div></div>
                 <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">⏰ Expired</div></div>
                 <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">🚫 Banned</div></div>
                 <div class="stat-box"><div class="number" style="color:#4488ff" id="s_devices">0</div><div class="label">📱 Devices</div></div>
@@ -860,7 +560,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
             </div>
         </div>
         
-        <div class="footer">✦ RIDOL FB TOOL v4.0 • Firebase ✦</div>
+        <div class="footer">✦ RIDOL FB TOOL v4.0 • MongoDB ✦</div>
     </div>
     
     <script>
@@ -893,156 +593,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
             });
         }
         
-        // ===== TEST CONNECTION =====
-        function testConnection() {
-            showMsg('🔌 Testing Firebase connection...', 'info');
-            fetch('/api/v1/ping')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.status === 'online') {
-                        showMsg('✅ Server reachable! DB: ' + data.database + ' | Storage: ' + data.storage, 'success');
-                    } else {
-                        showMsg('❌ Server error', 'error');
-                    }
-                })
-                .catch(function(e) {
-                    showMsg('❌ Connection failed: ' + e.message, 'error');
-                });
-        }
-        
-        // ===== SOUND FUNCTIONS =====
-        var dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
-        dropZone.addEventListener('drop', function(e) {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
-        });
-        
-        function uploadSound(files) {
-            if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
-            var file = files[0];
-            var ext = file.name.split('.').pop().toLowerCase();
-            if (!['mp3', 'wav', 'ogg'].includes(ext)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
-            if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
-            
-            var formData = new FormData();
-            formData.append('file', file);
-            showMsg('⏳ Uploading to Firebase Storage...', 'info');
-            
-            fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.success) {
-                        showMsg('✅ ' + data.message + ' (' + data.original_name + ' | ' + (data.size / 1024).toFixed(2) + ' KB)', 'success');
-                        loadSounds();
-                        checkSoundStatus();
-                    } else {
-                        showMsg('❌ ' + data.message, 'error');
-                    }
-                })
-                .catch(function(e) { showMsg('❌ Upload failed: ' + e.message, 'error'); });
-        }
-        
-        function loadSounds() {
-            fetch('/api/v1/sound/status')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    var list = document.getElementById('soundList');
-                    if (data.sounds && data.sounds.length > 0) {
-                        var html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS (Firebase):</strong></div>';
-                        data.sounds.forEach(function(s) {
-                            var ext = s.name.split('.').pop().toUpperCase();
-                            html += '<div class="sound-item">' +
-                                '<div class="info"><span style="font-size:18px">🎵</span><span class="name">' + s.name + '</span><span class="type">' + ext + '</span><span class="size">' + s.size_mb + ' MB</span></div>' +
-                                '<div style="display:flex;gap:8px">' +
-                                '<button class="btn btn-blue btn-sm" onclick="playSound(\'' + s.name + '\')">▶ PLAY</button>' +
-                                '<button class="btn btn-green btn-sm" onclick="copySingleLink(\'' + s.name + '\')">📋</button>' +
-                                '<button class="btn btn-red btn-sm" onclick="deleteSound(\'' + s.name + '\')">✕</button>' +
-                                '</div></div>';
-                        });
-                        list.innerHTML = html;
-                    } else {
-                        list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No sounds in Firebase</div>';
-                    }
-                })
-                .catch(function(e) { showMsg('❌ Failed to load sounds', 'error'); });
-        }
-        
-        function playSound(filename) {
-            var url = window.location.origin + '/api/v1/sound/download/' + filename;
-            var audio = new Audio(url);
-            audio.play();
-            showMsg('▶ Playing: ' + filename, 'info');
-        }
-        
-        function copySingleLink(filename) {
-            var url = window.location.origin + '/api/v1/sound/download/' + filename;
-            navigator.clipboard.writeText(url).then(function() {
-                showMsg('📋 Link copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = url;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                showMsg('📋 Link copied!', 'success');
-            });
-        }
-        
-        function deleteSound(filename) {
-            if (!confirm('Delete ' + filename + '?')) return;
-            fetch('/api/v1/sound/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: filename })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
-                else { showMsg('❌ ' + data.message, 'error'); }
-            })
-            .catch(function(e) { showMsg('❌ Delete failed', 'error'); });
-        }
-        
-        function copyDownloadLink() {
-            var url = window.location.origin + '/api/v1/sound/download';
-            navigator.clipboard.writeText(url).then(function() {
-                showMsg('📋 Download link copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = url;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                showMsg('📋 Link copied!', 'success');
-            });
-        }
-        
-        function checkSoundStatus() {
-            showMsg('📊 Checking Firebase sound status...', 'info');
-            fetch('/api/v1/sound/status')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.exists) {
-                        showMsg('✅ Sound exists in Firebase! ' + data.count + ' file(s)', 'success');
-                    } else {
-                        showMsg('❌ No sound in Firebase', 'error');
-                    }
-                })
-                .catch(function(e) { showMsg('❌ Status check failed: ' + e.message, 'error'); });
-        }
-        
-        function refreshSounds() {
-            showMsg('🔄 Refreshing...', 'info');
-            loadSounds();
-            checkSoundStatus();
-        }
-        
-        // ===== LICENSE FUNCTIONS =====
         function createLic() {
             var days = parseInt(document.getElementById('days').value) || 30;
             var notes = document.getElementById('notes').value || '';
@@ -1174,8 +724,6 @@ ADMIN_HTML = '''<!DOCTYPE html>
         }
         
         refreshAll();
-        loadSounds();
-        setTimeout(checkSoundStatus, 1000);
         setInterval(refreshAll, 30000);
     </script>
 </body>
