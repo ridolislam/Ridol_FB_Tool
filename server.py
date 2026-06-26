@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Supabase Integration (FIXED)
+Ridol FB Tool License Server v4.0 - Supabase Integration (With Error Display)
 Author: Ridol Islam
 License: MIT
 """
@@ -22,16 +22,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
-# CORS configuration - Allow all origins for testing
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "Accept"]
-    }
-})
-
+CORS(app, resources={r"/*": {"origins": "*"}})
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
@@ -60,8 +51,6 @@ def supabase_request(endpoint, method='GET', data=None):
     
     try:
         logger.debug(f"[*] Supabase: {method} {endpoint}")
-        if data:
-            logger.debug(f"[*] Data: {json.dumps(data)[:200]}")
         
         if method == 'GET':
             response = requests.get(url, headers=headers, timeout=15)
@@ -74,38 +63,41 @@ def supabase_request(endpoint, method='GET', data=None):
         else:
             return None
         
-        logger.debug(f"[+] Response Status: {response.status_code}")
-        
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
         else:
-            logger.error(f"[-] Supabase Error ({response.status_code}): {response.text[:500]}")
-            return None
+            error_msg = response.text[:500] if response.text else "Unknown error"
+            logger.error(f"[-] Supabase Error ({response.status_code}): {error_msg}")
+            return {'error': True, 'status': response.status_code, 'message': error_msg}
             
     except Exception as e:
         logger.error(f"[-] Supabase Request Error: {e}")
-        return None
+        return {'error': True, 'message': str(e)}
 
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
     result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
-    if result and len(result) > 0:
-        return result[0]
+    if result and not isinstance(result, dict):
+        return result[0] if len(result) > 0 else None
     return None
 
 def get_users():
     result = supabase_request("users?select=*", 'GET')
-    return result if result else []
+    if result and not isinstance(result, dict):
+        return result
+    return []
 
 def get_devices():
     result = supabase_request("devices?select=*", 'GET')
-    return result if result else []
+    if result and not isinstance(result, dict):
+        return result
+    return []
 
 def get_device(device_serial):
     result = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
-    if result and len(result) > 0:
-        return result[0]
+    if result and not isinstance(result, dict):
+        return result[0] if len(result) > 0 else None
     return None
 
 def save_user(user_data):
@@ -122,7 +114,7 @@ def save_user(user_data):
     else:
         result = supabase_request("users", 'POST', user_data)
     
-    return result is not None
+    return result is not None and not isinstance(result, dict)
 
 def save_device(device_data):
     if 'created_at' not in device_data:
@@ -138,11 +130,11 @@ def save_device(device_data):
     else:
         result = supabase_request("devices", 'POST', device_data)
     
-    return result is not None
+    return result is not None and not isinstance(result, dict)
 
 def delete_user(license_key):
     result = supabase_request(f"users?license_key=eq.{license_key}", 'DELETE')
-    return result is not None
+    return result is not None and not isinstance(result, dict)
 
 # ==================== SOUND FUNCTIONS ====================
 
@@ -167,18 +159,18 @@ def save_sound_file(file_data, filename):
         
         # Check if exists
         existing = supabase_request(f"sounds?filename=eq.{filename}&select=*", 'GET')
-        if existing and len(existing) > 0:
+        if existing and not isinstance(existing, dict) and len(existing) > 0:
             logger.info(f"[+] Updating existing sound metadata")
             result = supabase_request(f"sounds?filename=eq.{filename}", 'PATCH', sound_data)
         else:
             logger.info(f"[+] Creating new sound metadata")
             result = supabase_request("sounds", 'POST', sound_data)
         
-        if result is not None:
+        if result and not isinstance(result, dict):
             logger.info(f"[+] Sound metadata saved successfully")
             return filename
         else:
-            logger.error(f"[-] Failed to save metadata to Supabase")
+            logger.error(f"[-] Failed to save metadata to Supabase: {result}")
             return None
             
     except Exception as e:
@@ -205,7 +197,7 @@ def get_all_sound_files():
     
     # Get from Supabase
     result = supabase_request("sounds?select=*", 'GET')
-    if result:
+    if result and not isinstance(result, dict):
         for row in result:
             filepath = os.path.join(SOUNDS_DIR, row['filename'])
             if os.path.exists(filepath):
@@ -371,39 +363,53 @@ def api_download_sound_default():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/v1/sound/upload', methods=['POST', 'OPTIONS'])
+@app.route('/api/v1/sound/upload', methods=['POST'])
 @login_required
 def api_upload_sound():
     try:
-        # Handle preflight request
-        if request.method == 'OPTIONS':
-            return '', 200
-        
         logger.info("[+] Upload request received")
-        logger.info(f"[+] Headers: {dict(request.headers)}")
+        
+        # Detailed error tracking
+        errors = []
         
         if 'file' not in request.files:
-            logger.error("[-] No file in request")
-            return jsonify({'success': False, 'message': 'No file uploaded'})
+            error_msg = 'No file uploaded. Please select a file.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'no_file'})
         
         file = request.files['file']
         if file.filename == '':
-            logger.error("[-] Empty filename")
-            return jsonify({'success': False, 'message': 'No file selected'})
+            error_msg = 'No file selected. Please choose a file.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'empty_filename'})
         
         logger.info(f"[+] Filename: {file.filename}")
         logger.info(f"[+] Content Type: {file.content_type}")
         
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ['.mp3', '.wav', '.ogg']:
-            logger.error(f"[-] Invalid extension: {ext}")
-            return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
+            error_msg = f'Invalid file type: {ext}. Only MP3, WAV, OGG allowed.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'invalid_type'})
+        
+        # Check file size
+        file_data = file.read()
+        file_size = len(file_data)
+        if file_size == 0:
+            error_msg = 'File is empty. Please upload a valid file.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'empty_file'})
+        
+        if file_size > 50 * 1024 * 1024:
+            error_msg = f'File too large: {file_size / (1024*1024):.2f} MB. Max 50 MB.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'file_too_large'})
+        
+        logger.info(f"[+] File size: {file_size} bytes")
         
         filename = f'background{ext}'
-        file_data = file.read()
-        logger.info(f"[+] File size: {len(file_data)} bytes")
         
-        # Save file
+        # Try to save file
         result = save_sound_file(file_data, filename)
         
         if result:
@@ -413,17 +419,19 @@ def api_upload_sound():
                 'message': 'Sound uploaded successfully!',
                 'filename': filename,
                 'original_name': file.filename,
-                'size': len(file_data),
+                'size': file_size,
                 'download_url': f'/api/v1/sound/download/{filename}'
             })
         else:
-            logger.error("[-] Upload failed - save_sound_file returned None")
-            return jsonify({'success': False, 'message': 'Failed to save file'})
+            error_msg = 'Failed to save file. Please check server logs for details.'
+            logger.error(f"[-] {error_msg}")
+            return jsonify({'success': False, 'message': error_msg, 'error_type': 'save_failed'})
             
     except Exception as e:
-        logger.error(f"[-] Upload error: {e}")
+        error_msg = f'Upload error: {str(e)}'
+        logger.error(f"[-] {error_msg}")
         logger.error(traceback.format_exc())
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        return jsonify({'success': False, 'message': error_msg, 'error_type': 'exception', 'details': traceback.format_exc()})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
 @login_required
@@ -769,6 +777,8 @@ ADMIN_HTML = """
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 30px; }
         .api-info { background: #1a1a2e; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #888; margin-top: 10px; }
         .api-info code { color: #00ff88; }
+        .error-detail { background: #2a0000; border: 1px solid #ff4444; border-radius: 8px; padding: 12px; margin: 10px 0; color: #ff6666; font-size: 13px; display: none; }
+        .error-detail code { color: #ff8888; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
         @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .stats { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
@@ -788,6 +798,7 @@ ADMIN_HTML = """
         </div>
         
         <div id="msg" class="msg"></div>
+        <div id="errorDetail" class="error-detail"></div>
         
         <div class="card">
             <h2>API Endpoints</h2>
@@ -883,7 +894,38 @@ ADMIN_HTML = """
             el.textContent = text;
             el.className = 'msg msg-' + type;
             el.style.display = 'block';
-            setTimeout(function() { el.style.display = 'none'; }, 5000);
+            document.getElementById('errorDetail').style.display = 'none';
+            
+            // If error, show detail button
+            if (type === 'error') {
+                var detailEl = document.getElementById('errorDetail');
+                if (text.includes('Error:') || text.includes('failed') || text.includes('error')) {
+                    detailEl.innerHTML = '<strong>🔍 Error Details:</strong><br>' + 
+                        '<code>' + text + '</code><br><br>' +
+                        '<button onclick="copyError()" class="btn btn-sm btn-blue">📋 Copy Error</button>';
+                    detailEl.style.display = 'block';
+                }
+            }
+            
+            setTimeout(function() { 
+                el.style.display = 'none'; 
+                document.getElementById('errorDetail').style.display = 'none';
+            }, 8000);
+        }
+        
+        function copyError() {
+            var text = document.getElementById('errorDetail').textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                showMsg('Error copied to clipboard!', 'success');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showMsg('Error copied!', 'success');
+            });
         }
         
         function apiCall(url, method, data) {
@@ -898,7 +940,7 @@ ADMIN_HTML = """
                 }
                 return res.json();
             }).catch(function(e) {
-                showMsg('Network Error', 'error');
+                showMsg('Network Error: ' + e.message, 'error');
                 return null;
             });
         }
@@ -909,13 +951,13 @@ ADMIN_HTML = """
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.status === 'online') {
-                        showMsg('Server reachable! DB: ' + data.database, 'success');
+                        showMsg('✅ Server reachable! DB: ' + data.database, 'success');
                     } else {
-                        showMsg('Server error', 'error');
+                        showMsg('❌ Server error', 'error');
                     }
                 })
                 .catch(function(e) {
-                    showMsg('Connection failed: ' + e.message, 'error');
+                    showMsg('❌ Connection failed: ' + e.message, 'error');
                 });
         }
         
@@ -929,29 +971,58 @@ ADMIN_HTML = """
         });
         
         function uploadSound(files) {
-            if (!files || files.length === 0) { showMsg('No file', 'error'); return; }
+            if (!files || files.length === 0) { 
+                showMsg('❌ No file selected. Please choose a file.', 'error'); 
+                return; 
+            }
+            
             var file = files[0];
-            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) {
-                showMsg('Only MP3, WAV, OGG allowed', 'error');
+            var ext = file.name.split('.').pop().toLowerCase();
+            
+            if (!['mp3', 'wav', 'ogg'].includes(ext)) {
+                showMsg('❌ Invalid file type: .' + ext + '. Only MP3, WAV, OGG allowed.', 'error');
                 return;
             }
-            if (file.size > 50*1024*1024) { showMsg('Max 50MB', 'error'); return; }
+            
+            if (file.size > 50*1024*1024) { 
+                showMsg('❌ File too large: ' + (file.size / (1024*1024)).toFixed(2) + ' MB. Max 50 MB.', 'error');
+                return; 
+            }
+            
+            if (file.size === 0) {
+                showMsg('❌ File is empty. Please upload a valid file.', 'error');
+                return;
+            }
             
             var formData = new FormData();
             formData.append('file', file);
-            showMsg('Uploading to Supabase...', 'info');
-            fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.success) {
-                        showMsg(data.message + ' (' + file.name + ')', 'success');
-                        loadSounds();
-                        checkSoundStatus();
-                    } else {
-                        showMsg(data.message, 'error');
-                    }
-                })
-                .catch(function(e) { showMsg('Upload failed: ' + e.message, 'error'); });
+            showMsg('⏳ Uploading to Supabase... (' + file.name + ')', 'info');
+            
+            fetch('/api/v1/sound/upload', { 
+                method: 'POST', 
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(function(res) { 
+                if (!res.ok) {
+                    return res.json().then(function(data) {
+                        throw new Error(data.message || 'Upload failed with status ' + res.status);
+                    });
+                }
+                return res.json(); 
+            })
+            .then(function(data) {
+                if (data.success) {
+                    showMsg('✅ ' + data.message + ' (' + data.original_name + ' | ' + (data.size / 1024).toFixed(2) + ' KB)', 'success');
+                    loadSounds();
+                    checkSoundStatus();
+                } else {
+                    showMsg('❌ ' + data.message, 'error');
+                }
+            })
+            .catch(function(e) {
+                showMsg('❌ Upload failed: ' + e.message, 'error');
+            });
         }
         
         function loadSounds() {
@@ -978,20 +1049,22 @@ ADMIN_HTML = """
                         list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in Supabase</div>';
                     }
                 })
-                .catch(function(e) {});
+                .catch(function(e) {
+                    showMsg('❌ Failed to load sounds: ' + e.message, 'error');
+                });
         }
         
         function playSound(filename) {
             var url = window.location.origin + '/api/v1/sound/download/' + filename;
             var audio = new Audio(url);
             audio.play();
-            showMsg('Playing: ' + filename, 'info');
+            showMsg('▶ Playing: ' + filename, 'info');
         }
         
         function copySingleLink(filename) {
             var url = window.location.origin + '/api/v1/sound/download/' + filename;
             navigator.clipboard.writeText(url).then(function() {
-                showMsg('Link copied!', 'success');
+                showMsg('📋 Link copied!', 'success');
             }).catch(function() {
                 var ta = document.createElement('textarea');
                 ta.value = url;
@@ -999,7 +1072,7 @@ ADMIN_HTML = """
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('Link copied!', 'success');
+                showMsg('📋 Link copied!', 'success');
             });
         }
         
@@ -1012,16 +1085,23 @@ ADMIN_HTML = """
             })
             .then(function(res) { return res.json(); })
             .then(function(data) {
-                if (data.success) { showMsg(data.message, 'success'); loadSounds(); checkSoundStatus(); }
-                else { showMsg(data.message, 'error'); }
+                if (data.success) { 
+                    showMsg('✅ ' + data.message, 'success'); 
+                    loadSounds(); 
+                    checkSoundStatus(); 
+                } else { 
+                    showMsg('❌ ' + data.message, 'error'); 
+                }
             })
-            .catch(function(e) { showMsg('Delete failed', 'error'); });
+            .catch(function(e) { 
+                showMsg('❌ Delete failed: ' + e.message, 'error'); 
+            });
         }
         
         function copyDownloadLink() {
             var url = window.location.origin + '/api/v1/sound/download';
             navigator.clipboard.writeText(url).then(function() {
-                showMsg('Download link copied!', 'success');
+                showMsg('📋 Download link copied!', 'success');
             }).catch(function() {
                 var ta = document.createElement('textarea');
                 ta.value = url;
@@ -1029,25 +1109,28 @@ ADMIN_HTML = """
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('Link copied!', 'success');
+                showMsg('📋 Link copied!', 'success');
             });
         }
         
         function checkSoundStatus() {
+            showMsg('📊 Checking sound status...', 'info');
             fetch('/api/v1/sound/status')
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.exists) {
-                        showMsg('Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
+                        showMsg('✅ Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
                     } else {
-                        showMsg('No sound in Supabase', 'error');
+                        showMsg('❌ No sound in Supabase', 'error');
                     }
                 })
-                .catch(function(e) { showMsg('Status check failed', 'error'); });
+                .catch(function(e) { 
+                    showMsg('❌ Status check failed: ' + e.message, 'error'); 
+                });
         }
         
         function refreshSounds() {
-            showMsg('Refreshing...', 'info');
+            showMsg('🔄 Refreshing...', 'info');
             loadSounds();
             checkSoundStatus();
         }
@@ -1055,20 +1138,20 @@ ADMIN_HTML = """
         function createLic() {
             var days = parseInt(document.getElementById('days').value) || 30;
             var notes = document.getElementById('notes').value || '';
-            if (days < 1) { showMsg('At least 1 day', 'error'); return; }
-            if (days > 365) { showMsg('Max 365 days', 'error'); return; }
+            if (days < 1) { showMsg('❌ At least 1 day required', 'error'); return; }
+            if (days > 365) { showMsg('❌ Max 365 days', 'error'); return; }
             
-            showMsg('Generating...', 'info');
+            showMsg('⏳ Generating license...', 'info');
             apiCall('/admin/create', 'POST', { days: days, notes: notes })
                 .then(function(result) {
                     if (result && result.success) {
                         lastCreatedKey = result.license_key;
                         document.getElementById('key_display').textContent = lastCreatedKey;
                         document.getElementById('new_key').style.display = 'block';
-                        showMsg(result.message, 'success');
+                        showMsg('✅ ' + result.message, 'success');
                         refreshAll();
                     } else {
-                        showMsg(result ? result.message : 'Failed', 'error');
+                        showMsg('❌ ' + (result ? result.message : 'Failed to create license'), 'error');
                     }
                 });
         }
@@ -1076,7 +1159,7 @@ ADMIN_HTML = """
         function copyKey() {
             var key = document.getElementById('key_display').textContent;
             navigator.clipboard.writeText(key).then(function() {
-                showMsg('Copied!', 'success');
+                showMsg('📋 Copied!', 'success');
             }).catch(function() {
                 var ta = document.createElement('textarea');
                 ta.value = key;
@@ -1084,7 +1167,7 @@ ADMIN_HTML = """
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showMsg('Copied!', 'success');
+                showMsg('📋 Copied!', 'success');
             });
         }
         
@@ -1098,21 +1181,29 @@ ADMIN_HTML = """
         
         function toggleBan(key, isBanned) {
             var action = isBanned ? 'unban' : 'ban';
-            showMsg('Processing...', 'info');
+            showMsg('⏳ Processing...', 'info');
             apiCall('/admin/' + action, 'POST', { license_key: key })
                 .then(function(result) {
-                    if (result && result.success) { showMsg(result.message, 'success'); refreshAll(); }
-                    else { showMsg(result ? result.message : 'Failed', 'error'); }
+                    if (result && result.success) { 
+                        showMsg('✅ ' + result.message, 'success'); 
+                        refreshAll(); 
+                    } else { 
+                        showMsg('❌ ' + (result ? result.message : 'Failed'), 'error'); 
+                    }
                 });
         }
         
         function deleteLic(key) {
             if (!confirm('Delete ' + key + '?')) return;
-            showMsg('Deleting...', 'info');
+            showMsg('⏳ Deleting...', 'info');
             apiCall('/admin/delete', 'POST', { license_key: key })
                 .then(function(result) {
-                    if (result && result.success) { showMsg(result.message, 'success'); refreshAll(); }
-                    else { showMsg(result ? result.message : 'Failed', 'error'); }
+                    if (result && result.success) { 
+                        showMsg('✅ ' + result.message, 'success'); 
+                        refreshAll(); 
+                    } else { 
+                        showMsg('❌ ' + (result ? result.message : 'Failed'), 'error'); 
+                    }
                 });
         }
         
@@ -1150,7 +1241,7 @@ ADMIN_HTML = """
             apiCall('/admin/data', 'GET')
                 .then(function(data) {
                     if (!data) {
-                        document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">Failed</td></tr>';
+                        document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">❌ Failed to load data</td></tr>';
                         return;
                     }
                     allUsers = data.users || {};
@@ -1174,7 +1265,7 @@ ADMIN_HTML = """
                 }
             });
             renderTable(filtered);
-            showMsg('Found ' + Object.keys(filtered).length + ' result(s)', 'info');
+            showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
         }
         
         refreshAll();
