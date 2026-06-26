@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - Supabase Integration (With Error Display)
+Ridol FB Tool License Server v4.0 - Supabase Only
 Author: Ridol Islam
 License: MIT
 """
 
-from flask import Flask, request, jsonify, session, redirect, url_for, send_file, render_template_string
+from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
 from flask_cors import CORS
 import os
-import uuid
+import sys
 import json
+import uuid
 from datetime import datetime, timedelta
 from functools import wraps
+import logging
 import io
 import requests
 import traceback
-import logging
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)
+# ==================== LOGGING ====================
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
@@ -31,7 +32,7 @@ ADMIN_PASSWORD = 'Ridol123@'
 
 # ==================== SUPABASE CONFIGURATION ====================
 SUPABASE_URL = "https://lfnduxngftyozdmohmxp.supabase.co"
-SUPABASE_ANON_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"
+SUPABASE_KEY = "sb_publishable_FTjqFL3t8rKs110591zdRw_A7QhiyaN"
 
 SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
 os.makedirs(SOUNDS_DIR, exist_ok=True)
@@ -43,14 +44,14 @@ def supabase_request(endpoint, method='GET', data=None):
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
     
     headers = {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': f'Bearer {SUPABASE_ANON_KEY}',
+        'apikey': SUPABASE_KEY,
+        'Authorization': f'Bearer {SUPABASE_KEY}',
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
     }
     
     try:
-        logger.debug(f"[*] Supabase: {method} {endpoint}")
+        logger.info(f"[*] Supabase: {method} {endpoint}")
         
         if method == 'GET':
             response = requests.get(url, headers=headers, timeout=15)
@@ -66,13 +67,29 @@ def supabase_request(endpoint, method='GET', data=None):
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
         else:
-            error_msg = response.text[:500] if response.text else "Unknown error"
-            logger.error(f"[-] Supabase Error ({response.status_code}): {error_msg}")
-            return {'error': True, 'status': response.status_code, 'message': error_msg}
+            logger.error(f"[-] Supabase Error ({response.status_code}): {response.text[:500]}")
+            return {'error': True, 'status': response.status_code, 'message': response.text[:200]}
             
     except Exception as e:
         logger.error(f"[-] Supabase Request Error: {e}")
         return {'error': True, 'message': str(e)}
+
+def supabase_test():
+    """Test Supabase connection"""
+    try:
+        result = supabase_request("users?limit=1", 'GET')
+        if result and not isinstance(result, dict):
+            logger.info("[+] Supabase Connected!")
+            return True
+        elif result and isinstance(result, dict) and result.get('error'):
+            logger.info(f"[-] Supabase Error: {result.get('message')}")
+            return False
+        else:
+            logger.info("[+] Supabase Connected!")
+            return True
+    except Exception as e:
+        logger.error(f"[-] Supabase Connection Error: {e}")
+        return False
 
 # ==================== DATABASE FUNCTIONS ====================
 
@@ -208,7 +225,7 @@ def get_all_sound_files():
                     'uploaded_at': row['uploaded_at']
                 })
     
-    # Scan disk
+    # Scan disk for files not in database
     if os.path.exists(SOUNDS_DIR):
         for f in os.listdir(SOUNDS_DIR):
             if f.endswith(('.mp3', '.wav', '.ogg')):
@@ -369,9 +386,6 @@ def api_upload_sound():
     try:
         logger.info("[+] Upload request received")
         
-        # Detailed error tracking
-        errors = []
-        
         if 'file' not in request.files:
             error_msg = 'No file uploaded. Please select a file.'
             logger.error(f"[-] {error_msg}")
@@ -431,7 +445,7 @@ def api_upload_sound():
         error_msg = f'Upload error: {str(e)}'
         logger.error(f"[-] {error_msg}")
         logger.error(traceback.format_exc())
-        return jsonify({'success': False, 'message': error_msg, 'error_type': 'exception', 'details': traceback.format_exc()})
+        return jsonify({'success': False, 'message': error_msg, 'error_type': 'exception'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
 @login_required
@@ -520,7 +534,7 @@ def admin_login():
             session.permanent = True
             return redirect(url_for('admin_panel'))
         else:
-            return render_template_string(LOGIN_HTML, error='Incorrect password!')
+            return render_template_string(LOGIN_HTML, error='❌ Incorrect password!')
     
     if session.get('admin_logged_in'):
         return redirect(url_for('admin_panel'))
@@ -597,7 +611,7 @@ def admin_create():
         if save_user(user_data):
             return jsonify({
                 'success': True,
-                'message': f'License created! Valid for {days} days.',
+                'message': f'✅ License created! Valid for {days} days.',
                 'license_key': key,
                 'expires_at': expires
             })
@@ -619,7 +633,7 @@ def admin_ban():
         
         user['banned'] = True
         save_user(user)
-        return jsonify({'success': True, 'message': 'License banned'})
+        return jsonify({'success': True, 'message': '✅ License banned'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -637,7 +651,7 @@ def admin_unban():
         
         user['banned'] = False
         save_user(user)
-        return jsonify({'success': True, 'message': 'License unbanned'})
+        return jsonify({'success': True, 'message': '✅ License unbanned'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -650,7 +664,7 @@ def admin_delete():
             return jsonify({'success': False, 'message': 'No license key'})
         
         if delete_user(key):
-            return jsonify({'success': True, 'message': 'License deleted'})
+            return jsonify({'success': True, 'message': '✅ License deleted'})
         return jsonify({'success': False, 'message': 'License not found'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -663,26 +677,26 @@ def admin_logout():
 
 # ==================== HTML TEMPLATES ====================
 
-LOGIN_HTML = """
-<!DOCTYPE html>
+LOGIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login</title>
+    <title>🔐 Admin Login - Supabase</title>
     <style>
-        body { background: #0a0a1a; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-        .container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
-        h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .login-container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 420px; width: 100%; }
+        .login-container h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
         .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
         .db-badge { background: #3b82f6; color: #fff; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
         .form-group { margin-bottom: 20px; }
-        label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
-        input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; box-sizing: border-box; }
-        input:focus { border-color: #00ff88; }
-        .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
-        .btn:hover { background: #00cc77; }
-        .error { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
+        .form-group label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
+        .form-group input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+        .form-group input:focus { border-color: #00ff88; }
+        .btn-login { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-login:hover { background: #00cc77; }
+        .error-msg { background: rgba(255,68,68,0.1); border: 1px solid #ff4444; color: #ff4444; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; text-align: center; }
         .hint { text-align: center; color: #333; font-size: 12px; margin-top: 15px; }
         .hint span { background: #1a1a2e; padding: 2px 10px; border-radius: 4px; color: #666; }
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
@@ -690,42 +704,40 @@ LOGIN_HTML = """
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>RIDOL FB TOOL</h1>
-        <div class="subtitle">Admin Authentication v4.0</div>
-        <div style="text-align:center"><span class="db-badge">Supabase</span></div>
+    <div class="login-container">
+        <h1>🔐 RIDOL FB TOOL</h1>
+        <div class="subtitle">Admin Authentication • v4.0</div>
+        <div style="text-align:center"><span class="db-badge">🍃 Supabase</span></div>
         {% if error %}
-        <div class="error">{{ error }}</div>
+        <div class="error-msg">{{ error }}</div>
         {% endif %}
         <form method="POST" action="/admin">
             <div class="form-group">
-                <label>Admin Password</label>
-                <input type="password" name="password" placeholder="Enter admin password" required>
+                <label>🔑 Admin Password</label>
+                <input type="password" name="password" placeholder="Enter admin password" required autofocus>
             </div>
-            <button type="submit" class="btn">Access Panel</button>
+            <button type="submit" class="btn-login">🚀 Access Panel</button>
         </form>
-        <div class="hint"><span>Hint: Admin Password</span></div>
-        <div class="footer"><span class="brand">RIDOL FB TOOL</span> v4.0</div>
+        <div class="hint"><span>🔑 Hint: Admin Password</span></div>
+        <div class="footer"><span class="brand">RIDOL FB TOOL</span> • v4.0</div>
     </div>
 </body>
-</html>
-"""
+</html>'''
 
-ADMIN_HTML = """
-<!DOCTYPE html>
+ADMIN_HTML = '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel</title>
+    <title>🔐 Admin Panel - Supabase</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { background: #0a0a1a; color: #fff; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: #0a0a1a; color: #fff; padding: 20px; min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; }
         .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         .header h1 { color: #00ff88; font-size: 20px; }
-        .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .db-badge { background: #3b82f6; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #3b82f6; }
+        .header .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .header .db-badge { background: #3b82f6; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #3b82f6; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
         .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
@@ -734,7 +746,7 @@ ADMIN_HTML = """
         .flex-grow { flex: 1; min-width: 200px; }
         .form-group { margin-bottom: 15px; }
         .form-group label { color: #aaa; font-size: 12px; display: block; margin-bottom: 5px; }
-        .form-group input { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 14px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
         .form-group input:focus { border-color: #00ff88; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; }
         .btn:hover { transform: scale(1.02); }
@@ -753,7 +765,7 @@ ADMIN_HTML = """
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
         th { color: #00ff88; font-size: 11px; text-transform: uppercase; }
         td code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
-        .badge-status { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
+        .badge { padding: 2px 10px; border-radius: 20px; font-size: 11px; }
         .badge-active { background: #003311; color: #00ff88; }
         .badge-expired { background: #330000; color: #ff4444; }
         .badge-banned { background: #331100; color: #ff8800; }
@@ -777,8 +789,6 @@ ADMIN_HTML = """
         .footer { text-align: center; color: #333; font-size: 11px; margin-top: 30px; }
         .api-info { background: #1a1a2e; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #888; margin-top: 10px; }
         .api-info code { color: #00ff88; }
-        .error-detail { background: #2a0000; border: 1px solid #ff4444; border-radius: 8px; padding: 12px; margin: 10px 0; color: #ff6666; font-size: 13px; display: none; }
-        .error-detail code { color: #ff8888; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
         @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .stats { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
@@ -786,22 +796,21 @@ ADMIN_HTML = """
     <div class="container">
         <div class="header">
             <div>
-                <h1>RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
+                <h1>🔐 RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
                 <div style="color:#666;font-size:12px;margin-top:3px">
-                    Admin Panel • <span class="db-badge">Supabase</span>
+                    Admin Panel • <span class="db-badge">🍃 Supabase</span>
                 </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
-                <span class="badge">ADMIN</span>
-                <a href="/admin/logout"><button class="btn-logout">LOGOUT</button></a>
+                <span class="badge">👑 ADMIN</span>
+                <a href="/admin/logout"><button class="btn-logout">🚪 LOGOUT</button></a>
             </div>
         </div>
         
         <div id="msg" class="msg"></div>
-        <div id="errorDetail" class="error-detail"></div>
         
         <div class="card">
-            <h2>API Endpoints</h2>
+            <h2>🔌 Supabase API Endpoints</h2>
             <div class="api-info">
                 <code>/api/v1/sound/status</code> - Check sound status<br>
                 <code>/api/v1/sound/download</code> - Download sound<br>
@@ -813,7 +822,7 @@ ADMIN_HTML = """
         </div>
         
         <div class="card">
-            <h2>Custom Sound Upload</h2>
+            <h2>🎵 Custom Sound Upload (MP3 / WAV / OGG)</h2>
             <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
                 <span class="icon">📤</span>
                 <p>Drop your MP3 / WAV / OGG file here</p>
@@ -822,288 +831,201 @@ ADMIN_HTML = """
             </div>
             <div style="margin-top:15px" id="soundList"></div>
             <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
-                <button class="btn btn-blue" onclick="refreshSounds()">Refresh</button>
-                <button class="btn btn-purple" onclick="copyDownloadLink()">Copy Link</button>
-                <button class="btn btn-orange" onclick="checkSoundStatus()">Status</button>
-                <button class="btn btn-green" onclick="testConnection()">Test</button>
+                <button class="btn btn-blue" onclick="refreshSounds()">🔄 Refresh</button>
+                <button class="btn btn-purple" onclick="copyDownloadLink()">📋 Copy Link</button>
+                <button class="btn btn-orange" onclick="checkSoundStatus()">📊 Status</button>
+                <button class="btn btn-green" onclick="testConnection()">🔌 Test</button>
             </div>
         </div>
         
         <div class="card">
-            <h2>Create License</h2>
+            <h2>➕ Create License</h2>
             <div class="flex">
                 <div class="flex-grow">
                     <div class="form-group">
-                        <label>Expiry Days (1-365)</label>
+                        <label>📅 Expiry Days (1-365)</label>
                         <input type="number" id="days" value="30" min="1" max="365">
                     </div>
                 </div>
                 <div class="flex-grow">
                     <div class="form-group">
-                        <label>Notes</label>
-                        <input type="text" id="notes" placeholder="Client name">
+                        <label>📝 Notes (Client Name)</label>
+                        <input type="text" id="notes" placeholder="e.g., John's Device">
                     </div>
                 </div>
             </div>
-            <button class="btn btn-green" onclick="createLic()">GENERATE LICENSE</button>
+            <button class="btn btn-green" onclick="createLic()">⚡ GENERATE LICENSE</button>
             <div id="new_key" class="new-key-box">
-                <strong style="color:#00ff88">License Created!</strong>
+                <strong style="color:#00ff88">✅ License Created Successfully!</strong>
                 <span class="key" id="key_display">RIDOL-XXXX-XXXX-XXXX</span>
                 <div class="flex" style="gap:10px">
-                    <button class="btn btn-blue" onclick="copyKey()">COPY</button>
-                    <button class="btn btn-orange" onclick="searchNewKey()">FIND</button>
+                    <button class="btn btn-blue" onclick="copyKey()">📋 COPY</button>
+                    <button class="btn btn-orange" onclick="searchNewKey()">🔍 FIND</button>
                 </div>
             </div>
         </div>
         
         <div class="card">
-            <h2>Statistics</h2>
+            <h2>📊 Statistics</h2>
             <div class="stats">
                 <div class="stat-box"><div class="number" style="color:#00ff88" id="s_total">0</div><div class="label">Total</div></div>
-                <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">Active</div></div>
-                <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">Expired</div></div>
-                <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">Banned</div></div>
-                <div class="stat-box"><div class="number" style="color:#3b82f6" id="s_devices">0</div><div class="label">Devices</div></div>
+                <div class="stat-box"><div class="number" style="color:#00ff88" id="s_active">0</div><div class="label">✅ Active</div></div>
+                <div class="stat-box"><div class="number" style="color:#ff8800" id="s_expired">0</div><div class="label">⏰ Expired</div></div>
+                <div class="stat-box"><div class="number" style="color:#ff4444" id="s_banned">0</div><div class="label">🚫 Banned</div></div>
+                <div class="stat-box"><div class="number" style="color:#3b82f6" id="s_devices">0</div><div class="label">📱 Devices</div></div>
             </div>
         </div>
         
         <div class="card">
-            <h2>License Management</h2>
+            <h2>👥 License Management</h2>
             <div class="search-box">
-                <input type="text" id="search" placeholder="Search..." onkeyup="if(event.key==='Enter')searchLic()">
-                <button class="btn btn-blue" onclick="searchLic()">SEARCH</button>
-                <button class="btn btn-orange" onclick="refreshAll()">REFRESH</button>
+                <input type="text" id="search" placeholder="🔍 Search by key, device, or notes..." onkeyup="if(event.key==='Enter')searchLic()">
+                <button class="btn btn-blue" onclick="searchLic()">🔍 SEARCH</button>
+                <button class="btn btn-orange" onclick="refreshAll()">🔄 REFRESH</button>
             </div>
             <div class="table-wrapper">
                 <table>
-                    <thead><tr><th>Key</th><th>Expires</th><th>Status</th><th>Device</th><th>Notes</th><th>Actions</th></tr></thead>
-                    <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:#666;padding:30px">Loading...</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>License Key</th>
+                            <th>Expires</th>
+                            <th>Status</th>
+                            <th>Device</th>
+                            <th>Created</th>
+                            <th>Notes</th>
+                            <th style="text-align:center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                        <tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.1);padding:40px;letter-spacing:2px">Loading licenses...</td></tr>
+                    </tbody>
                 </table>
             </div>
         </div>
         
-        <div class="footer">RIDOL FB TOOL v4.0 • Supabase</div>
+        <div class="footer">✦ RIDOL FB TOOL v4.0 • Supabase ✦</div>
     </div>
     
     <script>
-        var allUsers = {};
-        var lastCreatedKey = '';
+        let allUsers = {};
+        let filteredUsers = {};
+        let lastCreatedKey = '';
         
         function showMsg(text, type) {
-            var el = document.getElementById('msg');
+            const el = document.getElementById('msg');
             el.textContent = text;
             el.className = 'msg msg-' + type;
             el.style.display = 'block';
-            document.getElementById('errorDetail').style.display = 'none';
-            
-            // If error, show detail button
-            if (type === 'error') {
-                var detailEl = document.getElementById('errorDetail');
-                if (text.includes('Error:') || text.includes('failed') || text.includes('error')) {
-                    detailEl.innerHTML = '<strong>🔍 Error Details:</strong><br>' + 
-                        '<code>' + text + '</code><br><br>' +
-                        '<button onclick="copyError()" class="btn btn-sm btn-blue">📋 Copy Error</button>';
-                    detailEl.style.display = 'block';
-                }
-            }
-            
-            setTimeout(function() { 
-                el.style.display = 'none'; 
-                document.getElementById('errorDetail').style.display = 'none';
-            }, 8000);
+            setTimeout(() => { el.style.display = 'none'; }, 6000);
         }
         
-        function copyError() {
-            var text = document.getElementById('errorDetail').textContent;
-            navigator.clipboard.writeText(text).then(function() {
-                showMsg('Error copied to clipboard!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = text;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                showMsg('Error copied!', 'success');
-            });
-        }
-        
-        function apiCall(url, method, data) {
-            return fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: data ? JSON.stringify(data) : undefined
-            }).then(function(res) {
+        async function apiCall(url, method, data) {
+            try {
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: data ? JSON.stringify(data) : undefined
+                });
                 if (res.status === 401 || res.status === 302) {
                     window.location.href = '/admin';
                     return null;
                 }
-                return res.json();
-            }).catch(function(e) {
-                showMsg('Network Error: ' + e.message, 'error');
+                return await res.json();
+            } catch (e) {
+                showMsg('❌ Network Error: ' + e.message, 'error');
                 return null;
-            });
+            }
         }
         
-        function testConnection() {
-            showMsg('Testing API connection...', 'info');
-            fetch('/api/v1/ping')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.status === 'online') {
-                        showMsg('✅ Server reachable! DB: ' + data.database, 'success');
-                    } else {
-                        showMsg('❌ Server error', 'error');
-                    }
-                })
-                .catch(function(e) {
-                    showMsg('❌ Connection failed: ' + e.message, 'error');
-                });
+        // ===== TEST CONNECTION =====
+        async function testConnection() {
+            showMsg('🔌 Testing Supabase connection...', 'info');
+            try {
+                const res = await fetch('/api/v1/ping');
+                const data = await res.json();
+                if (data.status === 'online') {
+                    showMsg('✅ Server reachable! DB: ' + data.database, 'success');
+                } else {
+                    showMsg('❌ Server error', 'error');
+                }
+            } catch (e) {
+                showMsg('❌ Connection failed: ' + e.message, 'error');
+            }
         }
         
-        var dropZone = document.getElementById('dropZone');
-        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
-        dropZone.addEventListener('drop', function(e) {
+        // ===== SOUND FUNCTIONS =====
+        const dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) uploadSound(e.dataTransfer.files);
         });
         
-        function uploadSound(files) {
-            if (!files || files.length === 0) { 
-                showMsg('❌ No file selected. Please choose a file.', 'error'); 
-                return; 
-            }
+        async function uploadSound(files) {
+            if (!files || files.length === 0) { showMsg('❌ No file selected', 'error'); return; }
+            const file = files[0];
+            if (!file.name.match(/\.(mp3|wav|ogg)$/i)) { showMsg('❌ Only MP3, WAV, OGG allowed', 'error'); return; }
+            if (file.size > 50 * 1024 * 1024) { showMsg('❌ Max 50MB', 'error'); return; }
             
-            var file = files[0];
-            var ext = file.name.split('.').pop().toLowerCase();
-            
-            if (!['mp3', 'wav', 'ogg'].includes(ext)) {
-                showMsg('❌ Invalid file type: .' + ext + '. Only MP3, WAV, OGG allowed.', 'error');
-                return;
-            }
-            
-            if (file.size > 50*1024*1024) { 
-                showMsg('❌ File too large: ' + (file.size / (1024*1024)).toFixed(2) + ' MB. Max 50 MB.', 'error');
-                return; 
-            }
-            
-            if (file.size === 0) {
-                showMsg('❌ File is empty. Please upload a valid file.', 'error');
-                return;
-            }
-            
-            var formData = new FormData();
+            const formData = new FormData();
             formData.append('file', file);
-            showMsg('⏳ Uploading to Supabase... (' + file.name + ')', 'info');
-            
-            fetch('/api/v1/sound/upload', { 
-                method: 'POST', 
-                body: formData,
-                credentials: 'same-origin'
-            })
-            .then(function(res) { 
-                if (!res.ok) {
-                    return res.json().then(function(data) {
-                        throw new Error(data.message || 'Upload failed with status ' + res.status);
-                    });
-                }
-                return res.json(); 
-            })
-            .then(function(data) {
-                if (data.success) {
-                    showMsg('✅ ' + data.message + ' (' + data.original_name + ' | ' + (data.size / 1024).toFixed(2) + ' KB)', 'success');
-                    loadSounds();
-                    checkSoundStatus();
-                } else {
-                    showMsg('❌ ' + data.message, 'error');
-                }
-            })
-            .catch(function(e) {
-                showMsg('❌ Upload failed: ' + e.message, 'error');
-            });
-        }
-        
-        function loadSounds() {
-            fetch('/api/v1/sound/status')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    var list = document.getElementById('soundList');
-                    if (data.sounds && data.sounds.length > 0) {
-                        var html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (Supabase):</div>';
-                        data.sounds.forEach(function(s) {
-                            var ext = s.name.split('.').pop().toUpperCase();
-                            html += '<div class="sound-item">' +
-                                '<span>🎵 ' + s.name + '</span>' +
-                                '<span class="type">' + ext + '</span>' +
-                                '<span class="size">' + s.size_mb + ' MB</span>' +
-                                '<div style="display:flex;gap:6px">' +
-                                '<button class="btn btn-blue btn-sm" onclick="playSound(\'' + s.name + '\')">▶</button>' +
-                                '<button class="btn btn-green btn-sm" onclick="copySingleLink(\'' + s.name + '\')">📋</button>' +
-                                '<button class="btn btn-red btn-sm" onclick="deleteSound(\'' + s.name + '\')">✕</button>' +
-                                '</div></div>';
-                        });
-                        list.innerHTML = html;
-                    } else {
-                        list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in Supabase</div>';
-                    }
-                })
-                .catch(function(e) {
-                    showMsg('❌ Failed to load sounds: ' + e.message, 'error');
-                });
-        }
-        
-        function playSound(filename) {
-            var url = window.location.origin + '/api/v1/sound/download/' + filename;
-            var audio = new Audio(url);
-            audio.play();
-            showMsg('▶ Playing: ' + filename, 'info');
-        }
-        
-        function copySingleLink(filename) {
-            var url = window.location.origin + '/api/v1/sound/download/' + filename;
-            navigator.clipboard.writeText(url).then(function() {
-                showMsg('📋 Link copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
-                ta.value = url;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                showMsg('📋 Link copied!', 'success');
-            });
-        }
-        
-        function deleteSound(filename) {
-            if (!confirm('Delete ' + filename + '?')) return;
-            fetch('/api/v1/sound/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: filename })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
+            try {
+                showMsg('⏳ Uploading to Supabase...', 'info');
+                const res = await fetch('/api/v1/sound/upload', { method: 'POST', body: formData });
+                const data = await res.json();
                 if (data.success) { 
-                    showMsg('✅ ' + data.message, 'success'); 
+                    showMsg('✅ ' + data.message + ' (' + data.original_name + ')', 'success'); 
                     loadSounds(); 
-                    checkSoundStatus(); 
+                    checkSoundStatus();
                 } else { 
                     showMsg('❌ ' + data.message, 'error'); 
                 }
-            })
-            .catch(function(e) { 
-                showMsg('❌ Delete failed: ' + e.message, 'error'); 
-            });
+            } catch (e) { showMsg('❌ Upload failed: ' + e.message, 'error'); }
         }
         
-        function copyDownloadLink() {
-            var url = window.location.origin + '/api/v1/sound/download';
-            navigator.clipboard.writeText(url).then(function() {
-                showMsg('📋 Download link copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
+        async function loadSounds() {
+            try {
+                const res = await fetch('/api/v1/sound/status');
+                const data = await res.json();
+                const list = document.getElementById('soundList');
+                if (data.sounds && data.sounds.length > 0) {
+                    let html = '<div style="margin-top:10px"><strong style="color:rgba(255,255,255,0.2);font-size:10px;letter-spacing:3px">CURRENT SOUNDS (Supabase):</strong></div>';
+                    data.sounds.forEach(s => {
+                        const ext = s.name.split('.').pop().toUpperCase();
+                        html += `
+                            <div class="sound-item">
+                                <div class="info"><span style="font-size:18px">🎵</span><span class="name">${s.name}</span><span class="type">${ext}</span><span class="size">${s.size_mb} MB</span></div>
+                                <div style="display:flex;gap:8px">
+                                    <button class="btn btn-blue btn-sm" onclick="playSound('${s.name}')">▶ PLAY</button>
+                                    <button class="btn btn-green btn-sm" onclick="copySingleLink('${s.name}')">📋</button>
+                                    <button class="btn btn-red btn-sm" onclick="deleteSound('${s.name}')">✕</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    list.innerHTML = html;
+                } else {
+                    list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.05);padding:20px;font-size:11px;letter-spacing:3px">No sounds in Supabase</div>';
+                }
+            } catch (e) { showMsg('❌ Failed to load sounds', 'error'); }
+        }
+        
+        async function playSound(filename) {
+            try {
+                const url = window.location.origin + '/api/v1/sound/download/' + filename;
+                const audio = new Audio(url);
+                audio.play();
+                showMsg('▶ Playing: ' + filename, 'info');
+            } catch (e) { showMsg('❌ Play failed: ' + e.message, 'error'); }
+        }
+        
+        function copySingleLink(filename) {
+            const url = window.location.origin + '/api/v1/sound/download/' + filename;
+            navigator.clipboard.writeText(url).then(() => showMsg('📋 Link copied!', 'success'))
+            .catch(() => {
+                const ta = document.createElement('textarea');
                 ta.value = url;
                 document.body.appendChild(ta);
                 ta.select();
@@ -1113,55 +1035,75 @@ ADMIN_HTML = """
             });
         }
         
-        function checkSoundStatus() {
-            showMsg('📊 Checking sound status...', 'info');
-            fetch('/api/v1/sound/status')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.exists) {
-                        showMsg('✅ Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
-                    } else {
-                        showMsg('❌ No sound in Supabase', 'error');
-                    }
-                })
-                .catch(function(e) { 
-                    showMsg('❌ Status check failed: ' + e.message, 'error'); 
-                });
+        async function deleteSound(filename) {
+            if (!confirm('Delete ' + filename + '?')) return;
+            try {
+                const res = await fetch('/api/v1/sound/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) });
+                const data = await res.json();
+                if (data.success) { showMsg('✅ ' + data.message, 'success'); loadSounds(); checkSoundStatus(); }
+                else { showMsg('❌ ' + data.message, 'error'); }
+            } catch (e) { showMsg('❌ Delete failed', 'error'); }
         }
         
-        function refreshSounds() {
+        function copyDownloadLink() {
+            const url = window.location.origin + '/api/v1/sound/download';
+            navigator.clipboard.writeText(url).then(() => showMsg('📋 Download link copied!', 'success'))
+            .catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showMsg('📋 Link copied!', 'success');
+            });
+        }
+        
+        async function checkSoundStatus() {
+            try {
+                showMsg('📊 Checking Supabase sound status...', 'info');
+                const res = await fetch('/api/v1/sound/status');
+                const data = await res.json();
+                if (data.exists) {
+                    showMsg('✅ Sound exists in Supabase! ' + data.count + ' file(s)', 'success');
+                } else {
+                    showMsg('❌ No sound in Supabase', 'error');
+                }
+            } catch (e) { showMsg('❌ Status check failed: ' + e.message, 'error'); }
+        }
+        
+        async function refreshSounds() {
             showMsg('🔄 Refreshing...', 'info');
-            loadSounds();
-            checkSoundStatus();
+            await loadSounds();
+            await checkSoundStatus();
         }
         
-        function createLic() {
-            var days = parseInt(document.getElementById('days').value) || 30;
-            var notes = document.getElementById('notes').value || '';
-            if (days < 1) { showMsg('❌ At least 1 day required', 'error'); return; }
+        // ===== LICENSE FUNCTIONS =====
+        async function createLic() {
+            const days = parseInt(document.getElementById('days').value) || 30;
+            const notes = document.getElementById('notes').value || '';
+            if (days < 1) { showMsg('❌ At least 1 day', 'error'); return; }
             if (days > 365) { showMsg('❌ Max 365 days', 'error'); return; }
             
-            showMsg('⏳ Generating license...', 'info');
-            apiCall('/admin/create', 'POST', { days: days, notes: notes })
-                .then(function(result) {
-                    if (result && result.success) {
-                        lastCreatedKey = result.license_key;
-                        document.getElementById('key_display').textContent = lastCreatedKey;
-                        document.getElementById('new_key').style.display = 'block';
-                        showMsg('✅ ' + result.message, 'success');
-                        refreshAll();
-                    } else {
-                        showMsg('❌ ' + (result ? result.message : 'Failed to create license'), 'error');
-                    }
-                });
+            showMsg('⏳ Generating...', 'info');
+            const result = await apiCall('/admin/create', 'POST', { days, notes });
+            if (result && result.success) {
+                lastCreatedKey = result.license_key;
+                document.getElementById('key_display').textContent = lastCreatedKey;
+                document.getElementById('new_key').style.display = 'block';
+                showMsg('✅ ' + result.message, 'success');
+                refreshAll();
+            } else {
+                showMsg(result ? result.message : '❌ Failed', 'error');
+                document.getElementById('new_key').style.display = 'none';
+            }
         }
         
         function copyKey() {
-            var key = document.getElementById('key_display').textContent;
-            navigator.clipboard.writeText(key).then(function() {
-                showMsg('📋 Copied!', 'success');
-            }).catch(function() {
-                var ta = document.createElement('textarea');
+            const key = document.getElementById('key_display').textContent;
+            navigator.clipboard.writeText(key).then(() => showMsg('📋 Copied!', 'success'))
+            .catch(() => {
+                const ta = document.createElement('textarea');
                 ta.value = key;
                 document.body.appendChild(ta);
                 ta.select();
@@ -1179,93 +1121,84 @@ ADMIN_HTML = """
             }
         }
         
-        function toggleBan(key, isBanned) {
-            var action = isBanned ? 'unban' : 'ban';
+        async function toggleBan(key, isBanned) {
+            const action = isBanned ? 'unban' : 'ban';
             showMsg('⏳ Processing...', 'info');
-            apiCall('/admin/' + action, 'POST', { license_key: key })
-                .then(function(result) {
-                    if (result && result.success) { 
-                        showMsg('✅ ' + result.message, 'success'); 
-                        refreshAll(); 
-                    } else { 
-                        showMsg('❌ ' + (result ? result.message : 'Failed'), 'error'); 
-                    }
-                });
+            const result = await apiCall('/admin/' + action, 'POST', { license_key: key });
+            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
         }
         
-        function deleteLic(key) {
-            if (!confirm('Delete ' + key + '?')) return;
+        async function deleteLic(key) {
+            if (!confirm('⚠️ Delete ' + key + '?')) return;
             showMsg('⏳ Deleting...', 'info');
-            apiCall('/admin/delete', 'POST', { license_key: key })
-                .then(function(result) {
-                    if (result && result.success) { 
-                        showMsg('✅ ' + result.message, 'success'); 
-                        refreshAll(); 
-                    } else { 
-                        showMsg('❌ ' + (result ? result.message : 'Failed'), 'error'); 
-                    }
-                });
+            const result = await apiCall('/admin/delete', 'POST', { license_key: key });
+            if (result && result.success) { showMsg('✅ ' + result.message, 'success'); refreshAll(); }
+            else { showMsg(result ? result.message : '❌ Failed', 'error'); }
         }
         
         function renderTable(users) {
-            var tbody = document.getElementById('tbody');
+            const tbody = document.getElementById('tbody');
             tbody.innerHTML = '';
-            var now = new Date();
-            var keys = Object.keys(users);
+            const now = new Date();
+            const keys = Object.keys(users);
             if (keys.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#444;padding:30px">No licenses</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.05);padding:40px;letter-spacing:3px">No licenses found</td></tr>';
                 return;
             }
-            keys.forEach(function(key) {
-                var u = users[key];
-                var expires = u.expires_at ? new Date(u.expires_at) : null;
-                var isExpired = expires && now > expires;
-                var isBanned = u.banned || false;
-                var status = 'Active';
-                var badge = 'badge-active';
+            keys.forEach(key => {
+                const u = users[key];
+                const expires = u.expires_at ? new Date(u.expires_at) : null;
+                const isExpired = expires && now > expires;
+                const isBanned = u.banned || false;
+                let status = 'Active', badge = 'badge-active';
                 if (isBanned) { status = 'Banned'; badge = 'badge-banned'; }
                 else if (isExpired) { status = 'Expired'; badge = 'badge-expired'; }
-                var tr = document.createElement('tr');
-                tr.innerHTML = '<td><code>' + key + '</code></td>' +
-                    '<td style="font-size:11px">' + (u.expires_at || 'Never') + '</td>' +
-                    '<td><span class="badge-status ' + badge + '">' + status + '</span></td>' +
-                    '<td style="color:#666;font-size:12px">' + (u.device || '-') + '</td>' +
-                    '<td style="color:#666;font-size:12px">' + (u.notes || '-') + '</td>' +
-                    '<td><button class="btn ' + (isBanned ? 'btn-green' : 'btn-red') + ' btn-sm" onclick="toggleBan(\'' + key + '\',' + isBanned + ')">' + (isBanned ? 'UNBAN' : 'BAN') + '</button>' +
-                    '<button class="btn btn-red btn-sm" onclick="deleteLic(\'' + key + '\')">✕</button></td>';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><code>${key}</code></td>
+                    <td style="font-size:10px">${u.expires_at || 'Never'}</td>
+                    <td><span class="badge ${badge}">${status}</span></td>
+                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.device || '-'}</td>
+                    <td style="font-size:9px;color:rgba(255,255,255,0.1)">${u.created_at || '-'}</td>
+                    <td style="font-size:10px;color:rgba(255,255,255,0.15)">${u.notes || '-'}</td>
+                    <td style="text-align:center;white-space:nowrap">
+                        <button class="btn ${isBanned ? 'btn-green' : 'btn-red'} btn-sm" onclick="toggleBan('${key}', ${isBanned})" style="margin:2px">${isBanned ? 'UNBAN' : 'BAN'}</button>
+                        <button class="btn btn-red btn-sm" onclick="deleteLic('${key}')" style="margin:2px">✕</button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
         }
         
-        function refreshAll() {
-            apiCall('/admin/data', 'GET')
-                .then(function(data) {
-                    if (!data) {
-                        document.getElementById('tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ff4444;padding:30px">❌ Failed to load data</td></tr>';
-                        return;
-                    }
-                    allUsers = data.users || {};
-                    renderTable(allUsers);
-                    document.getElementById('s_total').textContent = data.total || 0;
-                    document.getElementById('s_active').textContent = data.active || 0;
-                    document.getElementById('s_expired').textContent = data.expired || 0;
-                    document.getElementById('s_banned').textContent = data.banned || 0;
-                    document.getElementById('s_devices').textContent = data.device_count || 0;
-                });
+        async function refreshAll() {
+            const data = await apiCall('/admin/data', 'GET');
+            if (!data) {
+                document.getElementById('tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ff4444;padding:40px">❌ Failed to load</td></tr>';
+                return;
+            }
+            allUsers = data.users || {};
+            filteredUsers = allUsers;
+            renderTable(filteredUsers);
+            document.getElementById('s_total').textContent = data.total || 0;
+            document.getElementById('s_active').textContent = data.active || 0;
+            document.getElementById('s_expired').textContent = data.expired || 0;
+            document.getElementById('s_banned').textContent = data.banned || 0;
+            document.getElementById('s_devices').textContent = data.device_count || 0;
         }
         
         function searchLic() {
-            var q = document.getElementById('search').value.toLowerCase().trim();
-            if (!q) { renderTable(allUsers); return; }
-            var filtered = {};
-            Object.keys(allUsers).forEach(function(key) {
-                var u = allUsers[key];
+            const q = document.getElementById('search').value.toLowerCase().trim();
+            if (!q) { filteredUsers = allUsers; renderTable(filteredUsers); return; }
+            filteredUsers = {};
+            Object.keys(allUsers).forEach(key => {
+                const u = allUsers[key];
                 if (key.toLowerCase().includes(q) || (u.device && u.device.toLowerCase().includes(q)) || (u.notes && u.notes.toLowerCase().includes(q))) {
-                    filtered[key] = u;
+                    filteredUsers[key] = u;
                 }
             });
-            renderTable(filtered);
-            showMsg('🔍 Found ' + Object.keys(filtered).length + ' result(s)', 'info');
+            renderTable(filteredUsers);
+            showMsg('🔍 Found ' + Object.keys(filteredUsers).length + ' result(s)', 'info');
         }
         
         refreshAll();
@@ -1274,8 +1207,7 @@ ADMIN_HTML = """
         setInterval(refreshAll, 30000);
     </script>
 </body>
-</html>
-"""
+</html>'''
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
