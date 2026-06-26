@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v4.0 - Complete Audio Experience Edition
+Ridol FB Tool v4.0 - Shizuku Automation Edition
 Author: Ridol Islam
 License: MIT
 """
@@ -32,15 +32,6 @@ LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v4.0'
 
-# ==================== GOOGLE DRIVE CONFIG ====================
-# আপনার Google Drive File ID দিন (লিংক থেকে নিন)
-# উদাহরণ: https://drive.google.com/file/d/1ABC123DEF456GHI789/view
-# File ID: 1ABC123DEF456GHI789
-GOOGLE_DRIVE_FILE_ID = "1jBDWRKJ0ry9lZUMc8IaVI8zDKvtVzVma"  # ← এখানে আপনার File ID দিন
-GOOGLE_DRIVE_DOWNLOAD_URL = f"https://drive.google.com/uc?export=download&id={GOOGLE_DRIVE_FILE_ID}"
-
-GITHUB_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/sounds"
-
 os.makedirs(SOUND_DIR, exist_ok=True)
 os.makedirs(CUSTOM_SOUND_DIR, exist_ok=True)
 
@@ -65,7 +56,218 @@ class Color:
     NEON_GREEN = '\033[38;5;46m'
     NEON_BLUE = '\033[38;5;45m'
 
-# ==================== SERVER API FUNCTIONS ====================
+# ==================== SHIZUKU API ====================
+
+class ShizukuAPI:
+    """Shizuku API for Android automation - Complete"""
+    
+    SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+    
+    @staticmethod
+    def check_shizuku():
+        """Check if Shizuku is running"""
+        try:
+            result = subprocess.run(['adb', 'shell', 'ps', '|', 'grep', ShizukuAPI.SHIZUKU_PACKAGE], 
+                                   capture_output=True, text=True)
+            return ShizukuAPI.SHIZUKU_PACKAGE in result.stdout
+        except:
+            return False
+    
+    @staticmethod
+    def start_shizuku():
+        """Start Shizuku server"""
+        try:
+            print(f"{Color.CYAN}[*] Starting Shizuku...{Color.RESET}")
+            cmd = f"adb shell am startservice -n {ShizukuAPI.SHIZUKU_PACKAGE}/.BinderService"
+            subprocess.run(cmd, shell=True, capture_output=True)
+            time.sleep(2)
+            return ShizukuAPI.check_shizuku()
+        except Exception as e:
+            print(f"{Color.RED}[-] Shizuku start error: {e}{Color.RESET}")
+            return False
+    
+    @staticmethod
+    def shell_command(command):
+        """Execute shell command via Shizuku"""
+        try:
+            cmd = f"adb shell {command}"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            return result.stdout.strip()
+        except Exception as e:
+            print(f"{Color.RED}[-] Shell error: {e}{Color.RESET}")
+            return None
+    
+    @staticmethod
+    def tap(x, y):
+        """Tap at coordinates"""
+        return ShizukuAPI.shell_command(f"input tap {x} {y}")
+    
+    @staticmethod
+    def swipe(x1, y1, x2, y2, duration=200):
+        """Swipe from (x1,y1) to (x2,y2)"""
+        return ShizukuAPI.shell_command(f"input swipe {x1} {y1} {x2} {y2} {duration}")
+    
+    @staticmethod
+    def text(text):
+        """Type text"""
+        text = text.replace("'", "\\'").replace('"', '\\"')
+        return ShizukuAPI.shell_command(f"input text '{text}'")
+    
+    @staticmethod
+    def keyevent(keycode):
+        """Send key event"""
+        return ShizukuAPI.shell_command(f"input keyevent {keycode}")
+    
+    @staticmethod
+    def open_app(package_name):
+        """Open app by package name"""
+        return ShizukuAPI.shell_command(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+    
+    @staticmethod
+    def close_app(package_name):
+        """Close app by package name"""
+        return ShizukuAPI.shell_command(f"am force-stop {package_name}")
+    
+    @staticmethod
+    def clear_app_data(package_name):
+        """Clear app data to simulate new device"""
+        return ShizukuAPI.shell_command(f"pm clear {package_name}")
+    
+    @staticmethod
+    def get_current_app():
+        """Get current foreground app"""
+        result = ShizukuAPI.shell_command("dumpsys window | grep mCurrentFocus")
+        if result:
+            try:
+                return result.split('/')[0].split(' ')[-1]
+            except:
+                pass
+        return None
+    
+    @staticmethod
+    def wait_for_app(package_name, timeout=10):
+        """Wait for app to appear"""
+        start = time.time()
+        while time.time() - start < timeout:
+            current = ShizukuAPI.get_current_app()
+            if current and package_name in current:
+                return True
+            time.sleep(0.5)
+        return False
+    
+    @staticmethod
+    def get_screen_size():
+        """Get screen size"""
+        result = ShizukuAPI.shell_command("wm size")
+        if result:
+            try:
+                return result.split(':')[-1].strip()
+            except:
+                pass
+        return "1080x1920"
+    
+    @staticmethod
+    def set_device_id(android_id):
+        """Change Android ID using Shizuku"""
+        return ShizukuAPI.shell_command(f"settings put secure android_id {android_id}")
+    
+    @staticmethod
+    def get_device_id():
+        """Get current Android ID"""
+        return ShizukuAPI.shell_command("settings get secure android_id")
+    
+    @staticmethod
+    def toggle_wifi(on=True):
+        """Toggle WiFi on/off"""
+        state = "enable" if on else "disable"
+        return ShizukuAPI.shell_command(f"svc wifi {state}")
+    
+    @staticmethod
+    def get_ip():
+        """Get current IP address"""
+        result = ShizukuAPI.shell_command("ip route get 1 | awk '{print $NF;exit}'")
+        if result:
+            return result
+        return None
+    
+    @staticmethod
+    def get_ui_dump():
+        """Get UI hierarchy dump"""
+        return ShizukuAPI.shell_command("uiautomator dump /sdcard/ui.xml && cat /sdcard/ui.xml")
+
+# ==================== PROXY MANAGER ====================
+
+class ProxyManager:
+    """Proxy rotation management"""
+    
+    def __init__(self):
+        self.proxies = []
+        self.current_index = 0
+        self.load_proxies()
+    
+    def load_proxies(self):
+        """Load proxies from file"""
+        proxy_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'proxies.txt')
+        if os.path.exists(proxy_file):
+            try:
+                with open(proxy_file, 'r') as f:
+                    self.proxies = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            except:
+                pass
+        
+        if not self.proxies:
+            self.proxies = [
+                "http://proxy1.example.com:8080",
+                "http://proxy2.example.com:8080",
+                "http://proxy3.example.com:8080",
+                "http://proxy4.example.com:8080",
+                "http://proxy5.example.com:8080"
+            ]
+    
+    def get_next_proxy(self):
+        """Get next proxy in rotation"""
+        if not self.proxies:
+            return None
+        proxy = self.proxies[self.current_index % len(self.proxies)]
+        self.current_index += 1
+        return proxy
+
+# ==================== DEVICE SPOOFER ====================
+
+class DeviceSpoofer:
+    """Device ID and fingerprint spoofing"""
+    
+    @staticmethod
+    def generate_random_device_id():
+        """Generate random Android ID"""
+        import random
+        import string
+        return ''.join(random.choices(string.hexdigits, k=16)).lower()
+    
+    @staticmethod
+    def spoof_device():
+        """Spoof device using Shizuku"""
+        try:
+            new_id = DeviceSpoofer.generate_random_device_id()
+            result = ShizukuAPI.set_device_id(new_id)
+            if result is not None:
+                print(f"{Color.GREEN}[+] Device ID changed to: {new_id}{Color.RESET}")
+                return new_id
+            return None
+        except Exception as e:
+            print(f"{Color.RED}[-] Device spoof error: {e}{Color.RESET}")
+            return None
+    
+    @staticmethod
+    def reset_app(package_name):
+        """Clear app data"""
+        result = ShizukuAPI.clear_app_data(package_name)
+        if result is not None:
+            print(f"{Color.GREEN}[+] App data cleared: {package_name}{Color.RESET}")
+            return True
+        return False
+
+# ==================== SERVER API ====================
 
 def server_request(endpoint, method='GET', data=None):
     """Make request to server API"""
@@ -107,67 +309,26 @@ def register_device(device_serial, license_key):
         return result
     return {'success': False, 'message': 'Server error'}
 
-# ==================== SOUND DOWNLOAD FUNCTIONS ====================
+# ==================== GITHUB SOUND DOWNLOAD ====================
 
-def download_from_google_drive():
-    """Download MP3 from Google Drive"""
-    try:
-        print(f"{Color.CYAN}[*] Downloading custom MP3 from Google Drive...{Color.RESET}")
-        
-        # First request to get confirmation code
-        response = requests.get(GOOGLE_DRIVE_DOWNLOAD_URL, stream=True, timeout=60, allow_redirects=True)
-        
-        if response.status_code != 200:
-            print(f"{Color.YELLOW}[!] Google Drive download failed: {response.status_code}{Color.RESET}")
-            return None
-        
-        filepath = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
-        
-        # Handle Google Drive confirmation page
-        if 'confirm' in response.url:
-            confirm_match = re.search(r'confirm=([^&]+)', response.url)
-            if confirm_match:
-                confirm_code = confirm_match.group(1)
-                download_url = f"https://drive.google.com/uc?export=download&id={GOOGLE_DRIVE_FILE_ID}&confirm={confirm_code}"
-                response = requests.get(download_url, stream=True, timeout=60)
-        
-        # If still getting HTML, try alternative method
-        if 'html' in response.headers.get('content-type', '').lower():
-            # Try to extract download URL from HTML
-            html_content = response.text
-            download_link_match = re.search(r'"(https://drive\.google\.com/uc\?export=download&id=[^"]+)"', html_content)
-            if download_link_match:
-                download_url = download_link_match.group(1).replace('\\', '')
-                response = requests.get(download_url, stream=True, timeout=60)
-        
-        # Save file
-        with open(filepath, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        
-        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-            print(f"{Color.GREEN}[+] Downloaded: background.mp3 from Google Drive ({os.path.getsize(filepath)} bytes){Color.RESET}")
-            return filepath
-        else:
-            print(f"{Color.YELLOW}[!] Downloaded file is empty or invalid{Color.RESET}")
-            return None
-            
-    except Exception as e:
-        print(f"{Color.RED}[-] Google Drive download error: {e}{Color.RESET}")
-        return None
+GITHUB_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/sounds"
+GITHUB_CUSTOM_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/custom_sounds"
 
-def download_sound_from_github(filename):
+def download_sound_from_github(filename, is_custom=False):
     """Download sound file from GitHub"""
-    url = f"{GITHUB_SOUND_URL}/{filename}"
-    filepath = os.path.join(SOUND_DIR, filename)
+    if is_custom:
+        url = f"{GITHUB_CUSTOM_SOUND_URL}/{filename}"
+        filepath = os.path.join(CUSTOM_SOUND_DIR, filename)
+    else:
+        url = f"{GITHUB_SOUND_URL}/{filename}"
+        filepath = os.path.join(SOUND_DIR, filename)
     
     try:
-        print(f"{Color.CYAN}[*] Downloading {filename} from GitHub...{Color.RESET}")
+        print(f"{Color.CYAN}[*] Downloading {filename}...{Color.RESET}")
         response = requests.get(url, stream=True, timeout=30)
         
         if response.status_code != 200:
-            print(f"{Color.YELLOW}[!] {filename} not found on GitHub (404){Color.RESET}")
+            print(f"{Color.YELLOW}[!] {filename} not found (404){Color.RESET}")
             return None
         
         with open(filepath, 'wb') as f:
@@ -180,7 +341,7 @@ def download_sound_from_github(filename):
         return None
 
 def download_all_sounds():
-    """Download all default sound files from GitHub"""
+    """Download all default sound files"""
     sounds = [
         'binary_rain.wav',
         'startup.wav',
@@ -195,94 +356,34 @@ def download_all_sounds():
     for sound in sounds:
         filepath = os.path.join(SOUND_DIR, sound)
         if not os.path.exists(filepath):
-            download_sound_from_github(sound)
+            download_sound_from_github(sound, is_custom=False)
         else:
             print(f"{Color.DIM}[*] {sound} already exists{Color.RESET}")
 
 def download_custom_background():
-    """Download custom background MP3 from Google Drive"""
+    """Download custom background MP3"""
     custom_mp3 = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
     custom_wav = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
     
-    # Check if custom sound already exists
-    if os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0:
-        print(f"{Color.DIM}[*] Custom background MP3 already exists{Color.RESET}")
+    if os.path.exists(custom_mp3) or os.path.exists(custom_wav):
+        print(f"{Color.DIM}[*] Custom background sound already exists{Color.RESET}")
         return True
     
-    if os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0:
-        print(f"{Color.DIM}[*] Custom background WAV already exists{Color.RESET}")
-        return True
+    print(f"{Color.CYAN}[*] Checking for custom background...{Color.RESET}")
     
-    # Download from Google Drive
-    print(f"{Color.CYAN}[*] Looking for custom background MP3...{Color.RESET}")
-    result = download_from_google_drive()
+    result = download_sound_from_github('background.mp3', is_custom=True)
     if result:
         return True
     
-    # Try with wget alternative if available
-    try:
-        print(f"{Color.CYAN}[*] Trying alternative download method...{Color.RESET}")
-        filepath = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
-        cmd = ['wget', '-O', filepath, GOOGLE_DRIVE_DOWNLOAD_URL]
-        subprocess.run(cmd, capture_output=True, timeout=60)
-        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-            print(f"{Color.GREEN}[+] Downloaded: background.mp3 using wget{Color.RESET}")
-            return True
-    except:
-        pass
+    result = download_sound_from_github('background.wav', is_custom=True)
+    if result:
+        return True
     
-    print(f"{Color.YELLOW}[!] No custom background sound found. Using default.{Color.RESET}")
+    print(f"{Color.YELLOW}[!] No custom background found{Color.RESET}")
     return False
 
-# ==================== 3D TITLE ====================
-class TitleAnimation:
-    @staticmethod
-    def big_3d_title():
-        os.system('clear')
-        
-        border_top = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
-        border_bottom = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
-        
-        print(border_top)
-        print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
-        
-        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}Drive Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
-        print(title_line1)
-        
-        subtitle = f"{Color.CYAN}|{Color.RESET}  {Color.DIM}Complete Audio Experience{Color.RESET}  {Color.CYAN}|{Color.RESET}"
-        print(subtitle)
-        
-        print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
-        
-        # Check server connection
-        try:
-            result = server_request("ping", 'GET')
-            connected = result is not None
-        except:
-            connected = False
-        
-        status_text = "SERVER CONNECTED" if connected else "SERVER OFFLINE"
-        status_color = Color.GREEN if connected else Color.RED
-        
-        status_line = f"{Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {status_color}Server: {status_text}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
-        print(status_line)
-        
-        # Check custom sound status
-        custom_mp3 = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
-        custom_wav = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
-        custom_exists = (os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0) or \
-                       (os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0)
-        custom_status = "🎵 Custom" if custom_exists else "Default"
-        custom_color = Color.GREEN if custom_exists else Color.DIM
-        
-        custom_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}🎵{Color.RESET} Sound: {custom_color}{custom_status}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
-        print(custom_line)
-        
-        print(border_bottom)
-        print()
-        time.sleep(0.5)
-
 # ==================== AUDIO ENGINE ====================
+
 class AudioEngine:
     def __init__(self):
         self.sound_dir = SOUND_DIR
@@ -295,10 +396,7 @@ class AudioEngine:
         os.makedirs(self.sound_dir, exist_ok=True)
         os.makedirs(self.custom_sound_dir, exist_ok=True)
         
-        # Download default sounds
         download_all_sounds()
-        
-        # Download custom background from Google Drive
         download_custom_background()
     
     def _check_voice(self):
@@ -323,17 +421,14 @@ class AudioEngine:
         if not self.sound_available:
             return
         
-        # Check default sound dir first
         filepath = os.path.join(self.sound_dir, filename)
         if not os.path.exists(filepath):
-            # Check custom sound dir
             filepath = os.path.join(self.custom_sound_dir, filename)
             if not os.path.exists(filepath):
-                # Try to download from GitHub or Drive
-                if filename == 'background.mp3' or filename == 'background.wav':
-                    download_custom_background()
+                if filename.endswith('.mp3'):
+                    download_sound_from_github(filename, is_custom=True)
                 else:
-                    download_sound_from_github(filename)
+                    download_sound_from_github(filename, is_custom=False)
                 if not os.path.exists(filepath):
                     return
         
@@ -351,40 +446,30 @@ class AudioEngine:
         except:
             pass
     
-    def play_startup(self): 
-        self.play_sound('startup.wav', '-3')
-    
-    def play_click(self): 
-        self.play_sound('click.wav', '-8')
-    
-    def play_success(self): 
-        self.play_sound('success.wav', '-5')
-    
-    def play_fail(self): 
-        self.play_sound('fail.wav', '-5')
-    
-    def play_done(self): 
-        self.play_sound('done.wav', '-3')
+    def play_startup(self): self.play_sound('startup.wav', '-3')
+    def play_click(self): self.play_sound('click.wav', '-8')
+    def play_success(self): self.play_sound('success.wav', '-5')
+    def play_fail(self): self.play_sound('fail.wav', '-5')
+    def play_done(self): self.play_sound('done.wav', '-3')
     
     def play_background_loop(self):
         if not self.sound_available:
             return
         
-        # Check for custom background first
         custom_mp3 = os.path.join(self.custom_sound_dir, 'background.mp3')
         custom_wav = os.path.join(self.custom_sound_dir, 'background.wav')
         default_bg = os.path.join(self.sound_dir, 'binary_rain.wav')
         
-        if os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0:
+        if os.path.exists(custom_mp3):
             bg_file = custom_mp3
-            print(f"{Color.GREEN}[+] Playing custom MP3 background (Google Drive){Color.RESET}")
-        elif os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0:
+            print(f"{Color.GREEN}[+] Playing custom MP3 background{Color.RESET}")
+        elif os.path.exists(custom_wav):
             bg_file = custom_wav
             print(f"{Color.GREEN}[+] Playing custom WAV background{Color.RESET}")
         else:
             bg_file = default_bg
             if not os.path.exists(bg_file):
-                download_sound_from_github('binary_rain.wav')
+                download_sound_from_github('binary_rain.wav', is_custom=False)
                 if not os.path.exists(bg_file):
                     return
             print(f"{Color.DIM}[*] Playing default background{Color.RESET}")
@@ -435,7 +520,7 @@ class AudioEngine:
     def speak_otp_fail(self): self.speak('OTP send failed', 'high')
     def speak_device_connected(self): self.speak('Device connected')
     def speak_license_verified(self): self.speak('License verified', 'high')
-    def speak_bot_starting(self): self.speak('Starting bot operation', 'high')
+    def speak_bot_starting(self): self.speak('Starting automation', 'high')
     def speak_bot_complete(self): self.speak('All tasks completed', 'high')
     def speak_goodbye(self): self.speak('Goodbye, stay secure', 'high')
     def speak_account_created(self): self.speak('Account created')
@@ -448,7 +533,315 @@ class AudioEngine:
  {Color.GREEN}*{Color.RESET} Sound: {'Active' if self.sound_available else 'Not available'}
  {Color.GREEN}*{Color.RESET} Background: {bg_status}"""
 
+# ==================== 3D TITLE ====================
+
+class TitleAnimation:
+    @staticmethod
+    def big_3d_title():
+        os.system('clear')
+        
+        border_top = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
+        border_bottom = f"{Color.CYAN}+{'-' * 70}+{Color.RESET}"
+        
+        print(border_top)
+        print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
+        
+        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}Shizuku Auto{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(title_line1)
+        
+        subtitle = f"{Color.CYAN}|{Color.RESET}  {Color.DIM}Facebook Automation{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(subtitle)
+        
+        print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
+        
+        shizuku_running = ShizukuAPI.check_shizuku()
+        status_text = "SHIZUKU RUNNING" if shizuku_running else "SHIZUKU STOPPED"
+        status_color = Color.GREEN if shizuku_running else Color.RED
+        
+        status_line = f"{Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Device: {Color.WHITE}No device{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.YELLOW}No License{Color.RESET}  {status_color}{status_text}{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(status_line)
+        
+        shizuku_line = f"{Color.CYAN}|{Color.RESET}  {Color.CYAN}🤖{Color.RESET} Automation: {Color.DIM}Facebook{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        print(shizuku_line)
+        
+        print(border_bottom)
+        print()
+        time.sleep(0.5)
+
+# ==================== FACEBOOK AUTOMATION ====================
+
+class FacebookAutomation:
+    """Facebook automation using Shizuku"""
+    
+    FACEBOOK_PACKAGE = "com.facebook.katana"
+    FACEBOOK_LITE_PACKAGE = "com.facebook.lite"
+    
+    DEFAULT_COORDS = {
+        "create_account_button": (540, 300),
+        "email_phone_field": (540, 500),
+        "continue_button": (540, 800),
+        "name_first": (300, 400),
+        "name_last": (780, 400),
+        "birthday_month": (300, 550),
+        "birthday_day": (540, 550),
+        "birthday_year": (780, 550),
+        "gender_male": (300, 700),
+        "gender_female": (780, 700),
+        "sign_up_button": (540, 900),
+        "resend_otp": (540, 700)
+    }
+    
+    def __init__(self):
+        self.screen_width = 1080
+        self.screen_height = 1920
+        self.coords = self.DEFAULT_COORDS.copy()
+        self.proxy_manager = ProxyManager()
+        self.device_spoofer = DeviceSpoofer()
+        self._update_coords()
+    
+    def _update_coords(self):
+        size = ShizukuAPI.get_screen_size()
+        if size:
+            try:
+                w, h = size.split('x')
+                self.screen_width = int(w)
+                self.screen_height = int(h)
+                
+                scale_x = self.screen_width / 1080
+                scale_y = self.screen_height / 1920
+                
+                for key, (x, y) in self.DEFAULT_COORDS.items():
+                    self.coords[key] = (int(x * scale_x), int(y * scale_y))
+            except:
+                pass
+    
+    def _tap(self, x, y):
+        for attempt in range(3):
+            result = ShizukuAPI.tap(x, y)
+            if result is not None:
+                return True
+            time.sleep(0.5)
+        return False
+    
+    def _type_text(self, text, field_coords=None):
+        if field_coords:
+            x, y = field_coords
+            self._tap(x, y)
+            time.sleep(0.5)
+        
+        ShizukuAPI.keyevent(123)
+        time.sleep(0.3)
+        ShizukuAPI.keyevent(112)
+        time.sleep(0.3)
+        return ShizukuAPI.text(text)
+    
+    def _change_ip(self):
+        """Change IP using proxy rotation"""
+        proxy = self.proxy_manager.get_next_proxy()
+        if proxy:
+            print(f"{Color.CYAN}[*] Using proxy: {proxy}{Color.RESET}")
+            os.environ['HTTP_PROXY'] = proxy
+            os.environ['HTTPS_PROXY'] = proxy
+            return proxy
+        
+        print(f"{Color.CYAN}[*] Toggling WiFi for new IP...{Color.RESET}")
+        ShizukuAPI.toggle_wifi(False)
+        time.sleep(2)
+        ShizukuAPI.toggle_wifi(True)
+        time.sleep(3)
+        
+        new_ip = ShizukuAPI.get_ip()
+        print(f"{Color.CYAN}[*] New IP: {new_ip}{Color.RESET}")
+        return new_ip
+    
+    def _prepare_new_device(self):
+        """Prepare new device (clear data + new ID + new IP)"""
+        print(f"{Color.CYAN}[*] Preparing new device...{Color.RESET}")
+        
+        ShizukuAPI.close_app(self.FACEBOOK_PACKAGE)
+        ShizukuAPI.close_app(self.FACEBOOK_LITE_PACKAGE)
+        time.sleep(2)
+        
+        DeviceSpoofer.reset_app(self.FACEBOOK_PACKAGE)
+        DeviceSpoofer.reset_app(self.FACEBOOK_LITE_PACKAGE)
+        time.sleep(2)
+        
+        new_id = DeviceSpoofer.spoof_device()
+        self._change_ip()
+        return new_id
+    
+    def open_facebook(self):
+        print(f"{Color.CYAN}[*] Opening Facebook...{Color.RESET}")
+        
+        ShizukuAPI.open_app(self.FACEBOOK_PACKAGE)
+        time.sleep(3)
+        
+        if ShizukuAPI.wait_for_app(self.FACEBOOK_PACKAGE, 5):
+            print(f"{Color.GREEN}[+] Facebook opened{Color.RESET}")
+            return True
+        
+        ShizukuAPI.open_app(self.FACEBOOK_LITE_PACKAGE)
+        time.sleep(3)
+        
+        if ShizukuAPI.wait_for_app(self.FACEBOOK_LITE_PACKAGE, 5):
+            print(f"{Color.GREEN}[+] Facebook Lite opened{Color.RESET}")
+            return True
+        
+        print(f"{Color.RED}[-] Could not open Facebook{Color.RESET}")
+        return False
+    
+    def close_facebook(self):
+        ShizukuAPI.close_app(self.FACEBOOK_PACKAGE)
+        ShizukuAPI.close_app(self.FACEBOOK_LITE_PACKAGE)
+        time.sleep(1)
+    
+    def click_create_account(self):
+        print(f"{Color.CYAN}[*] Clicking Create Account...{Color.RESET}")
+        x, y = self.coords["create_account_button"]
+        self._tap(x, y)
+        time.sleep(2)
+        return True
+    
+    def enter_phone_number(self, phone_number):
+        print(f"{Color.CYAN}[*] Entering phone: {phone_number}{Color.RESET}")
+        x, y = self.coords["email_phone_field"]
+        self._type_text(phone_number, (x, y))
+        time.sleep(1)
+        return True
+    
+    def click_continue(self):
+        print(f"{Color.CYAN}[*] Clicking Continue...{Color.RESET}")
+        x, y = self.coords["continue_button"]
+        self._tap(x, y)
+        time.sleep(3)
+        return True
+    
+    def fill_name(self, first_name, last_name):
+        print(f"{Color.CYAN}[*] Filling name: {first_name} {last_name}{Color.RESET}")
+        
+        x, y = self.coords["name_first"]
+        self._type_text(first_name, (x, y))
+        time.sleep(0.5)
+        
+        x, y = self.coords["name_last"]
+        self._type_text(last_name, (x, y))
+        time.sleep(0.5)
+        return True
+    
+    def select_birthday(self, month=1, day=1, year=2000):
+        print(f"{Color.CYAN}[*] Birthday: {month}/{day}/{year}{Color.RESET}")
+        
+        x, y = self.coords["birthday_month"]
+        self._tap(x, y)
+        time.sleep(0.5)
+        for _ in range(month):
+            ShizukuAPI.keyevent(20)
+            time.sleep(0.1)
+        ShizukuAPI.keyevent(66)
+        time.sleep(0.5)
+        
+        x, y = self.coords["birthday_day"]
+        self._tap(x, y)
+        time.sleep(0.5)
+        for _ in range(day):
+            ShizukuAPI.keyevent(20)
+            time.sleep(0.1)
+        ShizukuAPI.keyevent(66)
+        time.sleep(0.5)
+        
+        x, y = self.coords["birthday_year"]
+        self._tap(x, y)
+        time.sleep(0.5)
+        for _ in range(year - 2000 + 1):
+            ShizukuAPI.keyevent(20)
+            time.sleep(0.05)
+        ShizukuAPI.keyevent(66)
+        time.sleep(0.5)
+        return True
+    
+    def select_gender(self, gender='male'):
+        print(f"{Color.CYAN}[*] Gender: {gender}{Color.RESET}")
+        if gender.lower() == 'male':
+            x, y = self.coords["gender_male"]
+        else:
+            x, y = self.coords["gender_female"]
+        self._tap(x, y)
+        time.sleep(1)
+        return True
+    
+    def click_sign_up(self):
+        print(f"{Color.CYAN}[*] Clicking Sign Up...{Color.RESET}")
+        x, y = self.coords["sign_up_button"]
+        self._tap(x, y)
+        time.sleep(3)
+        return True
+    
+    def click_resend_otp(self):
+        print(f"{Color.CYAN}[*] Clicking Resend OTP...{Color.RESET}")
+        x, y = self.coords["resend_otp"]
+        self._tap(x, y)
+        time.sleep(3)
+        return True
+    
+    def automate_account_creation(self, phone_number, first_name="John", last_name="Doe", 
+                                   gender="male", month=1, day=1, year=2000):
+        """Complete account creation automation (OTP Entry removed)"""
+        
+        print(f"\n{Color.GOLD}{'='*60}{Color.RESET}")
+        print(f"{Color.GOLD}▶ STARTING: {phone_number}{Color.RESET}")
+        print(f"{Color.GOLD}{'='*60}{Color.RESET}\n")
+        
+        try:
+            # 1. Prepare new device
+            self._prepare_new_device()
+            
+            # 2. Open Facebook
+            if not self.open_facebook():
+                return False
+            
+            # 3. Click Create Account
+            self.click_create_account()
+            
+            # 4. Enter phone number
+            self.enter_phone_number(phone_number)
+            
+            # 5. Click Continue (sends OTP)
+            self.click_continue()
+            
+            # 6. Wait for OTP screen
+            time.sleep(random.randint(5, 8))
+            
+            # 7. Resend OTP 3 times (only send, no entry)
+            for attempt in range(3):
+                print(f"{Color.CYAN}[*] OTP attempt {attempt + 1}/3 (Resend only){Color.RESET}")
+                self.click_resend_otp()
+                time.sleep(random.randint(3, 5))
+            
+            print(f"{Color.GREEN}[+] OTP sent {3} times!{Color.RESET}")
+            
+            # 8. Fill name
+            self.fill_name(first_name, last_name)
+            
+            # 9. Select birthday
+            self.select_birthday(month, day, year)
+            
+            # 10. Select gender
+            self.select_gender(gender)
+            
+            # 11. Click Sign Up
+            self.click_sign_up()
+            
+            print(f"{Color.GREEN}[+] Account created successfully!{Color.RESET}")
+            return True
+            
+        except Exception as e:
+            print(f"{Color.RED}[-] Automation error: {e}{Color.RESET}")
+            return False
+        finally:
+            self.close_facebook()
+
 # ==================== ADB MANAGER ====================
+
 class ADBManager:
     @staticmethod
     def check_adb():
@@ -507,6 +900,7 @@ class ADBManager:
         return 'Unknown'
 
 # ==================== LICENSE MANAGER ====================
+
 class LicenseManager:
     def __init__(self):
         self.config = load_json(CONFIG_FILE)
@@ -540,6 +934,7 @@ class LicenseManager:
             return False
 
 # ==================== UTILITY FUNCTIONS ====================
+
 def load_json(path):
     try:
         with open(path, 'r') as f:
@@ -568,70 +963,8 @@ def clear_screen():
 def press_enter():
     input(f'\n{Color.DIM}Press Enter to continue...{Color.RESET}')
 
-# ==================== FACEBOOK BOT ====================
-class FacebookBot:
-    def __init__(self, data_dir, license_key, device_serial, audio):
-        self.data_dir = data_dir
-        self.license_key = license_key
-        self.device_serial = device_serial
-        self.audio = audio
-        self.numbers = load_file_lines(os.path.join(data_dir, 'numbers.txt'))
-        self.names = load_file_lines(os.path.join(data_dir, 'names.txt'))
-        self.proxies = load_file_lines(os.path.join(data_dir, 'proxies.txt'))
-        self.running = False
-        self.stats = {'success': 0, 'failed': 0, 'total': 0}
-    
-    def get_status(self):
-        s = 'RUNNING' if self.running else 'STOPPED'
-        return f'\n{Color.CYAN}Numbers: {len(self.numbers)} | Success: {self.stats["success"]} | Failed: {self.stats["failed"]} | Status: {s}{Color.RESET}'
-    
-    def run_bot(self, workers=1):
-        if not self.numbers:
-            print(f'\n{Color.RED}[-] No numbers found in numbers.txt{Color.RESET}')
-            return
-        self.running = True
-        self.stats = {'success': 0, 'failed': 0, 'total': 0}
-        print(f'\n{Color.GREEN}[+] Starting bot with {workers} worker(s)...{Color.RESET}')
-        print(f'{Color.CYAN}Total numbers: {len(self.numbers)}{Color.RESET}\n')
-        
-        for idx, number in enumerate(self.numbers):
-            if not self.running: break
-            country = self.get_country(number)
-            print(f'{Color.CYAN}[{idx+1}/{len(self.numbers)}]{Color.RESET} Processing: {number} ({country})', end='')
-            self.audio.play_click()
-            time.sleep(random.randint(2, 4))
-            success = random.random() < 0.8
-            if success:
-                self.stats['success'] += 1
-                print(f'  {Color.GREEN}+ Account Created{Color.RESET}')
-                self.audio.play_success()
-                self.audio.speak_account_created()
-            else:
-                self.stats['failed'] += 1
-                print(f'  {Color.RED}- OTP Failed{Color.RESET}')
-                self.audio.play_fail()
-                self.audio.speak_otp_fail()
-            self.stats['total'] += 1
-            if idx < len(self.numbers) - 1 and self.running:
-                delay = random.randint(30, 45)
-                print(f'  {Color.DIM}Waiting {delay}s...{Color.RESET}')
-                for i in range(delay):
-                    if not self.running: break
-                    time.sleep(1)
-        
-        self.running = False
-        print(f'\n\n{Color.GREEN}[+] ALL TASKS COMPLETE -- Success: {self.stats["success"]} | Failed: {self.stats["failed"]}{Color.RESET}')
-        self.audio.play_done()
-        self.audio.speak_bot_complete()
-    
-    def get_country(self, phone):
-        cm = {'880':'BD','91':'IN','92':'PK','1':'US','44':'GB','49':'DE','33':'FR','81':'JP','86':'CN','60':'MY','65':'SG'}
-        phone = phone.strip().replace('+','').replace(' ','').replace('-','')
-        for code in sorted(cm.keys(), key=len, reverse=True):
-            if phone.startswith(code): return cm[code]
-        return 'XX'
-
 # ==================== ANIMATION ====================
+
 class Animation:
     @staticmethod
     def typing(text, delay=0.03, color=Color.CYAN):
@@ -683,12 +1016,13 @@ class Animation:
         print()
 
 # ==================== MAIN MENU ====================
+
 class MainMenu:
     def __init__(self):
         self.adb = ADBManager()
         self.license = LicenseManager()
         self.audio = AudioEngine()
-        self.bot = None
+        self.automation = FacebookAutomation()
         self.config = load_json(CONFIG_FILE)
         self.data_dir = self.config.get('data_dir', '/storage/emulated/0/Download/Ridol FB Tool')
     
@@ -700,15 +1034,10 @@ class MainMenu:
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}*{Color.RESET} License: {Color.DIM}{"Active" if lic_key else "No License"}{Color.RESET}')
         
-        try:
-            result = server_request("ping", 'GET')
-            connected = result is not None
-        except:
-            connected = False
-        
-        status_color = Color.GREEN if connected else Color.RED
-        status_text = "CONNECTED" if connected else "OFFLINE"
-        print(f' {Color.CYAN}@ {Color.RESET}Server: {status_color}{status_text}{Color.RESET}\n')
+        shizuku_running = ShizukuAPI.check_shizuku()
+        status_color = Color.GREEN if shizuku_running else Color.RED
+        status_text = "RUNNING" if shizuku_running else "STOPPED"
+        print(f' {Color.CYAN}🤖{Color.RESET} Shizuku: {status_color}{status_text}{Color.RESET}\n')
     
     def welcome_screen(self):
         clear_screen()
@@ -731,11 +1060,12 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Device Management              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} License Management              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Data Folder                     {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Start Bot                        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Start Automation                {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Status                           {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[6]{Color.RESET} Audio Settings                    {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[7]{Color.RESET} Demo                             {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[8]{Color.RESET} Help                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[7]{Color.RESET} Shizuku Control                  {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[8]{Color.RESET} Demo                             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[9]{Color.RESET} Help                              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -746,8 +1076,9 @@ class MainMenu:
             elif choice == '4': self.menu_start_bot()
             elif choice == '5': self.menu_status()
             elif choice == '6': self.menu_audio()
-            elif choice == '7': self.menu_demo()
-            elif choice == '8': self.menu_help()
+            elif choice == '7': self.menu_shizuku()
+            elif choice == '8': self.menu_demo()
+            elif choice == '9': self.menu_help()
             elif choice == '0': self.menu_exit(); break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
     
@@ -911,33 +1242,155 @@ class MainMenu:
     def menu_start_bot(self):
         self.show_header()
         print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT{Color.RESET}{Color.CYAN}                              |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}START AUTOMATION{Color.RESET}{Color.CYAN}                      |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}
  {Color.CYAN}|{Color.RESET}  Numbers: {len(load_file_lines(os.path.join(self.data_dir, "numbers.txt")))}                      {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}           |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  Device: {Color.DIM}{self.license.get_device_serial() or "Not set"}{Color.RESET}{Color.CYAN}          |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  Shizuku: {Color.DIM}{"Running" if ShizukuAPI.check_shizuku() else "Stopped"}{Color.RESET}{Color.CYAN}   |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         
         if not self.license.get_license_key():
-            print(f'\n{Color.RED}[-] No license key set! Please set license first.{Color.RESET}')
+            print(f'\n{Color.RED}[-] No license key set!{Color.RESET}')
             press_enter()
             return
         
-        workers = input(f'\n {Color.CYAN}Number of workers [1-5, default 1]: {Color.RESET}').strip()
+        if not ShizukuAPI.check_shizuku():
+            print(f'\n{Color.RED}[-] Shizuku not running! Start from Option 7{Color.RESET}')
+            press_enter()
+            return
+        
+        numbers = load_file_lines(os.path.join(self.data_dir, "numbers.txt"))
+        if not numbers:
+            print(f'\n{Color.RED}[-] No numbers found in numbers.txt{Color.RESET}')
+            press_enter()
+            return
+        
+        print(f'\n{Color.CYAN}Total numbers: {len(numbers)}{Color.RESET}')
+        print(f'{Color.YELLOW}[!] Facebook must be installed{Color.RESET}')
+        
+        delay = input(f'\n {Color.CYAN}Delay between attempts [5-30, default 15]: {Color.RESET}').strip()
         try:
-            workers = int(workers) if workers else 1
-            workers = max(1, min(5, workers))
+            delay = int(delay) if delay else 15
+            delay = max(5, min(30, delay))
         except:
-            workers = 1
+            delay = 15
         
-        print(f'\n{Color.YELLOW}[!] Press Ctrl+C to stop the bot anytime{Color.RESET}')
+        print(f'\n{Color.YELLOW}[!] Press Ctrl+C to stop anytime{Color.RESET}')
         press_enter()
         
-        self.bot = FacebookBot(self.data_dir, self.license.get_license_key(),
-                               self.license.get_device_serial(), self.audio)
-        self.audio.speak_bot_starting()
-        self.bot.run_bot(workers)
+        self.run_automation(delay)
         press_enter()
+    
+    def run_automation(self, delay=15):
+        numbers = load_file_lines(os.path.join(self.data_dir, "numbers.txt"))
+        names = load_file_lines(os.path.join(self.data_dir, "names.txt"))
+        
+        if not names:
+            names = ["John", "Jane", "Michael", "Sarah", "David", "Emma", "James", "Lisa"]
+        
+        print(f'\n{Color.GREEN}[+] Starting automation with delay: {delay}s{Color.RESET}\n')
+        
+        for idx, number in enumerate(numbers):
+            print(f'{Color.CYAN}[{idx+1}/{len(numbers)}]{Color.RESET} Processing: {number}')
+            
+            first_name = random.choice(names)
+            last_name = random.choice(["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis"])
+            gender = random.choice(['male', 'female'])
+            month = random.randint(1, 12)
+            day = random.randint(1, 28)
+            year = random.randint(1980, 2005)
+            
+            success = self.automation.automate_account_creation(
+                phone_number=number,
+                first_name=first_name,
+                last_name=last_name,
+                gender=gender,
+                month=month,
+                day=day,
+                year=year
+            )
+            
+            if success:
+                print(f'  {Color.GREEN}+ Success: {number}{Color.RESET}')
+                self.audio.play_success()
+                self.audio.speak_account_created()
+            else:
+                print(f'  {Color.RED}- Failed: {number}{Color.RESET}')
+                self.audio.play_fail()
+                self.audio.speak_otp_fail()
+            
+            if idx < len(numbers) - 1:
+                wait_time = random.randint(delay-5, delay+5)
+                print(f'  {Color.DIM}Waiting {wait_time}s...{Color.RESET}')
+                for i in range(wait_time):
+                    time.sleep(1)
+                    if i % 5 == 0 and i > 0:
+                        print(f'  {Color.DIM}   ... {wait_time - i}s remaining{Color.RESET}')
+        
+        print(f'\n{Color.GREEN}[+] ALL TASKS COMPLETE!{Color.RESET}')
+        self.audio.play_done()
+        self.audio.speak_bot_complete()
+    
+    def menu_shizuku(self):
+        while True:
+            self.show_header()
+            print(f''' {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}SHIZUKU CONTROL{Color.RESET}{Color.CYAN}                          |{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Check Shizuku Status            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Start Shizuku Server             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Get Screen Size                  {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Get Current App                  {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Test Tap                        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[6]{Color.RESET} Test Facebook Open               {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[7]{Color.RESET} Get Device ID                   {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}''')
+            choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
+            self.audio.play_click()
+            if choice == '1':
+                running = ShizukuAPI.check_shizuku()
+                print(f'\n  {Color.GREEN}[+] Shizuku: {"RUNNING" if running else "STOPPED"}{Color.RESET}')
+                press_enter()
+            elif choice == '2':
+                if ShizukuAPI.start_shizuku():
+                    print(f'\n  {Color.GREEN}[+] Shizuku started!{Color.RESET}')
+                else:
+                    print(f'\n  {Color.RED}[-] Failed to start Shizuku{Color.RESET}')
+                press_enter()
+            elif choice == '3':
+                size = ShizukuAPI.get_screen_size()
+                print(f'\n  {Color.CYAN}Screen Size: {size}{Color.RESET}')
+                press_enter()
+            elif choice == '4':
+                app = ShizukuAPI.get_current_app()
+                print(f'\n  {Color.CYAN}Current App: {app}{Color.RESET}')
+                press_enter()
+            elif choice == '5':
+                print(f'\n  {Color.CYAN}Testing tap...{Color.RESET}')
+                size = ShizukuAPI.get_screen_size()
+                if size:
+                    try:
+                        w, h = size.split('x')
+                        ShizukuAPI.tap(int(w)//2, int(h)//2)
+                        print(f'  {Color.GREEN}[+] Tap sent to ({int(w)//2}, {int(h)//2}){Color.RESET}')
+                    except:
+                        print(f'  {Color.RED}[-] Failed{Color.RESET}')
+                press_enter()
+            elif choice == '6':
+                print(f'\n  {Color.CYAN}Opening Facebook...{Color.RESET}')
+                ShizukuAPI.open_app("com.facebook.katana")
+                time.sleep(2)
+                app = ShizukuAPI.get_current_app()
+                print(f'  {Color.GREEN}[+] Current app: {app}{Color.RESET}')
+                press_enter()
+            elif choice == '7':
+                device_id = ShizukuAPI.get_device_id()
+                print(f'\n  {Color.CYAN}Device ID: {device_id}{Color.RESET}')
+                press_enter()
+            elif choice == '0': break
+            else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
     
     def menu_status(self):
         self.show_header()
@@ -947,6 +1400,7 @@ class MainMenu:
         print(f''' {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} ADB: {Color.WHITE}{"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}{Color.CYAN}             |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Devices: {Color.WHITE}{len(self.adb.get_devices())}{Color.RESET}{Color.CYAN}                          |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Shizuku: {Color.WHITE}{"Running" if ShizukuAPI.check_shizuku() else "Stopped"}{Color.RESET}{Color.CYAN}         |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}*{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}            |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {self.audio.get_status()}{Color.CYAN}       |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
@@ -963,8 +1417,6 @@ class MainMenu:
         except:
             print(f'\n{Color.RED}Server: OFFLINE{Color.RESET}')
         
-        if self.bot:
-            print(self.bot.get_status())
         press_enter()
     
     def menu_audio(self):
@@ -993,28 +1445,26 @@ class MainMenu:
                 self.audio.play_done()
                 press_enter()
             elif choice == '2':
-                self.audio.speak('This is a voice test message', 'high')
-                print(f'  {Color.GREEN}[+] Voice test completed{Color.RESET}')
+                self.audio.speak('This is a voice test', 'high')
+                print(f'  {Color.GREEN}[+] Voice test done{Color.RESET}')
                 press_enter()
             elif choice == '3':
                 if self.audio.bg_playing:
                     self.audio.stop_background_sound()
-                    print(f'  {Color.YELLOW}[!] Background audio stopped{Color.RESET}')
+                    print(f'  {Color.YELLOW}[!] Background stopped{Color.RESET}')
                 else:
                     self.audio.play_background()
-                    print(f'  {Color.GREEN}[+] Background audio started{Color.RESET}')
+                    print(f'  {Color.GREEN}[+] Background started{Color.RESET}')
                 press_enter()
             elif choice == '4':
                 print(f'\n{self.audio.get_status()}')
                 press_enter()
             elif choice == '5':
-                print(f'\n  {Color.CYAN}Re-downloading all sounds...{Color.RESET}')
+                print(f'\n  {Color.CYAN}Re-downloading sounds...{Color.RESET}')
                 self.audio.stop_background_sound()
-                # Delete all default sounds
                 for f in os.listdir(self.audio.sound_dir):
                     if f.endswith(('.wav', '.mp3', '.ogg')):
                         os.remove(os.path.join(self.audio.sound_dir, f))
-                # Delete custom sounds
                 for f in os.listdir(self.audio.custom_sound_dir):
                     if f.endswith(('.wav', '.mp3', '.ogg')):
                         os.remove(os.path.join(self.audio.custom_sound_dir, f))
@@ -1065,7 +1515,7 @@ class MainMenu:
             Animation.progress_bar(3, 'Demo Progress')
             press_enter()
         elif choice == '5':
-            Animation.typing('This is a typing effect demo!', 0.05, Color.GOLD)
+            Animation.typing('Typing effect demo!', 0.05, Color.GOLD)
             press_enter()
         elif choice == '0': pass
         else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -1076,17 +1526,21 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP{Color.RESET}{Color.CYAN}                                   |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}
  {Color.CYAN}|{Color.RESET}  [?] {Color.WHITE}How to Use{Color.RESET}{Color.CYAN}                       |{Color.RESET}
- {Color.CYAN}|{Color.RESET}  1. Set up your data folder (Option 3)          {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  2. Add phone numbers to numbers.txt            {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  3. Enter your license key (Option 2)           {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  4. Connect your device (Option 1)              {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  5. Start the bot (Option 4)                    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  1. Setup data folder (Option 3)                 {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  2. Add phone numbers to numbers.txt             {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  3. Enter license key (Option 2)                 {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  4. Start Shizuku (Option 7 → Option 2)          {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  5. Start Automation (Option 4)                  {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}
- {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                       |{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - License stored in MongoDB                    {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - MP3 from Google Drive                       {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - MP3 support via mpv                         {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}{Color.CYAN}  |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Shizuku Setup{Color.RESET}{Color.CYAN}                    |{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  1. Install Shizuku from Play Store              {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  2. Enable USB Debugging                        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  3. Run: adb shell sh /sdcard/Android/data/    {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}     moe.shizuku.privileged.api/start.sh        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  4. Open Shizuku app and click Start            {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  5. Return to tool and start automation        {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}+--------------------------------------+{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  🔗 Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}{Color.CYAN}  |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         press_enter()
     
@@ -1101,19 +1555,12 @@ class MainMenu:
 # ==================== MAIN ====================
 if __name__ == '__main__':
     try:
-        # Check for mpv
-        try:
-            subprocess.run(['mpv', '--version'], capture_output=True, check=True)
-            print(f'{Color.GREEN}[+] mpv found - MP3 support enabled{Color.RESET}')
-        except:
-            print(f'{Color.YELLOW}[!] mpv not found - install: pkg install mpv{Color.RESET}')
-            print(f'{Color.YELLOW}[!] Only WAV files will play{Color.RESET}')
+        print(f'{Color.CYAN}[*] Initializing Shizuku Automation...{Color.RESET}')
         
-        print(f'{Color.CYAN}[*] Initializing...{Color.RESET}')
-        
-        # Download all sounds
-        download_all_sounds()
-        download_custom_background()
+        if ShizukuAPI.check_shizuku():
+            print(f'{Color.GREEN}[+] Shizuku is running!{Color.RESET}')
+        else:
+            print(f'{Color.YELLOW}[!] Shizuku not running. Start from menu.{Color.RESET}')
         
         time.sleep(1)
         
