@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - MongoDB + GitHub Music
+Ridol FB Tool License Server v4.0
 Author: Ridol Islam
 License: MIT
 """
 
-from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for
+from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, send_file
 from flask_cors import CORS
 import os
 import sys
 import json
 import uuid
+import requests
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
+
+# ==================== LOGGING ====================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+CORS(app)
+app.secret_key = os.urandom(24)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+ADMIN_PASSWORD = 'Ridol123@'
 
 # ==================== MONGODB CONNECTION ====================
 MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
@@ -23,7 +36,7 @@ try:
     MONGO_AVAILABLE = True
 except ImportError:
     MONGO_AVAILABLE = False
-    print("[-] pymongo not installed. Install: pip install pymongo")
+    print("[-] pymongo not installed")
 
 db = None
 users_collection = None
@@ -37,23 +50,9 @@ if MONGO_AVAILABLE:
         devices_collection = db['devices']
         client.admin.command('ping')
         print("[+] MongoDB Connected Successfully!")
-        print(f"[+] Database: {db.name}")
     except Exception as e:
         print(f"[-] MongoDB Connection Error: {e}")
         db = None
-        users_collection = None
-        devices_collection = None
-
-app = Flask(__name__)
-CORS(app)
-app.secret_key = os.urandom(24)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
-
-ADMIN_PASSWORD = 'Ridol123@'
-
-# ==================== GITHUB SOUND CONFIG ====================
-GITHUB_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/sounds"
 
 # ==================== DATABASE FUNCTIONS ====================
 
@@ -80,14 +79,6 @@ def get_devices():
         except:
             pass
     return []
-
-def get_device(device_serial):
-    if devices_collection:
-        try:
-            return devices_collection.find_one({'device_serial': device_serial}, {'_id': 0})
-        except:
-            pass
-    return None
 
 def save_user(user_data):
     if users_collection:
@@ -172,15 +163,21 @@ def login_required(f):
 
 @app.route('/')
 def home():
-    return jsonify({
-        'server': 'Ridol FB Tool License Server',
-        'version': '4.0',
-        'status': 'online',
-        'database': 'MongoDB',
-        'users': len(get_users()),
-        'devices': len(get_devices()),
-        'timestamp': datetime.now().isoformat()
-    })
+    try:
+        users = get_users()
+        devices = get_devices()
+        return jsonify({
+            'server': 'Ridol FB Tool License Server',
+            'version': '4.0',
+            'status': 'online',
+            'database': 'MongoDB' if db else 'Not Connected',
+            'users': len(users),
+            'devices': len(devices),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Home error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/ping')
 def ping():
@@ -188,21 +185,24 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': '4.0',
-        'database': 'MongoDB'
+        'database': 'MongoDB' if db else 'Not Connected'
     })
 
 @app.route('/api/v1/status')
 def api_status():
-    users = get_users()
-    devices = get_devices()
-    return jsonify({
-        'status': 'online',
-        'version': '4.0',
-        'timestamp': datetime.now().isoformat(),
-        'database': 'MongoDB',
-        'license_count': len(users),
-        'device_count': len(devices)
-    })
+    try:
+        users = get_users()
+        devices = get_devices()
+        return jsonify({
+            'status': 'online',
+            'version': '4.0',
+            'timestamp': datetime.now().isoformat(),
+            'database': 'MongoDB' if db else 'Not Connected',
+            'license_count': len(users),
+            'device_count': len(devices)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/verify', methods=['POST'])
 def verify():
@@ -249,37 +249,40 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = get_users()
-    devices = get_devices()
-    now = datetime.now()
-    total = len(users)
-    active = 0
-    expired = 0
-    banned = 0
-    
-    for user in users:
-        if user.get('banned', False):
-            banned += 1
-        elif user.get('expires_at', ''):
-            try:
-                if now > datetime.fromisoformat(user['expires_at']):
-                    expired += 1
-                else:
+    try:
+        users = get_users()
+        devices = get_devices()
+        now = datetime.now()
+        total = len(users)
+        active = 0
+        expired = 0
+        banned = 0
+        
+        for user in users:
+            if user.get('banned', False):
+                banned += 1
+            elif user.get('expires_at', ''):
+                try:
+                    if now > datetime.fromisoformat(user['expires_at']):
+                        expired += 1
+                    else:
+                        active += 1
+                except:
                     active += 1
-            except:
+            else:
                 active += 1
-        else:
-            active += 1
-    
-    return jsonify({
-        'users': {u['license_key']: u for u in users},
-        'devices': {d['device_serial']: d for d in devices},
-        'total': total,
-        'active': active,
-        'expired': expired,
-        'banned': banned,
-        'device_count': len(devices)
-    })
+        
+        return jsonify({
+            'users': {u['license_key']: u for u in users},
+            'devices': {d['device_serial']: d for d in devices},
+            'total': total,
+            'active': active,
+            'expired': expired,
+            'banned': banned,
+            'device_count': len(devices)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/admin/create', methods=['POST'])
 @login_required
@@ -378,7 +381,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Login - MongoDB</title>
+    <title>🔐 Admin Login</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
         body { background: #0a0a1a; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
@@ -425,7 +428,7 @@ ADMIN_HTML = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔐 Admin Panel - MongoDB</title>
+    <title>🔐 Admin Panel</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; min-height: 100vh; }

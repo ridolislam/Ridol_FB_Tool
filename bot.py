@@ -15,6 +15,7 @@ import subprocess
 from datetime import datetime
 import math
 import struct
+import re
 
 try:
     import requests
@@ -31,9 +32,14 @@ LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v4.0'
 
-# ==================== GITHUB SOUND CONFIG ====================
+# ==================== GOOGLE DRIVE CONFIG ====================
+# আপনার Google Drive File ID দিন (লিংক থেকে নিন)
+# উদাহরণ: https://drive.google.com/file/d/1ABC123DEF456GHI789/view
+# File ID: 1ABC123DEF456GHI789
+GOOGLE_DRIVE_FILE_ID = "1jBDWRKJ0ry9lZUMc8IaVI8zDKvtVzVma"  # ← এখানে আপনার File ID দিন
+GOOGLE_DRIVE_DOWNLOAD_URL = f"https://drive.google.com/uc?export=download&id={GOOGLE_DRIVE_FILE_ID}"
+
 GITHUB_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/sounds"
-GITHUB_CUSTOM_SOUND_URL = "https://raw.githubusercontent.com/ridolislam/Ridol_FB_Tool/main/custom_sounds"
 
 os.makedirs(SOUND_DIR, exist_ok=True)
 os.makedirs(CUSTOM_SOUND_DIR, exist_ok=True)
@@ -101,16 +107,60 @@ def register_device(device_serial, license_key):
         return result
     return {'success': False, 'message': 'Server error'}
 
-# ==================== GITHUB SOUND DOWNLOAD ====================
+# ==================== SOUND DOWNLOAD FUNCTIONS ====================
 
-def download_sound_from_github(filename, is_custom=False):
+def download_from_google_drive():
+    """Download MP3 from Google Drive"""
+    try:
+        print(f"{Color.CYAN}[*] Downloading custom MP3 from Google Drive...{Color.RESET}")
+        
+        # First request to get confirmation code
+        response = requests.get(GOOGLE_DRIVE_DOWNLOAD_URL, stream=True, timeout=60, allow_redirects=True)
+        
+        if response.status_code != 200:
+            print(f"{Color.YELLOW}[!] Google Drive download failed: {response.status_code}{Color.RESET}")
+            return None
+        
+        filepath = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
+        
+        # Handle Google Drive confirmation page
+        if 'confirm' in response.url:
+            confirm_match = re.search(r'confirm=([^&]+)', response.url)
+            if confirm_match:
+                confirm_code = confirm_match.group(1)
+                download_url = f"https://drive.google.com/uc?export=download&id={GOOGLE_DRIVE_FILE_ID}&confirm={confirm_code}"
+                response = requests.get(download_url, stream=True, timeout=60)
+        
+        # If still getting HTML, try alternative method
+        if 'html' in response.headers.get('content-type', '').lower():
+            # Try to extract download URL from HTML
+            html_content = response.text
+            download_link_match = re.search(r'"(https://drive\.google\.com/uc\?export=download&id=[^"]+)"', html_content)
+            if download_link_match:
+                download_url = download_link_match.group(1).replace('\\', '')
+                response = requests.get(download_url, stream=True, timeout=60)
+        
+        # Save file
+        with open(filepath, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            print(f"{Color.GREEN}[+] Downloaded: background.mp3 from Google Drive ({os.path.getsize(filepath)} bytes){Color.RESET}")
+            return filepath
+        else:
+            print(f"{Color.YELLOW}[!] Downloaded file is empty or invalid{Color.RESET}")
+            return None
+            
+    except Exception as e:
+        print(f"{Color.RED}[-] Google Drive download error: {e}{Color.RESET}")
+        return None
+
+def download_sound_from_github(filename):
     """Download sound file from GitHub"""
-    if is_custom:
-        url = f"{GITHUB_CUSTOM_SOUND_URL}/{filename}"
-        filepath = os.path.join(CUSTOM_SOUND_DIR, filename)
-    else:
-        url = f"{GITHUB_SOUND_URL}/{filename}"
-        filepath = os.path.join(SOUND_DIR, filename)
+    url = f"{GITHUB_SOUND_URL}/{filename}"
+    filepath = os.path.join(SOUND_DIR, filename)
     
     try:
         print(f"{Color.CYAN}[*] Downloading {filename} from GitHub...{Color.RESET}")
@@ -145,33 +195,43 @@ def download_all_sounds():
     for sound in sounds:
         filepath = os.path.join(SOUND_DIR, sound)
         if not os.path.exists(filepath):
-            download_sound_from_github(sound, is_custom=False)
+            download_sound_from_github(sound)
         else:
             print(f"{Color.DIM}[*] {sound} already exists{Color.RESET}")
 
 def download_custom_background():
-    """Download custom background MP3 from GitHub"""
+    """Download custom background MP3 from Google Drive"""
     custom_mp3 = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
     custom_wav = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
     
     # Check if custom sound already exists
-    if os.path.exists(custom_mp3) or os.path.exists(custom_wav):
-        print(f"{Color.DIM}[*] Custom background sound already exists{Color.RESET}")
+    if os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0:
+        print(f"{Color.DIM}[*] Custom background MP3 already exists{Color.RESET}")
         return True
     
-    print(f"{Color.CYAN}[*] Checking for custom background MP3...{Color.RESET}")
+    if os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0:
+        print(f"{Color.DIM}[*] Custom background WAV already exists{Color.RESET}")
+        return True
     
-    # Try to download MP3
-    result = download_sound_from_github('background.mp3', is_custom=True)
+    # Download from Google Drive
+    print(f"{Color.CYAN}[*] Looking for custom background MP3...{Color.RESET}")
+    result = download_from_google_drive()
     if result:
         return True
     
-    # Try WAV as fallback
-    result = download_sound_from_github('background.wav', is_custom=True)
-    if result:
-        return True
+    # Try with wget alternative if available
+    try:
+        print(f"{Color.CYAN}[*] Trying alternative download method...{Color.RESET}")
+        filepath = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
+        cmd = ['wget', '-O', filepath, GOOGLE_DRIVE_DOWNLOAD_URL]
+        subprocess.run(cmd, capture_output=True, timeout=60)
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            print(f"{Color.GREEN}[+] Downloaded: background.mp3 using wget{Color.RESET}")
+            return True
+    except:
+        pass
     
-    print(f"{Color.YELLOW}[!] No custom background sound found on GitHub{Color.RESET}")
+    print(f"{Color.YELLOW}[!] No custom background sound found. Using default.{Color.RESET}")
     return False
 
 # ==================== 3D TITLE ====================
@@ -186,7 +246,7 @@ class TitleAnimation:
         print(border_top)
         print(f"{Color.CYAN}|{Color.RESET}{' ' * 70}{Color.CYAN}|{Color.RESET}")
         
-        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}GitHub Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
+        title_line1 = f"{Color.CYAN}|{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET}  {Color.DIM}v4.0{Color.RESET}  {Color.GOLD}*{Color.RESET}  {Color.DIM}Drive Edition{Color.RESET}  {Color.CYAN}|{Color.RESET}"
         print(title_line1)
         
         subtitle = f"{Color.CYAN}|{Color.RESET}  {Color.DIM}Complete Audio Experience{Color.RESET}  {Color.CYAN}|{Color.RESET}"
@@ -208,8 +268,10 @@ class TitleAnimation:
         print(status_line)
         
         # Check custom sound status
-        custom_exists = os.path.exists(os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')) or \
-                       os.path.exists(os.path.join(CUSTOM_SOUND_DIR, 'background.wav'))
+        custom_mp3 = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
+        custom_wav = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
+        custom_exists = (os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0) or \
+                       (os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0)
         custom_status = "🎵 Custom" if custom_exists else "Default"
         custom_color = Color.GREEN if custom_exists else Color.DIM
         
@@ -236,7 +298,7 @@ class AudioEngine:
         # Download default sounds
         download_all_sounds()
         
-        # Download custom background
+        # Download custom background from Google Drive
         download_custom_background()
     
     def _check_voice(self):
@@ -267,11 +329,11 @@ class AudioEngine:
             # Check custom sound dir
             filepath = os.path.join(self.custom_sound_dir, filename)
             if not os.path.exists(filepath):
-                # Try to download from GitHub
-                if filename.endswith('.mp3'):
-                    download_sound_from_github(filename, is_custom=True)
+                # Try to download from GitHub or Drive
+                if filename == 'background.mp3' or filename == 'background.wav':
+                    download_custom_background()
                 else:
-                    download_sound_from_github(filename, is_custom=False)
+                    download_sound_from_github(filename)
                 if not os.path.exists(filepath):
                     return
         
@@ -289,11 +351,20 @@ class AudioEngine:
         except:
             pass
     
-    def play_startup(self): self.play_sound('startup.wav', '-3')
-    def play_click(self): self.play_sound('click.wav', '-8')
-    def play_success(self): self.play_sound('success.wav', '-5')
-    def play_fail(self): self.play_sound('fail.wav', '-5')
-    def play_done(self): self.play_sound('done.wav', '-3')
+    def play_startup(self): 
+        self.play_sound('startup.wav', '-3')
+    
+    def play_click(self): 
+        self.play_sound('click.wav', '-8')
+    
+    def play_success(self): 
+        self.play_sound('success.wav', '-5')
+    
+    def play_fail(self): 
+        self.play_sound('fail.wav', '-5')
+    
+    def play_done(self): 
+        self.play_sound('done.wav', '-3')
     
     def play_background_loop(self):
         if not self.sound_available:
@@ -304,16 +375,16 @@ class AudioEngine:
         custom_wav = os.path.join(self.custom_sound_dir, 'background.wav')
         default_bg = os.path.join(self.sound_dir, 'binary_rain.wav')
         
-        if os.path.exists(custom_mp3):
+        if os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0:
             bg_file = custom_mp3
-            print(f"{Color.GREEN}[+] Playing custom MP3 background{Color.RESET}")
-        elif os.path.exists(custom_wav):
+            print(f"{Color.GREEN}[+] Playing custom MP3 background (Google Drive){Color.RESET}")
+        elif os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0:
             bg_file = custom_wav
             print(f"{Color.GREEN}[+] Playing custom WAV background{Color.RESET}")
         else:
             bg_file = default_bg
             if not os.path.exists(bg_file):
-                download_sound_from_github('binary_rain.wav', is_custom=False)
+                download_sound_from_github('binary_rain.wav')
                 if not os.path.exists(bg_file):
                     return
             print(f"{Color.DIM}[*] Playing default background{Color.RESET}")
@@ -906,7 +977,7 @@ class MainMenu:
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Test Voice Feedback             {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[3]{Color.RESET} Toggle Background Audio         {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Audio Status                    {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Re-download Sounds from GitHub  {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Re-download Sounds              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}|{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -937,7 +1008,7 @@ class MainMenu:
                 print(f'\n{self.audio.get_status()}')
                 press_enter()
             elif choice == '5':
-                print(f'\n  {Color.CYAN}Re-downloading all sounds from GitHub...{Color.RESET}')
+                print(f'\n  {Color.CYAN}Re-downloading all sounds...{Color.RESET}')
                 self.audio.stop_background_sound()
                 # Delete all default sounds
                 for f in os.listdir(self.audio.sound_dir):
@@ -1013,8 +1084,8 @@ class MainMenu:
  {Color.CYAN}+--------------------------------------+{Color.RESET}
  {Color.CYAN}|{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                       |{Color.RESET}
  {Color.CYAN}|{Color.RESET}  - License stored in MongoDB                    {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Sounds from GitHub                           {Color.CYAN}|{Color.RESET}
- {Color.CYAN}|{Color.RESET}  - Custom MP3 support                          {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - MP3 from Google Drive                       {Color.CYAN}|{Color.RESET}
+ {Color.CYAN}|{Color.RESET}  - MP3 support via mpv                         {Color.CYAN}|{Color.RESET}
  {Color.CYAN}|{Color.RESET}  - Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}{Color.CYAN}  |{Color.RESET}
  {Color.CYAN}+--------------------------------------+{Color.RESET}''')
         press_enter()
