@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool License Server v4.0 - MongoDB Atlas Integration
+Ridol FB Tool License Server v4.0 - SQLite Database
 Author: Ridol Islam
 License: MIT
 """
@@ -9,44 +9,11 @@ from flask import Flask, request, jsonify, session, redirect, url_for, send_file
 from flask_cors import CORS
 import os
 import uuid
+import sqlite3
 from datetime import datetime, timedelta
 from functools import wraps
-import logging
 import io
-
-# ==================== MONGODB ATLAS CONNECTION ====================
-MONGODB_URI = "mongodb+srv://ridoli310_db_user:2knTC9AMZDDUfeil@cluster0.hamwqgx.mongodb.net/?appName=Cluster0"
-
-db = None
-fs = None
-client = None
-MONGO_AVAILABLE = False
-
-try:
-    from pymongo import MongoClient
-    from bson import ObjectId
-    import gridfs
-    MONGO_AVAILABLE = True
-except ImportError:
-    MONGO_AVAILABLE = False
-    print("[-] pymongo not installed. Install: pip install pymongo")
-
-if MONGO_AVAILABLE:
-    try:
-        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
-        db = client['ridol_fb_tool']
-        users_collection = db['users']
-        devices_collection = db['devices']
-        fs = gridfs.GridFS(db)
-        
-        client.admin.command('ping')
-        print("[+] MongoDB Atlas Connected Successfully!")
-        print(f"[+] Database: {db.name}")
-    except Exception as e:
-        print(f"[-] MongoDB Connection Error: {e}")
-        db = None
-        fs = None
-        client = None
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -56,107 +23,231 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 ADMIN_PASSWORD = 'Ridol123@'
 
+# ==================== SQLITE DATABASE ====================
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds')
+os.makedirs(SOUNDS_DIR, exist_ok=True)
+
+def get_db():
+    """Get database connection"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Initialize database tables"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            license_key TEXT PRIMARY KEY,
+            created_at TEXT,
+            expires_at TEXT,
+            banned INTEGER DEFAULT 0,
+            notes TEXT,
+            device TEXT
+        )
+    ''')
+    
+    # Devices table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS devices (
+            device_serial TEXT PRIMARY KEY,
+            license_key TEXT,
+            last_seen TEXT,
+            created_at TEXT
+        )
+    ''')
+    
+    # Sounds table (metadata)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sounds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT UNIQUE,
+            size INTEGER,
+            uploaded_at TEXT,
+            content_type TEXT
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("[+] SQLite Database initialized!")
+
+# Initialize database on startup
+init_db()
+
 # ==================== DATABASE FUNCTIONS ====================
 
 def get_user(license_key):
-    if db is not None:
-        return users_collection.find_one({'license_key': license_key})
-    return None
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE license_key = ?", (license_key,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def get_users():
-    if db is not None:
-        return list(users_collection.find({}))
-    return []
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 def get_devices():
-    if db is not None:
-        return list(devices_collection.find({}))
-    return []
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM devices")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 def get_device(device_serial):
-    if db is not None:
-        return devices_collection.find_one({'device_serial': device_serial})
-    return None
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM devices WHERE device_serial = ?", (device_serial,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def save_user(user_data):
-    if db is not None:
-        if 'created_at' not in user_data:
-            user_data['created_at'] = datetime.now().isoformat()
-        existing = users_collection.find_one({'license_key': user_data['license_key']})
-        if existing:
-            users_collection.update_one(
-                {'license_key': user_data['license_key']},
-                {'$set': user_data}
-            )
-        else:
-            users_collection.insert_one(user_data)
-        return True
-    return False
+    conn = get_db()
+    cursor = conn.cursor()
+    if 'created_at' not in user_data:
+        user_data['created_at'] = datetime.now().isoformat()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO users 
+        (license_key, created_at, expires_at, banned, notes, device)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (
+        user_data['license_key'],
+        user_data['created_at'],
+        user_data.get('expires_at', ''),
+        int(user_data.get('banned', False)),
+        user_data.get('notes', ''),
+        user_data.get('device', '')
+    ))
+    conn.commit()
+    conn.close()
+    return True
 
 def save_device(device_data):
-    if db is not None:
-        if 'created_at' not in device_data:
-            device_data['created_at'] = datetime.now().isoformat()
-        existing = devices_collection.find_one({'device_serial': device_data['device_serial']})
-        if existing:
-            devices_collection.update_one(
-                {'device_serial': device_data['device_serial']},
-                {'$set': device_data}
-            )
-        else:
-            devices_collection.insert_one(device_data)
-        return True
-    return False
+    conn = get_db()
+    cursor = conn.cursor()
+    if 'created_at' not in device_data:
+        device_data['created_at'] = datetime.now().isoformat()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO devices
+        (device_serial, license_key, last_seen, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (
+        device_data['device_serial'],
+        device_data.get('license_key', ''),
+        device_data.get('last_seen', datetime.now().isoformat()),
+        device_data['created_at']
+    ))
+    conn.commit()
+    conn.close()
+    return True
 
 def delete_user(license_key):
-    if db is not None:
-        return users_collection.delete_one({'license_key': license_key})
-    return None
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE license_key = ?", (license_key,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+def save_sound_metadata(filename, size, content_type):
+    """Save sound metadata to database"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO sounds (filename, size, uploaded_at, content_type)
+        VALUES (?, ?, ?, ?)
+    ''', (filename, size, datetime.now().isoformat(), content_type))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_sound_metadata(filename):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sounds WHERE filename = ?", (filename,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+def get_all_sound_files():
+    """Get all sound files from database and disk"""
+    sounds = []
+    
+    # Get from database
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sounds")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Check if file exists on disk
+    for row in rows:
+        row_dict = dict(row)
+        filepath = os.path.join(SOUNDS_DIR, row_dict['filename'])
+        if os.path.exists(filepath):
+            sounds.append({
+                'name': row_dict['filename'],
+                'size': row_dict['size'],
+                'size_mb': round(row_dict['size'] / (1024 * 1024), 2),
+                'uploaded_at': row_dict['uploaded_at']
+            })
+    
+    # Also scan disk for files not in database
+    if os.path.exists(SOUNDS_DIR):
+        for f in os.listdir(SOUNDS_DIR):
+            if f.endswith(('.mp3', '.wav', '.ogg')):
+                if not any(s['name'] == f for s in sounds):
+                    size = os.path.getsize(os.path.join(SOUNDS_DIR, f))
+                    sounds.append({
+                        'name': f,
+                        'size': size,
+                        'size_mb': round(size / (1024 * 1024), 2),
+                        'uploaded_at': datetime.fromtimestamp(os.path.getmtime(os.path.join(SOUNDS_DIR, f))).isoformat()
+                    })
+    
+    return sounds
 
 def save_sound_file(file_data, filename):
-    if fs is not None:
-        try:
-            existing = fs.find_one({'filename': filename})
-            if existing:
-                fs.delete(existing._id)
-            
-            file_id = fs.put(
-                file_data,
-                filename=filename,
-                uploaded_at=datetime.now().isoformat(),
-                content_type='audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
-            )
-            return str(file_id)
-        except Exception as e:
-            print(f"[-] GridFS Save Error: {e}")
-            return None
-    return None
+    """Save sound file to disk and database"""
+    filepath = os.path.join(SOUNDS_DIR, filename)
+    with open(filepath, 'wb') as f:
+        f.write(file_data)
+    
+    # Save metadata
+    content_type = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
+    save_sound_metadata(filename, len(file_data), content_type)
+    return filename
 
 def get_sound_file(filename):
-    if fs is not None:
-        return fs.find_one({'filename': filename})
+    filepath = os.path.join(SOUNDS_DIR, filename)
+    if os.path.exists(filepath):
+        with open(filepath, 'rb') as f:
+            return f.read()
     return None
 
 def delete_sound_file(filename):
-    if fs is not None:
-        existing = fs.find_one({'filename': filename})
-        if existing:
-            fs.delete(existing._id)
-            return True
+    filepath = os.path.join(SOUNDS_DIR, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        delete_sound_metadata(filename)
+        return True
     return False
-
-def get_all_sound_files():
-    if fs is not None:
-        sounds = []
-        for f in fs.find({}):
-            sounds.append({
-                'name': f.filename,
-                'size': f.length,
-                'size_mb': round(f.length / (1024 * 1024), 2),
-                'uploaded_at': f.uploaded_at if hasattr(f, 'uploaded_at') else 'N/A'
-            })
-        return sounds
-    return []
 
 # ==================== LICENSE FUNCTIONS ====================
 
@@ -206,11 +297,18 @@ def login_required(f):
 
 @app.route('/')
 def home():
+    users = get_users()
+    devices = get_devices()
+    sound_files = get_all_sound_files()
+    
     return jsonify({
         'server': 'Ridol FB Tool License Server',
         'version': '4.0',
         'status': 'online',
-        'database': 'MongoDB Atlas' if db is not None else 'Not Connected',
+        'database': 'SQLite',
+        'users': len(users),
+        'devices': len(devices),
+        'sounds': len(sound_files),
         'timestamp': datetime.now().isoformat()
     })
 
@@ -220,20 +318,20 @@ def ping():
         'status': 'online',
         'timestamp': datetime.now().isoformat(),
         'version': '4.0',
-        'database': 'MongoDB Atlas' if db is not None else 'Not Connected'
+        'database': 'SQLite'
     })
 
 @app.route('/api/v1/status')
 def api_status():
-    users = get_users() if db is not None else []
-    devices = get_devices() if db is not None else []
-    sound_files = get_all_sound_files() if fs is not None else []
+    users = get_users()
+    devices = get_devices()
+    sound_files = get_all_sound_files()
     
     return jsonify({
         'status': 'online',
         'version': '4.0',
         'timestamp': datetime.now().isoformat(),
-        'database': 'MongoDB Atlas' if db is not None else 'Not Connected',
+        'database': 'SQLite',
         'license_count': len(users),
         'device_count': len(devices),
         'sound_files': [f['name'] for f in sound_files],
@@ -242,7 +340,7 @@ def api_status():
 
 @app.route('/api/v1/sound/status')
 def api_sound_status():
-    sound_files = get_all_sound_files() if fs is not None else []
+    sound_files = get_all_sound_files()
     return jsonify({
         'exists': len(sound_files) > 0,
         'sounds': sound_files,
@@ -255,12 +353,11 @@ def api_download_sound(filename):
         if not filename.endswith(('.mp3', '.wav', '.ogg')):
             return jsonify({'error': 'Invalid file type'}), 400
         
-        sound_file = get_sound_file(filename)
-        if sound_file:
-            data = sound_file.read()
+        file_data = get_sound_file(filename)
+        if file_data:
             mimetype = 'audio/mpeg' if filename.endswith('.mp3') else 'audio/wav'
             return send_file(
-                io.BytesIO(data),
+                io.BytesIO(file_data),
                 as_attachment=True,
                 download_name=filename,
                 mimetype=mimetype
@@ -286,51 +383,31 @@ def api_download_sound_default():
 @login_required
 def api_upload_sound():
     try:
-        print("[+] Upload request received")
-        
         if 'file' not in request.files:
-            print("[-] No file in request")
             return jsonify({'success': False, 'message': 'No file uploaded'})
         
         file = request.files['file']
         if file.filename == '':
-            print("[-] Empty filename")
             return jsonify({'success': False, 'message': 'No file selected'})
-        
-        print(f"[+] Filename: {file.filename}")
-        print(f"[+] Content Type: {file.content_type}")
         
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ['.mp3', '.wav', '.ogg']:
-            print(f"[-] Invalid extension: {ext}")
             return jsonify({'success': False, 'message': 'Only MP3, WAV, OGG allowed'})
         
         filename = f'background{ext}'
         file_data = file.read()
         
-        print(f"[+] File size: {len(file_data)} bytes")
+        save_sound_file(file_data, filename)
         
-        if fs is None:
-            print("[-] GridFS not available")
-            return jsonify({'success': False, 'message': 'Database not available'})
-        
-        file_id = save_sound_file(file_data, filename)
-        if file_id:
-            print(f"[+] File saved with ID: {file_id}")
-            return jsonify({
-                'success': True,
-                'message': 'Sound uploaded successfully!',
-                'filename': filename,
-                'original_name': file.filename,
-                'size': len(file_data),
-                'download_url': f'/api/v1/sound/download/{filename}'
-            })
-        else:
-            print("[-] Failed to save file")
-            return jsonify({'success': False, 'message': 'Failed to save to database'})
-            
+        return jsonify({
+            'success': True,
+            'message': 'Sound uploaded successfully!',
+            'filename': filename,
+            'original_name': file.filename,
+            'size': len(file_data),
+            'download_url': f'/api/v1/sound/download/{filename}'
+        })
     except Exception as e:
-        print(f"[-] Upload error: {e}")
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/api/v1/sound/delete', methods=['POST'])
@@ -423,8 +500,8 @@ def admin_panel():
 @app.route('/admin/data')
 @login_required
 def admin_data():
-    users = get_users() if db is not None else []
-    devices = get_devices() if db is not None else []
+    users = get_users()
+    devices = get_devices()
     
     now = datetime.now()
     total = len(users)
@@ -447,8 +524,8 @@ def admin_data():
             active += 1
     
     return jsonify({
-        'users': {u['license_key']: {k: v for k, v in u.items() if k != '_id'} for u in users},
-        'devices': {d['device_serial']: {k: v for k, v in d.items() if k != '_id'} for d in devices},
+        'users': {u['license_key']: u for u in users},
+        'devices': {d['device_serial']: d for d in devices},
         'total': total,
         'active': active,
         'expired': expired,
@@ -534,8 +611,7 @@ def admin_delete():
         if not key:
             return jsonify({'success': False, 'message': 'No license key'})
         
-        result = delete_user(key)
-        if result and result.deleted_count > 0:
+        if delete_user(key):
             return jsonify({'success': True, 'message': 'License deleted'})
         return jsonify({'success': False, 'message': 'License not found'})
     except Exception as e:
@@ -561,7 +637,7 @@ LOGIN_HTML = """
         .container { background: #111; padding: 40px; border-radius: 16px; border: 1px solid #1a1a2e; max-width: 400px; width: 100%; }
         h1 { color: #00ff88; text-align: center; font-size: 24px; margin-bottom: 5px; }
         .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 30px; }
-        .db-badge { background: #003311; color: #00ff88; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
+        .db-badge { background: #4488ff; color: #fff; padding: 2px 12px; border-radius: 12px; font-size: 10px; display: inline-block; text-align: center; margin-bottom: 20px; }
         .form-group { margin-bottom: 20px; }
         label { color: #aaa; font-size: 13px; display: block; margin-bottom: 6px; }
         input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; box-sizing: border-box; }
@@ -579,7 +655,7 @@ LOGIN_HTML = """
     <div class="container">
         <h1>RIDOL FB TOOL</h1>
         <div class="subtitle">Admin Authentication v4.0</div>
-        <div style="text-align:center"><span class="db-badge">MongoDB Atlas</span></div>
+        <div style="text-align:center"><span class="db-badge">SQLite Database</span></div>
         {% if error %}
         <div class="error">{{ error }}</div>
         {% endif %}
@@ -603,7 +679,7 @@ ADMIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel</title>
+    <title>Admin Panel - SQLite</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
         body { background: #0a0a1a; color: #fff; padding: 20px; }
@@ -611,7 +687,7 @@ ADMIN_HTML = """
         .header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #111; border-radius: 12px; border: 1px solid #1a1a2e; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         .header h1 { color: #00ff88; font-size: 20px; }
         .badge { background: #00ff88; color: #000; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .db-badge { background: #003311; color: #00ff88; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #00ff88; }
+        .db-badge { background: #4488ff; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 10px; border: 1px solid #4488ff; }
         .btn-logout { background: #ff4444; color: #fff; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
         .btn-logout:hover { background: #cc0000; }
         .card { background: #111; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1a1a2e; }
@@ -672,7 +748,7 @@ ADMIN_HTML = """
             <div>
                 <h1>RIDOL FB TOOL <span style="font-size:14px;color:#666;font-weight:400">v4.0</span></h1>
                 <div style="color:#666;font-size:12px;margin-top:3px">
-                    Admin Panel • <span class="db-badge">MongoDB Atlas</span>
+                    Admin Panel • <span class="db-badge">SQLite Database</span>
                 </div>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
@@ -765,7 +841,7 @@ ADMIN_HTML = """
             </div>
         </div>
         
-        <div class="footer">RIDOL FB TOOL v4.0 • MongoDB Atlas</div>
+        <div class="footer">RIDOL FB TOOL v4.0 • SQLite Database</div>
     </div>
     
     <script>
@@ -833,7 +909,7 @@ ADMIN_HTML = """
             
             var formData = new FormData();
             formData.append('file', file);
-            showMsg('Uploading to MongoDB...', 'info');
+            showMsg('Uploading to SQLite...', 'info');
             fetch('/api/v1/sound/upload', { method: 'POST', body: formData })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
@@ -854,7 +930,7 @@ ADMIN_HTML = """
                 .then(function(data) {
                     var list = document.getElementById('soundList');
                     if (data.sounds && data.sounds.length > 0) {
-                        var html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (MongoDB):</div>';
+                        var html = '<div style="margin-bottom:8px;color:#666;font-size:11px">CURRENT SOUNDS (SQLite):</div>';
                         data.sounds.forEach(function(s) {
                             var ext = s.name.split('.').pop().toUpperCase();
                             html += '<div class="sound-item">' +
@@ -869,7 +945,7 @@ ADMIN_HTML = """
                         });
                         list.innerHTML = html;
                     } else {
-                        list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in MongoDB</div>';
+                        list.innerHTML = '<div style="text-align:center;color:#444;padding:15px;font-size:13px">No sounds in database</div>';
                     }
                 })
                 .catch(function(e) {});
@@ -932,9 +1008,9 @@ ADMIN_HTML = """
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.exists) {
-                        showMsg('Sound exists in MongoDB! ' + data.count + ' file(s)', 'success');
+                        showMsg('Sound exists! ' + data.count + ' file(s)', 'success');
                     } else {
-                        showMsg('No sound in MongoDB', 'error');
+                        showMsg('No sound in database', 'error');
                     }
                 })
                 .catch(function(e) { showMsg('Status check failed', 'error'); });
