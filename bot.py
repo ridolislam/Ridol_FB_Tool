@@ -61,8 +61,9 @@ class Color:
 # ==================== SUPABASE API FUNCTIONS ====================
 
 def supabase_request(endpoint, method='GET', data=None):
-    """Make request to Supabase API"""
+    """Make request to Supabase REST API"""
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
+    
     headers = {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': f'Bearer {SUPABASE_ANON_KEY}',
@@ -72,21 +73,22 @@ def supabase_request(endpoint, method='GET', data=None):
     
     try:
         if method == 'GET':
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=15)
         elif method == 'POST':
-            response = requests.post(url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, json=data, timeout=15)
         elif method == 'PATCH':
-            response = requests.patch(url, headers=headers, json=data)
+            response = requests.patch(url, headers=headers, json=data, timeout=15)
         elif method == 'DELETE':
-            response = requests.delete(url, headers=headers)
+            response = requests.delete(url, headers=headers, timeout=15)
         else:
             return None
         
         if response.status_code in [200, 201, 204]:
             return response.json() if response.text else {'success': True}
         else:
-            print(f"{Color.RED}[-] Supabase Error: {response.status_code}{Color.RESET}")
+            print(f"{Color.RED}[-] Supabase Error ({response.status_code}){Color.RESET}")
             return None
+            
     except Exception as e:
         print(f"{Color.RED}[-] Supabase Request Error: {e}{Color.RESET}")
         return None
@@ -94,7 +96,6 @@ def supabase_request(endpoint, method='GET', data=None):
 def supabase_verify_license(license_key, device_serial):
     """Verify license using Supabase"""
     try:
-        # Get user by license key
         result = supabase_request(f"users?license_key=eq.{license_key}&select=*", 'GET')
         if not result or len(result) == 0:
             return {'valid': False, 'message': 'Invalid license key'}
@@ -112,14 +113,12 @@ def supabase_verify_license(license_key, device_serial):
             except:
                 pass
         
-        # Register device
         if device_serial:
             device_data = {
                 'device_serial': device_serial,
                 'license_key': license_key,
                 'last_seen': datetime.now().isoformat()
             }
-            # Check if device exists
             existing = supabase_request(f"devices?device_serial=eq.{device_serial}&select=*", 'GET')
             if existing and len(existing) > 0:
                 supabase_request(
@@ -147,34 +146,30 @@ def supabase_check_sound_status():
         if result and len(result) > 0:
             return {'exists': True, 'files': result}
         return {'exists': False, 'files': []}
-    except:
+    except Exception as e:
         return {'exists': False, 'files': []}
 
 def supabase_download_sound():
-    """Download sound from server (Render.com) since Supabase Storage is not used for audio"""
+    """Download sound from server"""
     try:
-        # Check if sound exists on server
-        response = requests.get(f"{LICENSE_SERVER}/api/v1/sound/status", timeout=10)
-        if response.status_code != 200:
-            return None
-        
-        data = response.json()
-        if not data.get('exists'):
+        # Check if sound exists
+        status = supabase_check_sound_status()
+        if not status.get('exists'):
             print(f"{Color.YELLOW}[!] No sound on server{Color.RESET}")
             return None
         
-        sounds = data.get('sounds', [])
+        sounds = status.get('files', [])
         if not sounds:
             return None
         
-        # Download first sound (prefer MP3)
+        # Prefer MP3
         filename = None
         for s in sounds:
-            if s['name'].endswith('.mp3'):
-                filename = s['name']
+            if s['filename'].endswith('.mp3'):
+                filename = s['filename']
                 break
         if not filename:
-            filename = sounds[0]['name']
+            filename = sounds[0]['filename']
         
         download_url = f"{LICENSE_SERVER}/api/v1/sound/download/{filename}"
         print(f"{Color.CYAN}[*] Downloading {filename} from server...{Color.RESET}")
@@ -228,7 +223,7 @@ class TitleAnimation:
         # Check Supabase connection
         try:
             test_result = supabase_request("users?limit=1&select=*", 'GET')
-            connected = test_result is not None
+            connected = test_result is not None and not isinstance(test_result, dict)
         except:
             connected = False
         
@@ -245,7 +240,7 @@ class TitleAnimation:
         print()
         time.sleep(0.5)
 
-# ==================== AUDIO ENGINE ====================
+# ==================== AUDIO ENGINE (MP3 SUPPORT) ====================
 class AudioEngine:
     def __init__(self):
         self.sound_dir = SOUND_DIR
@@ -266,6 +261,7 @@ class AudioEngine:
             return False
     
     def _check_sound(self):
+        # Check for mpv first (supports MP3)
         try:
             subprocess.run(['mpv', '--version'], capture_output=True, timeout=2)
             return True
@@ -277,23 +273,26 @@ class AudioEngine:
                 return False
     
     def play_sound(self, filename, gain='-5'):
+        """Play a sound file (supports MP3, WAV, OGG)"""
         if not self.sound_available:
             return
         
+        # Check multiple locations
         filepath = os.path.join(self.sound_dir, filename)
         if not os.path.exists(filepath):
             filepath = os.path.join(self.custom_sound_dir, filename)
             if not os.path.exists(filepath):
                 return
         
-        if filename.endswith('.mp3'):
-            try:
-                subprocess.Popen(['mpv', '--no-video', '--really-quiet', '--volume=80', filepath],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return
-            except:
-                pass
+        # Try mpv first (supports MP3, WAV, OGG)
+        try:
+            subprocess.Popen(['mpv', '--no-video', '--really-quiet', '--volume=80', filepath],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except:
+            pass
         
+        # Fallback to play (WAV only)
         try:
             subprocess.Popen(['play', '-q', filepath, 'gain', gain],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -524,7 +523,7 @@ class LicenseManager:
         else:
             result = supabase_request("devices", 'POST', device_data)
         
-        if result is not None:
+        if result is not None and not isinstance(result, dict):
             self.set_device_serial(device_serial)
             print(f'  {Color.GREEN}[+] Device registered successfully{Color.RESET}')
             return True
@@ -696,7 +695,7 @@ class MainMenu:
         # Check Supabase connection
         try:
             test_result = supabase_request("users?limit=1&select=*", 'GET')
-            connected = test_result is not None
+            connected = test_result is not None and not isinstance(test_result, dict)
         except:
             connected = False
         
@@ -837,14 +836,14 @@ class MainMenu:
                 press_enter()
             elif choice == '5':
                 try:
-                    users = supabase_request("users?select=*&limit=10", 'GET')
-                    devices = supabase_request("devices?select=*&limit=10", 'GET')
-                    sounds = supabase_request("sounds?select=*&limit=10", 'GET')
+                    users = supabase_request("users?select=*", 'GET')
+                    devices = supabase_request("devices?select=*", 'GET')
+                    sounds = supabase_request("sounds?select=*", 'GET')
                     
                     print(f'\n  {Color.GREEN}[+] Supabase Status:{Color.RESET}')
-                    print(f'    Users: {len(users) if users else 0}')
-                    print(f'    Devices: {len(devices) if devices else 0}')
-                    print(f'    Sounds: {len(sounds) if sounds else 0}')
+                    print(f'    Users: {len(users) if users and not isinstance(users, dict) else 0}')
+                    print(f'    Devices: {len(devices) if devices and not isinstance(devices, dict) else 0}')
+                    print(f'    Sounds: {len(sounds) if sounds and not isinstance(sounds, dict) else 0}')
                 except Exception as e:
                     print(f'\n  {Color.RED}[-] Error: {e}{Color.RESET}')
                 press_enter()
@@ -950,11 +949,11 @@ class MainMenu:
             devices = supabase_request("devices?select=*", 'GET')
             sounds = supabase_request("sounds?select=*", 'GET')
             
-            if users is not None:
+            if users is not None and not isinstance(users, dict):
                 print(f'\n{Color.CYAN}Supabase Status:{Color.RESET}')
                 print(f'  Licenses: {len(users)}')
-                print(f'  Devices: {len(devices) if devices else 0}')
-                print(f'  Sounds: {len(sounds) if sounds else 0}')
+                print(f'  Devices: {len(devices) if devices and not isinstance(devices, dict) else 0}')
+                print(f'  Sounds: {len(sounds) if sounds and not isinstance(sounds, dict) else 0}')
             else:
                 print(f'\n{Color.RED}Supabase: OFFLINE{Color.RESET}')
         except:
@@ -1105,7 +1104,7 @@ if __name__ == '__main__':
         # Test Supabase connection
         try:
             test_result = supabase_request("users?limit=1&select=*", 'GET')
-            if test_result is not None:
+            if test_result is not None and not isinstance(test_result, dict):
                 print(f'{Color.GREEN}[+] Supabase Connected!{Color.RESET}')
             else:
                 print(f'{Color.YELLOW}[!] Supabase connection failed. Some features may not work.{Color.RESET}')
