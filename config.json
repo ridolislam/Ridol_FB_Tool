@@ -1,5 +1,21 @@
 {
     "license_key": "",
-    "device_serial": "",
-    "data_dir": "/storage/emulated/0/Download/Ridol FB Tool"
+    "device_serial": "Termux-Android",
+    "data_dir": "/storage/emulated/0/Download/Ridol FB Tool",
+    "proxy_api_key": "",
+    "browser_ready": true,
+    "shizuku_connected": false,
+    "auto_name_generation": true,
+    "max_otp_retries": 3,
+    "batch_delay_min": 45,
+    "batch_delay_max": 90,
+    "rotate_ip": true,
+    "rotate_device": true,
+    "settings": {
+        "sound_enabled": true,
+        "voice_enabled": true,
+        "background_music": true,
+        "headless_mode": false
+    },
+    "last_updated": "2026-06-28 05:10:00"
 }
