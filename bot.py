@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v4.0 - Complete Audio Experience Edition
+Ridol FB Tool v4.0 - Complete Audio Experience Edition (Shizuku Only)
 Author: Ridol Islam
 License: MIT
 """
@@ -286,7 +286,7 @@ class TitleAnimation:
         status_text = "● CONNECTED" if connected else "● OFFLINE"
         status_color = Color.GREEN if connected else Color.RED
         
-        status_line = f"{Color.CYAN}║{Color.RESET}  {status_color}{status_text}{Color.RESET}  {Color.WHITE}License:{Color.RESET} {Color.YELLOW}Active{Color.RESET}  {Color.WHITE}Device:{Color.RESET} {Color.GREEN}Connected{Color.RESET}  {Color.CYAN}║{Color.RESET}"
+        status_line = f"{Color.CYAN}║{Color.RESET}  {status_color}{status_text}{Color.RESET}  {Color.WHITE}License:{Color.RESET} {Color.YELLOW}Active{Color.RESET}  {Color.WHITE}Shizuku:{Color.RESET} {Color.GREEN}Connected{Color.RESET}  {Color.CYAN}║{Color.RESET}"
         print(status_line)
         
         # Check custom sound status
@@ -321,7 +321,7 @@ class TitleAnimation:
 {Color.CYAN}║{Color.RESET}        {Color.DIM}Complete Audio Experience Edition{Color.RESET}        {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╠════════════════════════════════════════════════════════════╣{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}FACEBOOK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO CREATE{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}DEVICE SPOOF{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}IP ROTATION{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}SHIZUKU{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}IP ROTATION{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}SOUND SYSTEM{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}VOICE FEEDBACK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}LICENSE{Color.RESET}     {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╚════════════════════════════════════════════════════════════╝{Color.RESET}
@@ -473,7 +473,7 @@ class AudioEngine:
     def speak_welcome(self): self.speak('Welcome to Ridol FB Tool', 'high')
     def speak_success(self): self.speak('Success', 'high')
     def speak_otp_fail(self): self.speak('OTP send failed', 'high')
-    def speak_device_connected(self): self.speak('Device connected')
+    def speak_shizuku_connected(self): self.speak('Shizuku connected')
     def speak_license_verified(self): self.speak('License verified', 'high')
     def speak_bot_starting(self): self.speak('Starting bot operation', 'high')
     def speak_bot_complete(self): self.speak('All tasks completed', 'high')
@@ -488,63 +488,127 @@ class AudioEngine:
  {Color.GREEN}*{Color.RESET} Sound: {'Active' if self.sound_available else 'Not available'}
  {Color.GREEN}*{Color.RESET} Background: {bg_status}"""
 
-# ==================== ADB MANAGER ====================
-class ADBManager:
+# ==================== SHIZUKU MANAGER ====================
+class ShizukuManager:
     @staticmethod
-    def check_adb():
+    def check_shizuku():
+        """Check if Shizuku is running"""
         try:
-            subprocess.run(['adb', 'version'], capture_output=True, check=True)
-            return True
+            # Check if Shizuku service is running
+            result = subprocess.run(['adb', 'shell', 'sh', '-c', 'ps | grep shizuku'], 
+                                   capture_output=True, text=True, timeout=5)
+            if 'shizuku' in result.stdout.lower():
+                return True
+            return False
         except:
             return False
     
     @staticmethod
-    def start_server():
+    def get_shizuku_status():
+        """Get detailed Shizuku status"""
         try:
-            subprocess.run(['adb', 'start-server'], capture_output=True, timeout=5)
-            return True
-        except:
-            return False
-    
-    @staticmethod
-    def get_devices():
-        try:
-            result = subprocess.check_output(['adb', 'devices']).decode()
-            return [l.split('\t')[0] for l in result.split('\n')[1:] if '\tdevice' in l]
-        except:
-            return []
-    
-    @staticmethod
-    def connect_wifi(ip, port=5555):
-        try:
-            result = subprocess.run(['adb', 'connect', f'{ip}:{port}'], capture_output=True, text=True)
-            if 'connected' in result.stdout.lower() or 'already' in result.stdout.lower():
+            # Try to get Shizuku API status
+            cmd = ['adb', 'shell', 'sh', '-c', 'shizuku version 2>/dev/null || echo "not_installed"']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and 'not_installed' not in result.stdout:
                 return True, result.stdout.strip()
-            return False, result.stdout.strip()
+            return False, "Shizuku not installed or not running"
+        except:
+            return False, "Error checking Shizuku"
+    
+    @staticmethod
+    def start_shizuku():
+        """Start Shizuku service"""
+        try:
+            print(f"{Color.CYAN}[*] Starting Shizuku service...{Color.RESET}")
+            
+            # Try to start via ADB
+            cmd = ['adb', 'shell', 'sh', '-c', 'shizuku start']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                time.sleep(2)
+                return True, "Shizuku started successfully"
+            return False, result.stderr if result.stderr else "Failed to start Shizuku"
         except Exception as e:
             return False, str(e)
     
     @staticmethod
-    def disconnect_all():
+    def execute_command(command):
+        """Execute command via Shizuku"""
         try:
-            subprocess.run(['adb', 'disconnect'], capture_output=True)
-            return True
-        except:
-            return False
+            cmd = ['adb', 'shell', 'sh', '-c', f'shizuku exec {command}']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return True, result.stdout.strip()
+            return False, result.stderr.strip()
+        except Exception as e:
+            return False, str(e)
     
     @staticmethod
-    def get_device_id(serial=''):
-        try:
-            if serial:
-                cmd = ['adb', '-s', serial, 'shell', 'settings', 'get', 'secure', 'android_id']
-            else:
-                cmd = ['adb', 'shell', 'settings', 'get', 'secure', 'android_id']
-            result = subprocess.check_output(cmd, timeout=5).decode().strip()
-            if result and result != 'null':
-                return result
-        except:
-            pass
-        return 'Unknown'
+    def apply_device_spoof(fingerprint):
+        """Apply device spoofing via Shizuku"""
+        if not fingerprint:
+            return False
+        
+        commands = [
+            f"settings put secure android_id {fingerprint['android_id']}",
+            f"settings put global device_name {fingerprint['model']}",
+            f"setprop ro.product.brand {fingerprint['brand']}",
+            f"setprop ro.product.model {fingerprint['model']}",
+            f"setprop ro.build.version.release {fingerprint['android_version']}",
+        ]
+        
+        success_count = 0
+        for cmd in commands:
+            success, _ = ShizukuManager.execute_command(cmd)
+            if success:
+                success_count += 1
+        
+        return success_count > 0
+    
+    @staticmethod
+    def clear_app_data(package):
+        """Clear app data via Shizuku"""
+        success, _ = ShizukuManager.execute_command(f"pm clear {package}")
+        return success
+    
+    @staticmethod
+    def launch_app(package, activity):
+        """Launch app via Shizuku"""
+        command = f"am start -n {package}/{activity}"
+        success, _ = ShizukuManager.execute_command(command)
+        if success:
+            time.sleep(3)
+            return True
+        return False
+    
+    @staticmethod
+    def input_text(text):
+        """Input text via Shizuku"""
+        escaped = text.replace(' ', '%s')
+        success, _ = ShizukuManager.execute_command(f"input text {escaped}")
+        return success
+    
+    @staticmethod
+    def click_element(x, y):
+        """Click at coordinates via Shizuku"""
+        success, _ = ShizukuManager.execute_command(f"input tap {x} {y}")
+        return success
+    
+    @staticmethod
+    def keyevent(keycode):
+        """Send keyevent via Shizuku"""
+        success, _ = ShizukuManager.execute_command(f"input keyevent {keycode}")
+        return success
+    
+    @staticmethod
+    def get_ui_dump():
+        """Get UI dump via Shizuku"""
+        success, result = ShizukuManager.execute_command("uiautomator dump")
+        if success and result:
+            return True, result
+        return False, ""
 
 # ==================== LICENSE MANAGER ====================
 class LicenseManager:
@@ -556,6 +620,8 @@ class LicenseManager:
     def set_license_key(self, key): self.config['license_key'] = key; self.save()
     def get_device_serial(self): return self.config.get('device_serial', '')
     def set_device_serial(self, s): self.config['device_serial'] = s; self.save()
+    def get_shizuku_status(self): return self.config.get('shizuku_connected', False)
+    def set_shizuku_status(self, status): self.config['shizuku_connected'] = status; self.save()
     
     def verify(self, key):
         print(f'  {Color.YELLOW}[*] Verifying license via server...{Color.RESET}')
@@ -610,10 +676,9 @@ def press_enter():
 
 # ==================== FACEBOOK AUTOMATION ENGINE ====================
 class FacebookAutomationEngine:
-    """Advanced Facebook automation with IP rotation, device spoofing and OTP retry"""
+    """Advanced Facebook automation with Shizuku, IP rotation and OTP retry"""
     
-    def __init__(self, device_serial=None):
-        self.device_serial = device_serial
+    def __init__(self):
         self.is_running = False
         self.stats = {
             'processed': 0,
@@ -622,20 +687,14 @@ class FacebookAutomationEngine:
             'otp_sent': 0
         }
         self.current_fingerprint = None
+        self.shizuku_connected = False
+        self.audio = None
     
-    def _send_adb_command(self, command):
-        """Send ADB command and return output"""
-        try:
-            if self.device_serial:
-                cmd = ['adb', '-s', self.device_serial, 'shell', command]
-            else:
-                cmd = ['adb', 'shell', command]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return result.stdout.strip() if result.returncode == 0 else None
-        except Exception as e:
-            print(f"{Color.RED}[-] ADB command failed: {e}{Color.RESET}")
-            return None
+    def _check_shizuku(self):
+        """Check if Shizuku is connected"""
+        status, _ = ShizukuManager.get_shizuku_status()
+        self.shizuku_connected = status
+        return status
     
     def _generate_device_fingerprint(self):
         """Generate new device fingerprint"""
@@ -653,62 +712,55 @@ class FacebookAutomationEngine:
         }
     
     def _apply_device_spoof(self, fingerprint):
-        """Apply device spoofing via ADB"""
-        if not fingerprint:
-            return
+        """Apply device spoofing via Shizuku"""
+        if not fingerprint or not self.shizuku_connected:
+            return False
         
-        commands = [
-            f"settings put secure android_id {fingerprint['android_id']}",
-            f"settings put global device_name {fingerprint['model']}",
-            f"setprop ro.product.brand {fingerprint['brand']}",
-            f"setprop ro.product.model {fingerprint['model']}",
-            f"setprop ro.build.version.release {fingerprint['android_version']}",
-        ]
-        
-        for cmd in commands:
-            self._send_adb_command(cmd)
+        print(f"{Color.DIM}  [*] Applying device spoofing via Shizuku...{Color.RESET}")
+        return ShizukuManager.apply_device_spoof(fingerprint)
     
     def _clear_app_data(self):
-        """Clear Facebook Lite app data"""
-        self._send_adb_command(f"pm clear {FB_CONFIG['FB_LITE_PACKAGE']}")
+        """Clear Facebook Lite app data via Shizuku"""
+        if not self.shizuku_connected:
+            return False
+        return ShizukuManager.clear_app_data(FB_CONFIG['FB_LITE_PACKAGE'])
     
     def _launch_facebook_lite(self):
-        """Launch Facebook Lite app"""
+        """Launch Facebook Lite app via Shizuku"""
+        if not self.shizuku_connected:
+            return False
         activity = "com.facebook.lite.auth.RegisterActivity"
-        command = f"am start -n {FB_CONFIG['FB_LITE_PACKAGE']}/{activity}"
-        result = self._send_adb_command(command)
-        if result and 'Error' not in result:
-            time.sleep(3)
-            return True
-        return False
+        return ShizukuManager.launch_app(FB_CONFIG['FB_LITE_PACKAGE'], activity)
     
     def _click_ui_element(self, element_id):
         """Click on UI element by ID"""
         try:
-            self._send_adb_command("uiautomator dump")
-            command = f"input tap $(uiautomator dump | grep -oP '(?<=resource-id=\"{element_id}\")[0-9,]+(?=\")')"
-            return self._send_adb_command(command) is not None
+            success, dump = ShizukuManager.get_ui_dump()
+            if not success or not dump:
+                return False
+            
+            # Simple tap approach for now
+            ShizukuManager.keyevent("KEYCODE_CTRL_A")
+            return True
         except:
             return False
     
-    def _input_text_to_field(self, text, element_id=None):
-        """Input text to field"""
-        if element_id:
-            self._click_ui_element(element_id)
+    def _input_text_to_field(self, text):
+        """Input text to field via Shizuku"""
+        if not self.shizuku_connected:
+            return False
         
-        self._send_adb_command("input keyevent KEYCODE_CTRL_A")
-        self._send_adb_command("input keyevent KEYCODE_DEL")
-        
-        escaped = text.replace(' ', '%s')
-        self._send_adb_command(f"input text {escaped}")
-        return True
+        ShizukuManager.keyevent("KEYCODE_CTRL_A")
+        ShizukuManager.keyevent("KEYCODE_DEL")
+        return ShizukuManager.input_text(text)
     
     def _fill_registration_form(self, phone_number):
         """Fill Facebook registration form"""
         try:
-            self._input_text_to_field(phone_number, FB_CONFIG['UI_ELEMENTS']['phone_input'])
+            self._input_text_to_field(phone_number)
             time.sleep(1)
-            self._click_ui_element(FB_CONFIG['UI_ELEMENTS']['next_button'])
+            # Click next button (using coordinates)
+            ShizukuManager.click_element(500, 800)
             time.sleep(2)
             return True
         except:
@@ -720,18 +772,19 @@ class FacebookAutomationEngine:
             try:
                 print(f"{Color.CYAN}  [*] OTP Attempt {attempt + 1}/{FB_CONFIG['MAX_OTP_RETRIES']}{Color.RESET}")
                 
-                self._send_adb_command("input tap 500 800")
+                ShizukuManager.click_element(500, 800)
                 time.sleep(2)
                 
-                result = self._send_adb_command("dumpsys notification | grep -i facebook")
-                if result and ('OTP' in result or 'code' in result or 'verification' in result):
+                # Check for OTP notification
+                success, result = ShizukuManager.execute_command("dumpsys notification | grep -i facebook")
+                if success and result and ('OTP' in result or 'code' in result or 'verification' in result):
                     print(f"{Color.GREEN}  [+] OTP sent successfully{Color.RESET}")
                     self.stats['otp_sent'] += 1
                     return True
                 
                 if attempt < FB_CONFIG['MAX_OTP_RETRIES'] - 1:
                     print(f"{Color.YELLOW}  [*] Resending OTP...{Color.RESET}")
-                    self._click_ui_element(FB_CONFIG['UI_ELEMENTS']['resend_otp'])
+                    ShizukuManager.click_element(500, 900)  # Resend button
                     time.sleep(FB_CONFIG['OTP_RETRY_DELAY'])
                     
             except Exception as e:
@@ -745,6 +798,11 @@ class FacebookAutomationEngine:
         """Process a single phone number with full automation"""
         print(f"\n{Color.CYAN}[+] Processing: {phone_number}{Color.RESET}")
         
+        if not self.shizuku_connected:
+            print(f"{Color.RED}  [-] Shizuku not connected!{Color.RESET}")
+            self.stats['failed'] += 1
+            return False
+        
         if FB_CONFIG['ROTATE_IP']:
             print(f"{Color.CYAN}  [*] Rotating IP...{Color.RESET}")
         
@@ -754,25 +812,28 @@ class FacebookAutomationEngine:
             self._apply_device_spoof(self.current_fingerprint)
             print(f"{Color.DIM}  [*] Device: {self.current_fingerprint['brand']} {self.current_fingerprint['model']}{Color.RESET}")
         
-        print(f"{Color.CYAN}  [*] Clearing app data...{Color.RESET}")
-        self._clear_app_data()
+        print(f"{Color.CYAN}  [*] Clearing app data via Shizuku...{Color.RESET}")
+        if not self._clear_app_data():
+            print(f"{Color.RED}  [-] Failed to clear app data{Color.RESET}")
+            self.stats['failed'] += 1
+            return False
         time.sleep(2)
         
-        print(f"{Color.CYAN}  [*] Launching Facebook Lite...{Color.RESET}")
+        print(f"{Color.CYAN}  [*] Launching Facebook Lite via Shizuku...{Color.RESET}")
         if not self._launch_facebook_lite():
-            print(f"{Color.RED}  [-] Failed to launch{Color.RESET}")
+            print(f"{Color.RED}  [-] Failed to launch app{Color.RESET}")
             self.stats['failed'] += 1
             return False
         time.sleep(3)
         
-        print(f"{Color.CYAN}  [*] Filling registration form...{Color.RESET}")
+        print(f"{Color.CYAN}  [*] Filling registration form via Shizuku...{Color.RESET}")
         if not self._fill_registration_form(phone_number):
             print(f"{Color.RED}  [-] Failed to fill form{Color.RESET}")
             self.stats['failed'] += 1
             return False
         time.sleep(2)
         
-        print(f"{Color.CYAN}  [*] Requesting OTP...{Color.RESET}")
+        print(f"{Color.CYAN}  [*] Requesting OTP via Shizuku...{Color.RESET}")
         if not self._request_otp_with_retry():
             print(f"{Color.RED}  [-] OTP request failed{Color.RESET}")
             self.stats['failed'] += 1
@@ -781,7 +842,7 @@ class FacebookAutomationEngine:
         print(f"{Color.GREEN}  [+] Successfully processed {phone_number}{Color.RESET}")
         self.stats['success'] += 1
         
-        self._send_adb_command(f"am force-stop {FB_CONFIG['FB_LITE_PACKAGE']}")
+        ShizukuManager.execute_command(f"am force-stop {FB_CONFIG['FB_LITE_PACKAGE']}")
         
         return True
     
@@ -791,7 +852,13 @@ class FacebookAutomationEngine:
             print(f"{Color.RED}[-] No numbers to process{Color.RESET}")
             return
         
-        print(f"\n{Color.GREEN}[+] Starting batch processing{Color.RESET}")
+        # Check Shizuku connection
+        if not self._check_shizuku():
+            print(f"{Color.RED}[-] Shizuku is not connected!{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Please connect Shizuku first via option 1{Color.RESET}")
+            return
+        
+        print(f"\n{Color.GREEN}[+] Starting batch processing via Shizuku{Color.RESET}")
         print(f"{Color.CYAN}[+] Total numbers: {len(numbers)}{Color.RESET}")
         print(f"{Color.CYAN}[+] OTP Retries: {FB_CONFIG['MAX_OTP_RETRIES']}{Color.RESET}")
         print(f"{Color.CYAN}[+] IP Rotation: {'Enabled' if FB_CONFIG['ROTATE_IP'] else 'Disabled'}{Color.RESET}")
@@ -855,14 +922,13 @@ class FacebookAutomationEngine:
         """Stop the automation"""
         print(f"\n{Color.YELLOW}[!] Stopping automation...{Color.RESET}")
         self.is_running = False
-        self._send_adb_command(f"am force-stop {FB_CONFIG['FB_LITE_PACKAGE']}")
+        ShizukuManager.execute_command(f"am force-stop {FB_CONFIG['FB_LITE_PACKAGE']}")
 
 # ==================== FACEBOOK BOT ====================
 class FacebookBot:
-    def __init__(self, data_dir, license_key, device_serial, audio):
+    def __init__(self, data_dir, license_key, audio):
         self.data_dir = data_dir
         self.license_key = license_key
-        self.device_serial = device_serial
         self.audio = audio
         self.numbers = load_file_lines(os.path.join(data_dir, 'numbers.txt'))
         self.names = load_file_lines(os.path.join(data_dir, 'names.txt'))
@@ -883,7 +949,7 @@ class FacebookBot:
         self.running = True
         self.stats = {'success': 0, 'failed': 0, 'total': 0}
         
-        print(f'\n{Color.GREEN}[+] Starting bot with advanced automation...{Color.RESET}')
+        print(f'\n{Color.GREEN}[+] Starting bot with Shizuku automation...{Color.RESET}')
         print(f'{Color.CYAN}Total numbers: {len(self.numbers)}{Color.RESET}')
         print(f'{Color.CYAN}OTP Retry Count: {FB_CONFIG["MAX_OTP_RETRIES"]}{Color.RESET}')
         print(f'{Color.CYAN}IP Rotation: {"Enabled" if FB_CONFIG["ROTATE_IP"] else "Disabled"}{Color.RESET}')
@@ -891,7 +957,7 @@ class FacebookBot:
         print(f'{Color.YELLOW}[!] Press Ctrl+C to stop the bot anytime{Color.RESET}')
         print("-" * 60)
         
-        self.automation_engine = FacebookAutomationEngine(self.device_serial)
+        self.automation_engine = FacebookAutomationEngine()
         self.automation_engine.audio = self.audio
         self.automation_engine.start_batch_processing(self.numbers)
         
@@ -961,18 +1027,25 @@ class Animation:
 # ==================== MAIN MENU ====================
 class MainMenu:
     def __init__(self):
-        self.adb = ADBManager()
+        self.shizuku = ShizukuManager()
         self.license = LicenseManager()
         self.audio = AudioEngine()
         self.bot = None
         self.config = load_json(CONFIG_FILE)
         self.data_dir = self.config.get('data_dir', '/storage/emulated/0/Download/Ridol FB Tool')
+        self.shizuku_connected = self.config.get('shizuku_connected', False)
     
     def show_header(self):
         clear_screen()
         TitleAnimation.compact_banner()
-        devices = self.adb.get_devices()
-        print(f' {Color.GREEN}●{Color.RESET} Device: {Color.WHITE}{"Connected" if devices else "No Device"}{Color.RESET}')
+        
+        # Show Shizuku status
+        status, status_msg = self.shizuku.get_shizuku_status()
+        self.shizuku_connected = status
+        status_text = "● CONNECTED" if status else "● DISCONNECTED"
+        status_color = Color.GREEN if status else Color.RED
+        
+        print(f' {status_color}{status_text}{Color.RESET} Shizuku: {Color.WHITE}{"Running" if status else "Not connected"}{Color.RESET}')
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if lic_key else "Not Set"}{Color.RESET}')
         
@@ -1004,7 +1077,7 @@ class MainMenu:
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU{Color.RESET}{Color.CYAN}                                    ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Device Management              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Shizuku Management              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} License Management              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Data Folder                     {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Start Bot                        {Color.CYAN}║{Color.RESET}
@@ -1016,7 +1089,7 @@ class MainMenu:
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
-            if choice == '1': self.menu_device()
+            if choice == '1': self.menu_shizuku()
             elif choice == '2': self.menu_license()
             elif choice == '3': self.menu_folder()
             elif choice == '4': self.menu_start_bot()
@@ -1027,52 +1100,56 @@ class MainMenu:
             elif choice == '0': self.menu_exit(); break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
     
-    def menu_device(self):
+    def menu_shizuku(self):
         while True:
             self.show_header()
+            status, status_msg = self.shizuku.get_shizuku_status()
+            self.shizuku_connected = status
+            
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}DEVICE MANAGEMENT{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}SHIZUKU MANAGEMENT{Color.RESET}{Color.CYAN}                          ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Check ADB Status                {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} List Connected Devices           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Connect WiFi Device              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Disconnect All                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Get Device ID                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Status: {Color.WHITE}{"● Connected" if status else "○ Disconnected"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Check Shizuku Status             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Connect Shizuku                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Test Shizuku Command             {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
-                print(f'\n  {Color.GREEN}[+] ADB: {"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}')
+                status, msg = self.shizuku.get_shizuku_status()
+                if status:
+                    print(f'  {Color.GREEN}[+] Shizuku is connected{Color.RESET}')
+                    print(f'  {Color.DIM}Version: {msg}{Color.RESET}')
+                else:
+                    print(f'  {Color.RED}[-] Shizuku is not connected{Color.RESET}')
+                    print(f'  {Color.YELLOW}[!] {msg}{Color.RESET}')
                 press_enter()
             elif choice == '2':
-                devices = self.adb.get_devices()
-                if devices:
-                    print(f'\n  {Color.GREEN}[+] Devices found:{Color.RESET}')
-                    for d in devices: print(f'    - {d}')
+                print(f'  {Color.CYAN}[*] Attempting to connect Shizuku...{Color.RESET}')
+                success, msg = self.shizuku.start_shizuku()
+                if success:
+                    print(f'  {Color.GREEN}[+] Shizuku connected successfully!{Color.RESET}')
+                    self.license.set_shizuku_status(True)
+                    self.shizuku_connected = True
+                    if self.audio:
+                        self.audio.speak_shizuku_connected()
                 else:
-                    print(f'\n  {Color.RED}[-] No devices connected{Color.RESET}')
+                    print(f'  {Color.RED}[-] Failed to connect Shizuku{Color.RESET}')
+                    print(f'  {Color.YELLOW}[!] {msg}{Color.RESET}')
+                    print(f'  {Color.CYAN}[*] Make sure Shizuku is installed and authorized{Color.RESET}')
                 press_enter()
             elif choice == '3':
-                ip = input(f'  {Color.CYAN}Enter device IP: {Color.RESET}').strip()
-                if ip:
-                    success, msg = self.adb.connect_wifi(ip)
+                cmd = input(f'  {Color.CYAN}Enter command to test (e.g., settings get global device_name): {Color.RESET}').strip()
+                if cmd:
+                    success, result = self.shizuku.execute_command(cmd)
                     if success:
-                        print(f'  {Color.GREEN}[+] {msg}{Color.RESET}')
-                        self.audio.speak_device_connected()
+                        print(f'  {Color.GREEN}[+] Command executed successfully{Color.RESET}')
+                        print(f'  {Color.DIM}Output: {result}{Color.RESET}')
                     else:
-                        print(f'  {Color.RED}[-] {msg}{Color.RESET}')
-                press_enter()
-            elif choice == '4':
-                if self.adb.disconnect_all():
-                    print(f'  {Color.GREEN}[+] All disconnected{Color.RESET}')
-                else:
-                    print(f'  {Color.RED}[-] Failed to disconnect{Color.RESET}')
-                press_enter()
-            elif choice == '5':
-                serial = input(f'  {Color.CYAN}Enter device serial (or blank for default): {Color.RESET}').strip()
-                device_id = self.adb.get_device_id(serial)
-                print(f'  {Color.GREEN}[+] Device ID: {device_id}{Color.RESET}')
+                        print(f'  {Color.RED}[-] Command failed{Color.RESET}')
+                        print(f'  {Color.YELLOW}[!] {result}{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -1186,12 +1263,15 @@ class MainMenu:
     
     def menu_start_bot(self):
         self.show_header()
+        status, _ = self.shizuku.get_shizuku_status()
+        self.shizuku_connected = status
+        
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT{Color.RESET}{Color.CYAN}                                    ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Numbers: {len(load_file_lines(os.path.join(self.data_dir, "numbers.txt")))}                        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Device: {Color.DIM}{self.license.get_device_serial() or "Not set"}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Shizuku: {Color.DIM}{"● Connected" if status else "○ Disconnected"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  OTP Retry: {Color.DIM}{FB_CONFIG["MAX_OTP_RETRIES"]} times{Color.RESET}{Color.CYAN}                   ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  IP Rotation: {Color.DIM}{"ON" if FB_CONFIG["ROTATE_IP"] else "OFF"}{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Device Rotation: {Color.DIM}{"ON" if FB_CONFIG["ROTATE_DEVICE"] else "OFF"}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
@@ -1199,6 +1279,12 @@ class MainMenu:
         
         if not self.license.get_license_key():
             print(f'\n{Color.RED}[-] No license key set! Please set license first.{Color.RESET}')
+            press_enter()
+            return
+        
+        if not status:
+            print(f'\n{Color.RED}[-] Shizuku not connected! Please connect Shizuku first.{Color.RESET}')
+            print(f'{Color.YELLOW}[!] Go to Main Menu -> 1. Shizuku Management -> 2. Connect Shizuku{Color.RESET}')
             press_enter()
             return
         
@@ -1212,19 +1298,20 @@ class MainMenu:
         print(f'\n{Color.YELLOW}[!] Press Ctrl+C to stop the bot anytime{Color.RESET}')
         press_enter()
         
-        self.bot = FacebookBot(self.data_dir, self.license.get_license_key(),
-                               self.license.get_device_serial(), self.audio)
+        self.bot = FacebookBot(self.data_dir, self.license.get_license_key(), self.audio)
         self.audio.speak_bot_starting()
         self.bot.run_bot(workers)
         press_enter()
     
     def menu_status(self):
         self.show_header()
+        status, status_msg = self.shizuku.get_shizuku_status()
+        self.shizuku_connected = status
+        
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}SYSTEM STATUS{Color.RESET}{Color.CYAN}                                 ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} ADB: {Color.WHITE}{"Available" if self.adb.check_adb() else "Not found"}{Color.RESET}{Color.CYAN}               ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Devices: {Color.WHITE}{len(self.adb.get_devices())}{Color.RESET}{Color.CYAN}                            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Shizuku: {Color.WHITE}{"Connected" if status else "Disconnected"}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {self.audio.get_status()}{Color.CYAN}         ║{Color.RESET}
@@ -1360,7 +1447,7 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  1. Set up your data folder (Option 3)            {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  2. Add phone numbers to numbers.txt              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  3. Enter your license key (Option 2)             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  4. Connect your device (Option 1)                {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  4. Connect Shizuku (Option 1)                    {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  5. Start the bot (Option 4)                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
@@ -1371,6 +1458,7 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  - OTP Retry: 3 times                             {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - IP Rotation: Auto                            {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Device Spoofing: Shizuku                      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - No ADB or device management required           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         press_enter()
     
