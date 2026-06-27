@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v4.0 - Complete Audio Experience Edition (Shizuku Only)
+Ridol FB Tool v6.0 - Proxy Rotation & Auto Name Generation
 Author: Ridol Islam
 License: MIT
 """
@@ -30,7 +30,16 @@ SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
 CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
 LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
-APP_VERSION = 'v4.0'
+APP_VERSION = 'v6.0'
+
+# ==================== PROXY CONFIG ====================
+PROXY_SOURCES = {
+    '9proxy': 'https://api.9proxy.com/get?api_key={api_key}&format=json',
+    'webshare': 'https://api.webshare.io/v2/proxy/list/',
+    'proxy_scrape': 'https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all'
+}
+PROXY_API_KEY = os.environ.get('PROXY_API_KEY', '')
+PROXY_COUNTRY_MAP = {}
 
 # ==================== GOOGLE DRIVE CONFIG ====================
 GOOGLE_DRIVE_FILE_ID = "1jBDWRKJ0ry9lZUMc8IaVI8zDKvtVzVma"
@@ -43,7 +52,6 @@ os.makedirs(CUSTOM_SOUND_DIR, exist_ok=True)
 
 # ==================== FACEBOOK AUTOMATION CONFIG ====================
 FB_CONFIG = {
-    'FB_LITE_PACKAGE': 'com.facebook.lite',
     'MAX_OTP_RETRIES': 3,
     'OTP_RETRY_DELAY': 30,
     'OTP_WAIT_TIMEOUT': 60,
@@ -52,16 +60,15 @@ FB_CONFIG = {
     'BATCH_DELAY_MIN': 45,
     'BATCH_DELAY_MAX': 90,
     'UI_ELEMENTS': {
-        'phone_input': 'com.facebook.lite:id/reg_phone_input',
-        'next_button': 'com.facebook.lite:id/reg_phone_next_btn',
-        'otp_input': 'com.facebook.lite:id/reg_otp_input',
-        'otp_submit': 'com.facebook.lite:id/reg_otp_confirm_btn',
-        'resend_otp': 'com.facebook.lite:id/reg_otp_resend_btn',
-        'fullname_input': 'com.facebook.lite:id/reg_name_input',
-        'birthday_input': 'com.facebook.lite:id/reg_birthday_input',
-        'gender_select': 'com.facebook.lite:id/reg_gender_select',
-        'password_input': 'com.facebook.lite:id/reg_password_input',
-        'signup_btn': 'com.facebook.lite:id/reg_signup_btn',
+        'phone_input': 'input[name="phone_number"]',
+        'next_button': 'button[type="submit"]',
+        'otp_input': 'input[name="otp"]',
+        'otp_submit': 'button[type="submit"]',
+        'fullname_input': 'input[name="full_name"]',
+        'birthday_input': 'input[name="birthday"]',
+        'gender_select': 'select[name="gender"]',
+        'password_input': 'input[name="password"]',
+        'signup_btn': 'button[type="submit"]',
     }
 }
 
@@ -128,7 +135,331 @@ def register_device(device_serial, license_key):
         return result
     return {'success': False, 'message': 'Server error'}
 
-# ==================== SOUND DOWNLOAD FUNCTIONS ====================
+# ==================== NAME GENERATOR ====================
+class NameGenerator:
+    """Generate local names based on country code"""
+    
+    # দেশ অনুযায়ী নামের ডেটাবেস
+    NAMES_DATABASE = {
+        'ID': {  # Indonesia
+            'first': ['Ahmad', 'Budi', 'Citra', 'Dewi', 'Eko', 'Fitri', 'Gilang', 'Hana', 'Indra', 'Joko',
+                      'Kartika', 'Lestari', 'Maya', 'Nanda', 'Oka', 'Purnama', 'Ratna', 'Sari', 'Tono', 'Utami',
+                      'Wahyu', 'Yuni', 'Zahra', 'Agung', 'Bayu', 'Cahya', 'Dian', 'Eka', 'Fajar', 'Gita',
+                      'Hendra', 'Intan', 'Jaya', 'Kusuma', 'Lina', 'Mega', 'Nova', 'Oktaviani', 'Putri', 'Rina'],
+            'last': ['Siregar', 'Nasution', 'Harahap', 'Lubis', 'Batubara', 'Sinaga', 'Saragih', 'Ginting',
+                     'Manurung', 'Simanjuntak', 'Situmorang', 'Sihombing', 'Hutagalung', 'Simatupang', 'Tambunan',
+                     'Tampubolon', 'Silalahi', 'Panggabean', 'Simarmata', 'Sibarani', 'Hutapea', 'Sianturi',
+                     'Hasibuan', 'Rambe', 'Daulay', 'Rangkuti', 'Nasution']
+        },
+        'US': {  # USA
+            'first': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles',
+                      'Mary', 'Patricia', 'Jennifer', 'Linda', 'Barbara', 'Elizabeth', 'Susan', 'Jessica', 'Sarah', 'Karen',
+                      'Daniel', 'Matthew', 'Christopher', 'Andrew', 'Joshua', 'Ashley', 'Amanda', 'Melissa', 'Stephanie', 'Nicole'],
+            'last': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez',
+                     'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee']
+        },
+        'GB': {  # UK
+            'first': ['Oliver', 'George', 'Harry', 'Jack', 'Jacob', 'Charlie', 'Thomas', 'James', 'William', 'Muhammad',
+                      'Amelia', 'Olivia', 'Isla', 'Emily', 'Poppy', 'Ava', 'Isabella', 'Jessica', 'Lily', 'Sophie'],
+            'last': ['Smith', 'Jones', 'Williams', 'Taylor', 'Brown', 'Davies', 'Evans', 'Thomas', 'Johnson', 'Roberts',
+                     'Walker', 'Wright', 'Robinson', 'Thompson', 'White', 'Hughes', 'Edwards', 'Green', 'Lewis', 'Wood']
+        },
+        'IN': {  # India
+            'first': ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Pranav', 'Dhruv', 'Aryan', 'Reyansh',
+                      'Aanya', 'Ananya', 'Diya', 'Aadhya', 'Myra', 'Sara', 'Ishaan', 'Anika', 'Aarohi', 'Advik'],
+            'last': ['Sharma', 'Verma', 'Patel', 'Singh', 'Kumar', 'Gupta', 'Joshi', 'Gandhi', 'Prasad', 'Sinha',
+                     'Pandey', 'Tiwari', 'Chaudhary', 'Srivastava', 'Roy', 'Nair', 'Reddy', 'Rao', 'Mishra', 'Trivedi']
+        },
+        'BD': {  # Bangladesh
+            'first': ['Mohammad', 'Abdullah', 'Rafiq', 'Shahid', 'Kamal', 'Jamal', 'Rahim', 'Karim', 'Hasan', 'Ali',
+                      'Fatima', 'Ayesha', 'Nadia', 'Taslima', 'Rokeya', 'Shirin', 'Nasrin', 'Jahan', 'Morshed', 'Rashed'],
+            'last': ['Rahman', 'Ahmed', 'Islam', 'Hossain', 'Ali', 'Khan', 'Haque', 'Sarkar', 'Mia', 'Pramanik',
+                     'Chowdhury', 'Begum', 'Shah', 'Siddiqui', 'Zaman', 'Mollah', 'Hasan', 'Uddin', 'Faruque', 'Rashid']
+        },
+        'PK': {  # Pakistan
+            'first': ['Muhammad', 'Ali', 'Ahmed', 'Hassan', 'Usman', 'Omar', 'Zain', 'Hamza', 'Bilal', 'Raza',
+                      'Ayesha', 'Fatima', 'Zara', 'Hira', 'Noor', 'Sana', 'Kiran', 'Mehak', 'Saima', 'Rabia'],
+            'last': ['Khan', 'Malik', 'Akhtar', 'Shah', 'Chaudhry', 'Butt', 'Qureshi', 'Sheikh', 'Abbasi', 'Javed',
+                     'Rana', 'Iqbal', 'Rehman', 'Gul', 'Haq', 'Nazir', 'Saeed', 'Yousaf', 'Afzal', 'Aslam']
+        },
+        'PH': {  # Philippines
+            'first': ['Jose', 'Juan', 'Carlos', 'Ramon', 'Pedro', 'Andres', 'Emilio', 'Josefino', 'Ronaldo', 'Ferdinand',
+                      'Maria', 'Josefa', 'Teresita', 'Rosa', 'Luz', 'Cristina', 'Angelica', 'Marisol', 'Lorna', 'Fe'],
+            'last': ['Santos', 'Reyes', 'Cruz', 'Garcia', 'Martinez', 'Lopez', 'Gonzales', 'Flores', 'Perez', 'Ramos',
+                     'Aguilar', 'Torres', 'Rivera', 'Diaz', 'Romero', 'Sanchez', 'Castro', 'Ortiz', 'Morales', 'Valdez']
+        },
+        'MY': {  # Malaysia
+            'first': ['Ahmad', 'Mohd', 'Abdullah', 'Ali', 'Hassan', 'Zainal', 'Kamarul', 'Azman', 'Razali', 'Idris',
+                      'Siti', 'Nur', 'Aishah', 'Fatimah', 'Zaharah', 'Rohani', 'Nor', 'Azizah', 'Hamidah', 'Salbiah'],
+            'last': ['Abdullah', 'Ali', 'Hassan', 'Ahmad', 'Mohd', 'Ismail', 'Othman', 'Rahman', 'Hussein', 'Yusof',
+                     'Wan', 'Zainal', 'Abdul', 'Razak', 'Ibrahim', 'Sulaiman', 'Mat', 'Hassan', 'Din', 'Shariff']
+        },
+        'SG': {  # Singapore
+            'first': ['Wei', 'Ming', 'Li', 'Xin', 'Yi', 'Jun', 'Hui', 'Ling', 'Yan', 'Hao',
+                      'Mei', 'Jing', 'Qiang', 'Yong', 'Chun', 'Kim', 'Seng', 'Wah', 'Choon', 'Yew'],
+            'last': ['Tan', 'Lim', 'Lee', 'Ng', 'Wong', 'Ong', 'Goh', 'Chua', 'Koh', 'Chew',
+                     'Yeo', 'Chong', 'Teo', 'Yap', 'Soh', 'Tay', 'Chan', 'See', 'Ang', 'Poh']
+        },
+        'TH': {  # Thailand
+            'first': ['Somchai', 'Somsak', 'Prasert', 'Kriangkrai', 'Pongsak', 'Nattaporn', 'Wichian', 'Somkiat', 'Suthep', 'Anuchit',
+                      'Nongnuch', 'Somjai', 'Siriporn', 'Saowanee', 'Jintana', 'Wannapa', 'Supaporn', 'Kannika', 'Ratchanee', 'Pornpimon'],
+            'last': ['Somchai', 'Somsak', 'Prasert', 'Kriangkrai', 'Pongsak', 'Nattaporn', 'Wichian', 'Somkiat', 'Suthep', 'Anuchit',
+                     'Nongnuch', 'Somjai', 'Siriporn', 'Saowanee', 'Jintana', 'Wannapa', 'Supaporn', 'Kannika', 'Ratchanee', 'Pornpimon']
+        },
+        'VN': {  # Vietnam
+            'first': ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu', 'Dang', 'Bui', 'Do', 'Huynh',
+                      'Thi', 'Van', 'Quang', 'Minh', 'Tuan', 'Phuong', 'Anh', 'Hoa', 'Lan', 'Hai'],
+            'last': ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu', 'Dang', 'Bui', 'Do', 'Huynh',
+                     'Truong', 'Ly', 'Dinh', 'Chau', 'Ta', 'Mai', 'Duong', 'Lam', 'Phan', 'Vuong']
+        },
+        'XX': {  # Unknown/Default
+            'first': ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Hayden', 'Harper',
+                      'Emerson', 'Reese', 'Charlie', 'Blake', 'Sage', 'Rowan', 'Logan', 'Peyton', 'Ari', 'Ellis'],
+            'last': ['Chen', 'Singh', 'Garcia', 'Wang', 'Perez', 'Nguyen', 'Patel', 'Smith', 'Jones', 'Williams',
+                     'Davis', 'Brown', 'Miller', 'Wilson', 'Moore', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'Martin']
+        }
+    }
+    
+    @classmethod
+    def get_random_name(cls, country_code):
+        """Get random first and last name for a country"""
+        country_data = cls.NAMES_DATABASE.get(country_code, cls.NAMES_DATABASE['XX'])
+        
+        first_name = random.choice(country_data['first'])
+        last_name = random.choice(country_data['last'])
+        
+        return first_name, last_name
+    
+    @classmethod
+    def get_full_name(cls, country_code):
+        """Get full name for a country"""
+        first, last = cls.get_random_name(country_code)
+        return f"{first} {last}"
+    
+    @classmethod
+    def get_multiple_names(cls, country_code, count=5):
+        """Get multiple random names for a country"""
+        names = []
+        for _ in range(count):
+            first, last = cls.get_random_name(country_code)
+            names.append({'first': first, 'last': last, 'full': f"{first} {last}"})
+        return names
+
+# ==================== PROXY MANAGER ====================
+class ProxyManager:
+    """Manage proxy rotation with country detection"""
+    
+    def __init__(self):
+        self.proxy_pool = []
+        self.current_proxy = None
+        self.current_country = None
+        self.proxy_history = []
+        self.api_key = PROXY_API_KEY
+        self.last_refresh = 0
+        self.refresh_interval = 300  # 5 minutes
+        
+    def _get_country_from_ip(self, ip):
+        """Get country from IP using free API"""
+        try:
+            response = requests.get(f"http://ip-api.com/json/{ip}", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('status') == 'success':
+                    return data.get('countryCode', 'XX')
+            return 'XX'
+        except:
+            return 'XX'
+    
+    def _fetch_proxies_from_9proxy(self):
+        """Fetch proxies from 9proxy.com"""
+        if not self.api_key:
+            print(f"{Color.YELLOW}[!] No API key for 9proxy. Set PROXY_API_KEY environment variable.{Color.RESET}")
+            return []
+        
+        try:
+            url = f"https://api.9proxy.com/get?api_key={self.api_key}&format=json"
+            response = requests.get(url, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                proxies = []
+                if isinstance(data, list):
+                    for item in data:
+                        if 'ip' in item and 'port' in item:
+                            proxy = f"http://{item['ip']}:{item['port']}"
+                            country = item.get('country', 'XX')
+                            proxies.append({'proxy': proxy, 'country': country})
+                elif isinstance(data, dict) and 'data' in data:
+                    for item in data['data']:
+                        if 'ip' in item and 'port' in item:
+                            proxy = f"http://{item['ip']}:{item['port']}"
+                            country = item.get('country', 'XX')
+                            proxies.append({'proxy': proxy, 'country': country})
+                return proxies
+            return []
+        except Exception as e:
+            print(f"{Color.RED}[-] 9proxy fetch error: {e}{Color.RESET}")
+            return []
+    
+    def _fetch_proxies_from_webshare(self):
+        """Fetch proxies from webshare.io"""
+        if not self.api_key:
+            return []
+        
+        try:
+            url = f"https://api.webshare.io/v2/proxy/list/"
+            headers = {'Authorization': f'Token {self.api_key}'}
+            response = requests.get(url, headers=headers, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                proxies = []
+                for item in data.get('results', []):
+                    if 'proxy_address' in item and 'port' in item:
+                        proxy = f"http://{item['proxy_address']}:{item['port']}"
+                        country = item.get('country_code', 'XX')
+                        proxies.append({'proxy': proxy, 'country': country})
+                return proxies
+            return []
+        except Exception as e:
+            print(f"{Color.RED}[-] Webshare fetch error: {e}{Color.RESET}")
+            return []
+    
+    def _fetch_proxies_from_scrape(self):
+        """Fetch proxies from proxyscrape.com"""
+        try:
+            url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all"
+            response = requests.get(url, timeout=15)
+            if response.status_code == 200:
+                lines = response.text.strip().split('\n')
+                proxies = []
+                for line in lines:
+                    if ':' in line:
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            ip, port = parts[0], parts[1]
+                            proxy = f"http://{ip}:{port}"
+                            # Country detection from proxy
+                            country = self._get_country_from_ip(ip)
+                            proxies.append({'proxy': proxy, 'country': country})
+                            time.sleep(0.1)  # Rate limit
+                return proxies
+            return []
+        except Exception as e:
+            print(f"{Color.RED}[-] Scrape fetch error: {e}{Color.RESET}")
+            return []
+    
+    def refresh_proxy_pool(self):
+        """Refresh proxy pool from all sources"""
+        print(f"{Color.CYAN}[*] Refreshing proxy pool...{Color.RESET}")
+        
+        all_proxies = []
+        
+        # Try 9proxy
+        proxies = self._fetch_proxies_from_9proxy()
+        if proxies:
+            print(f"{Color.GREEN}[+] Got {len(proxies)} proxies from 9proxy{Color.RESET}")
+            all_proxies.extend(proxies)
+        
+        # Try webshare
+        proxies = self._fetch_proxies_from_webshare()
+        if proxies:
+            print(f"{Color.GREEN}[+] Got {len(proxies)} proxies from webshare{Color.RESET}")
+            all_proxies.extend(proxies)
+        
+        # Try scrape
+        proxies = self._fetch_proxies_from_scrape()
+        if proxies:
+            print(f"{Color.GREEN}[+] Got {len(proxies)} proxies from proxy-scrape{Color.RESET}")
+            all_proxies.extend(proxies)
+        
+        # Remove duplicates
+        seen = set()
+        unique_proxies = []
+        for p in all_proxies:
+            if p['proxy'] not in seen:
+                seen.add(p['proxy'])
+                unique_proxies.append(p)
+        
+        self.proxy_pool = unique_proxies
+        self.last_refresh = time.time()
+        
+        print(f"{Color.GREEN}[+] Total unique proxies: {len(self.proxy_pool)}{Color.RESET}")
+        return len(self.proxy_pool)
+    
+    def get_proxy_for_number(self, phone_number):
+        """Get a proxy based on phone number's country code"""
+        country_code = self._get_country_from_phone(phone_number)
+        
+        if not self.proxy_pool:
+            self.refresh_proxy_pool()
+            if not self.proxy_pool:
+                print(f"{Color.YELLOW}[!] No proxies available. Using direct connection.{Color.RESET}")
+                return None, country_code
+        
+        # Find proxy matching country
+        matching_proxies = [p for p in self.proxy_pool if p['country'] == country_code]
+        
+        if matching_proxies:
+            selected = random.choice(matching_proxies)
+            print(f"{Color.GREEN}[+] Using proxy from {selected['country']} (matching number){Color.RESET}")
+        else:
+            # If no match, pick random proxy
+            selected = random.choice(self.proxy_pool)
+            print(f"{Color.YELLOW}[!] No proxy for {country_code}, using random proxy from {selected['country']}{Color.RESET}")
+        
+        self.current_proxy = selected['proxy']
+        self.current_country = selected['country']
+        self.proxy_history.append({
+            'phone': phone_number,
+            'proxy': selected['proxy'],
+            'country': selected['country']
+        })
+        
+        return selected['proxy'], country_code
+    
+    def _get_country_from_phone(self, phone_number):
+        """Get country code from phone number"""
+        phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
+        
+        country_codes = {
+            '62': 'ID',  # Indonesia
+            '1': 'US',   # USA/Canada
+            '44': 'GB',  # UK
+            '91': 'IN',  # India
+            '92': 'PK',  # Pakistan
+            '880': 'BD', # Bangladesh
+            '86': 'CN',  # China
+            '81': 'JP',  # Japan
+            '49': 'DE',  # Germany
+            '33': 'FR',  # France
+            '39': 'IT',  # Italy
+            '7': 'RU',   # Russia
+            '55': 'BR',  # Brazil
+            '82': 'KR',  # South Korea
+            '60': 'MY',  # Malaysia
+            '65': 'SG',  # Singapore
+            '63': 'PH',  # Philippines
+            '66': 'TH',  # Thailand
+            '84': 'VN',  # Vietnam
+        }
+        
+        # Sort by length (longest first) to avoid partial matches
+        for code in sorted(country_codes.keys(), key=len, reverse=True):
+            if phone.startswith(code):
+                return country_codes[code]
+        
+        return 'XX'  # Unknown
+    
+    def get_proxy_stats(self):
+        """Get proxy statistics"""
+        return {
+            'total': len(self.proxy_pool),
+            'current': self.current_proxy,
+            'country': self.current_country,
+            'history_count': len(self.proxy_history),
+            'last_refresh': self.last_refresh
+        }
+
+# ==================== SOUND FUNCTIONS ====================
 
 def download_from_google_drive():
     """Download MP3 from Google Drive"""
@@ -247,66 +578,11 @@ def download_custom_background():
     print(f"{Color.YELLOW}[!] No custom background sound found. Using default.{Color.RESET}")
     return False
 
-# ==================== 3D TITLE (NEW STYLE) ====================
+# ==================== TITLE ====================
 class TitleAnimation:
     @staticmethod
-    def big_3d_title():
-        os.system('clear')
-        
-        # Top border with gradient
-        border = f"{Color.CYAN}╔{'═' * 60}╗{Color.RESET}"
-        border_bottom = f"{Color.CYAN}╚{'═' * 60}╝{Color.RESET}"
-        
-        print(border)
-        
-        # Main Title with neon effect
-        title = f"""
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█▀█ █▀▀ █▀▀ █▀█ █▀▀ █▀▀{Color.RESET}  {Color.WHITE}{Color.BOLD}RIDOL FB TOOL{Color.RESET} {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.GOLD}█▀█ █▀▀ █▄▄ █▀▄ █▄▄ ██▄{Color.RESET}  {Color.DIM}Version {APP_VERSION}{Color.RESET}   {Color.CYAN}║{Color.RESET}
-"""
-        for line in title.split('\n'):
-            if line.strip():
-                print(line)
-        
-        # Subtitle
-        subtitle = f"{Color.CYAN}║{Color.RESET}  {Color.PURPLE}✦{Color.RESET} {Color.DIM}Complete Audio Experience{Color.RESET} {Color.PURPLE}✦{Color.RESET}  {Color.CYAN}║{Color.RESET}"
-        print(subtitle)
-        
-        # Separator
-        sep = f"{Color.CYAN}╠{'═' * 60}╣{Color.RESET}"
-        print(sep)
-        
-        # Status Line
-        try:
-            result = server_request("ping", 'GET')
-            connected = result is not None
-        except:
-            connected = False
-        
-        status_text = "● CONNECTED" if connected else "● OFFLINE"
-        status_color = Color.GREEN if connected else Color.RED
-        
-        status_line = f"{Color.CYAN}║{Color.RESET}  {status_color}{status_text}{Color.RESET}  {Color.WHITE}License:{Color.RESET} {Color.YELLOW}Active{Color.RESET}  {Color.WHITE}Shizuku:{Color.RESET} {Color.GREEN}Connected{Color.RESET}  {Color.CYAN}║{Color.RESET}"
-        print(status_line)
-        
-        # Check custom sound status
-        custom_mp3 = os.path.join(CUSTOM_SOUND_DIR, 'background.mp3')
-        custom_wav = os.path.join(CUSTOM_SOUND_DIR, 'background.wav')
-        custom_exists = (os.path.exists(custom_mp3) and os.path.getsize(custom_mp3) > 0) or \
-                       (os.path.exists(custom_wav) and os.path.getsize(custom_wav) > 0)
-        custom_status = "🎵 Custom" if custom_exists else "🎵 Default"
-        custom_color = Color.GREEN if custom_exists else Color.DIM
-        
-        custom_line = f"{Color.CYAN}║{Color.RESET}  {custom_color}{custom_status}{Color.RESET}  {Color.WHITE}OTP Retry:{Color.RESET} {Color.CYAN}{FB_CONFIG['MAX_OTP_RETRIES']}x{Color.RESET}  {Color.WHITE}IP Rotation:{Color.RESET} {Color.CYAN}{'ON' if FB_CONFIG['ROTATE_IP'] else 'OFF'}{Color.RESET}  {Color.CYAN}║{Color.RESET}"
-        print(custom_line)
-        
-        # Bottom border
-        print(border_bottom)
-        print()
-
-    @staticmethod
     def compact_banner():
-        """Compact banner style like MR ROTON"""
+        """Compact banner style"""
         os.system('clear')
         
         banner = f"""
@@ -318,10 +594,10 @@ class TitleAnimation:
 {Color.CYAN}║{Color.RESET}  {Color.GOLD}██║  ██║██║██████╔╝╚██████╔╝███████╗███████╗{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.GOLD}╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝╚══════╝{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}           {Color.WHITE}{Color.BOLD}RIDOL FB TOOL v{APP_VERSION}{Color.RESET}               {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}        {Color.DIM}Complete Audio Experience Edition{Color.RESET}        {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}      {Color.DIM}Proxy Rotation + Auto Name Gen{Color.RESET}          {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╠════════════════════════════════════════════════════════════╣{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}FACEBOOK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO CREATE{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}SHIZUKU{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}IP ROTATION{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}PROXY ROTATION{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO NAME{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}SOUND SYSTEM{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}VOICE FEEDBACK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}LICENSE{Color.RESET}     {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╚════════════════════════════════════════════════════════════╝{Color.RESET}
@@ -473,7 +749,6 @@ class AudioEngine:
     def speak_welcome(self): self.speak('Welcome to Ridol FB Tool', 'high')
     def speak_success(self): self.speak('Success', 'high')
     def speak_otp_fail(self): self.speak('OTP send failed', 'high')
-    def speak_shizuku_connected(self): self.speak('Shizuku connected')
     def speak_license_verified(self): self.speak('License verified', 'high')
     def speak_bot_starting(self): self.speak('Starting bot operation', 'high')
     def speak_bot_complete(self): self.speak('All tasks completed', 'high')
@@ -488,127 +763,147 @@ class AudioEngine:
  {Color.GREEN}*{Color.RESET} Sound: {'Active' if self.sound_available else 'Not available'}
  {Color.GREEN}*{Color.RESET} Background: {bg_status}"""
 
-# ==================== SHIZUKU MANAGER ====================
-class ShizukuManager:
-    @staticmethod
-    def check_shizuku():
-        """Check if Shizuku is running"""
+# ==================== BROWSER PILOT MANAGER ====================
+class BrowserPilotManager:
+    """Termux Browser Pilot - ফেসবুক অটোমেশন ব্রাউজার কন্ট্রোলার"""
+    
+    def __init__(self):
+        self.browser_available = self._check_browser_pilot()
+        self.browser = None
+        self.browser_started = False
+    
+    def _check_browser_pilot(self):
+        """Check if termux-browser-pilot is installed"""
         try:
-            # Check if Shizuku service is running
-            result = subprocess.run(['adb', 'shell', 'sh', '-c', 'ps | grep shizuku'], 
-                                   capture_output=True, text=True, timeout=5)
-            if 'shizuku' in result.stdout.lower():
-                return True
-            return False
-        except:
-            return False
-    
-    @staticmethod
-    def get_shizuku_status():
-        """Get detailed Shizuku status"""
-        try:
-            # Try to get Shizuku API status
-            cmd = ['adb', 'shell', 'sh', '-c', 'shizuku version 2>/dev/null || echo "not_installed"']
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if result.returncode == 0 and 'not_installed' not in result.stdout:
-                return True, result.stdout.strip()
-            return False, "Shizuku not installed or not running"
-        except:
-            return False, "Error checking Shizuku"
-    
-    @staticmethod
-    def start_shizuku():
-        """Start Shizuku service"""
-        try:
-            print(f"{Color.CYAN}[*] Starting Shizuku service...{Color.RESET}")
-            
-            # Try to start via ADB
-            cmd = ['adb', 'shell', 'sh', '-c', 'shizuku start']
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0:
-                time.sleep(2)
-                return True, "Shizuku started successfully"
-            return False, result.stderr if result.stderr else "Failed to start Shizuku"
-        except Exception as e:
-            return False, str(e)
-    
-    @staticmethod
-    def execute_command(command):
-        """Execute command via Shizuku"""
-        try:
-            cmd = ['adb', 'shell', 'sh', '-c', f'shizuku exec {command}']
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                return True, result.stdout.strip()
-            return False, result.stderr.strip()
-        except Exception as e:
-            return False, str(e)
-    
-    @staticmethod
-    def apply_device_spoof(fingerprint):
-        """Apply device spoofing via Shizuku"""
-        if not fingerprint:
-            return False
-        
-        commands = [
-            f"settings put secure android_id {fingerprint['android_id']}",
-            f"settings put global device_name {fingerprint['model']}",
-            f"setprop ro.product.brand {fingerprint['brand']}",
-            f"setprop ro.product.model {fingerprint['model']}",
-            f"setprop ro.build.version.release {fingerprint['android_version']}",
-        ]
-        
-        success_count = 0
-        for cmd in commands:
-            success, _ = ShizukuManager.execute_command(cmd)
-            if success:
-                success_count += 1
-        
-        return success_count > 0
-    
-    @staticmethod
-    def clear_app_data(package):
-        """Clear app data via Shizuku"""
-        success, _ = ShizukuManager.execute_command(f"pm clear {package}")
-        return success
-    
-    @staticmethod
-    def launch_app(package, activity):
-        """Launch app via Shizuku"""
-        command = f"am start -n {package}/{activity}"
-        success, _ = ShizukuManager.execute_command(command)
-        if success:
-            time.sleep(3)
+            import termux_browser_pilot
             return True
-        return False
+        except ImportError:
+            return False
     
-    @staticmethod
-    def input_text(text):
-        """Input text via Shizuku"""
-        escaped = text.replace(' ', '%s')
-        success, _ = ShizukuManager.execute_command(f"input text {escaped}")
-        return success
+    def _install_browser_pilot(self):
+        """Install termux-browser-pilot"""
+        print(f"{Color.CYAN}[*] Installing termux-browser-pilot...{Color.RESET}")
+        try:
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'termux-browser-pilot'], 
+                         capture_output=True, timeout=60)
+            print(f"{Color.GREEN}[+] termux-browser-pilot installed successfully{Color.RESET}")
+            return True
+        except Exception as e:
+            print(f"{Color.RED}[-] Failed to install: {e}{Color.RESET}")
+            return False
     
-    @staticmethod
-    def click_element(x, y):
-        """Click at coordinates via Shizuku"""
-        success, _ = ShizukuManager.execute_command(f"input tap {x} {y}")
-        return success
+    def start_browser(self, headless=False, proxy=None):
+        """Start browser using termux-browser-pilot with proxy"""
+        if not self.browser_available:
+            if not self._install_browser_pilot():
+                return False
+            
+            try:
+                import termux_browser_pilot
+                self.browser_available = True
+            except:
+                return False
+        
+        try:
+            from termux_browser_pilot import Browser
+            if proxy:
+                # Set proxy environment variable
+                os.environ['http_proxy'] = proxy
+                os.environ['https_proxy'] = proxy
+                print(f"{Color.CYAN}[*] Browser using proxy: {proxy}{Color.RESET}")
+            
+            self.browser = Browser(headless=headless)
+            self.browser_started = True
+            print(f"{Color.GREEN}[+] Browser started successfully{Color.RESET}")
+            return True
+        except Exception as e:
+            print(f"{Color.RED}[-] Failed to start browser: {e}{Color.RESET}")
+            return False
     
-    @staticmethod
-    def keyevent(keycode):
-        """Send keyevent via Shizuku"""
-        success, _ = ShizukuManager.execute_command(f"input keyevent {keycode}")
-        return success
+    def goto(self, url):
+        """Navigate to URL"""
+        if not self.browser_started:
+            return False
+        try:
+            self.browser.goto(url)
+            return True
+        except:
+            return False
     
-    @staticmethod
-    def get_ui_dump():
-        """Get UI dump via Shizuku"""
-        success, result = ShizukuManager.execute_command("uiautomator dump")
-        if success and result:
-            return True, result
-        return False, ""
+    def type_text(self, selector, text):
+        """Type text into field"""
+        if not self.browser_started:
+            return False
+        try:
+            self.browser.type(selector, text)
+            return True
+        except:
+            return False
+    
+    def click(self, selector):
+        """Click on element"""
+        if not self.browser_started:
+            return False
+        try:
+            self.browser.click(selector)
+            return True
+        except:
+            return False
+    
+    def wait_for_text(self, selector, timeout=60):
+        """Wait for text to appear"""
+        if not self.browser_started:
+            return None
+        try:
+            return self.browser.wait_for_text(selector, timeout=timeout)
+        except:
+            return None
+    
+    def get_text(self, selector):
+        """Get text from element"""
+        if not self.browser_started:
+            return None
+        try:
+            element = self.browser.find(selector)
+            return element.text if element else None
+        except:
+            return None
+    
+    def wait_for_element(self, selector, timeout=60):
+        """Wait for element to appear"""
+        if not self.browser_started:
+            return None
+        try:
+            return self.browser.wait_for_element(selector, timeout=timeout)
+        except:
+            return None
+    
+    def wait_for_input(self, selector, timeout=60):
+        """Wait for input field"""
+        if not self.browser_started:
+            return None
+        try:
+            return self.browser.wait_for_element(selector, timeout=timeout)
+        except:
+            return None
+    
+    def screenshot(self, filename):
+        """Take screenshot"""
+        if not self.browser_started:
+            return False
+        try:
+            self.browser.screenshot(filename)
+            return True
+        except:
+            return False
+    
+    def close_browser(self):
+        """Close browser"""
+        self.browser_started = False
+        try:
+            self.browser.close()
+        except:
+            pass
 
 # ==================== LICENSE MANAGER ====================
 class LicenseManager:
@@ -620,8 +915,10 @@ class LicenseManager:
     def set_license_key(self, key): self.config['license_key'] = key; self.save()
     def get_device_serial(self): return self.config.get('device_serial', '')
     def set_device_serial(self, s): self.config['device_serial'] = s; self.save()
-    def get_shizuku_status(self): return self.config.get('shizuku_connected', False)
-    def set_shizuku_status(self, status): self.config['shizuku_connected'] = status; self.save()
+    def get_browser_ready(self): return self.config.get('browser_ready', False)
+    def set_browser_ready(self, status): self.config['browser_ready'] = status; self.save()
+    def get_proxy_api_key(self): return self.config.get('proxy_api_key', '')
+    def set_proxy_api_key(self, key): self.config['proxy_api_key'] = key; self.save()
     
     def verify(self, key):
         print(f'  {Color.YELLOW}[*] Verifying license via server...{Color.RESET}')
@@ -676,7 +973,7 @@ def press_enter():
 
 # ==================== FACEBOOK AUTOMATION ENGINE ====================
 class FacebookAutomationEngine:
-    """Advanced Facebook automation with Shizuku, IP rotation and OTP retry"""
+    """Advanced Facebook automation with Browser Pilot + Proxy Rotation + Auto Name"""
     
     def __init__(self):
         self.is_running = False
@@ -686,15 +983,10 @@ class FacebookAutomationEngine:
             'failed': 0,
             'otp_sent': 0
         }
-        self.current_fingerprint = None
-        self.shizuku_connected = False
+        self.browser_manager = BrowserPilotManager()
+        self.proxy_manager = ProxyManager()
+        self.name_generator = NameGenerator()
         self.audio = None
-    
-    def _check_shizuku(self):
-        """Check if Shizuku is connected"""
-        status, _ = ShizukuManager.get_shizuku_status()
-        self.shizuku_connected = status
-        return status
     
     def _generate_device_fingerprint(self):
         """Generate new device fingerprint"""
@@ -711,59 +1003,34 @@ class FacebookAutomationEngine:
             'serial': ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))
         }
     
-    def _apply_device_spoof(self, fingerprint):
-        """Apply device spoofing via Shizuku"""
-        if not fingerprint or not self.shizuku_connected:
-            return False
-        
-        print(f"{Color.DIM}  [*] Applying device spoofing via Shizuku...{Color.RESET}")
-        return ShizukuManager.apply_device_spoof(fingerprint)
-    
-    def _clear_app_data(self):
-        """Clear Facebook Lite app data via Shizuku"""
-        if not self.shizuku_connected:
-            return False
-        return ShizukuManager.clear_app_data(FB_CONFIG['FB_LITE_PACKAGE'])
-    
-    def _launch_facebook_lite(self):
-        """Launch Facebook Lite app via Shizuku"""
-        if not self.shizuku_connected:
-            return False
-        activity = "com.facebook.lite.auth.RegisterActivity"
-        return ShizukuManager.launch_app(FB_CONFIG['FB_LITE_PACKAGE'], activity)
-    
-    def _click_ui_element(self, element_id):
-        """Click on UI element by ID"""
+    def _fill_registration_form(self, phone_number, country_code):
+        """Fill Facebook registration form using browser with local name"""
         try:
-            success, dump = ShizukuManager.get_ui_dump()
-            if not success or not dump:
-                return False
+            # Generate local name based on country
+            first_name, last_name = self.name_generator.get_random_name(country_code)
+            full_name = f"{first_name} {last_name}"
             
-            # Simple tap approach for now
-            ShizukuManager.keyevent("KEYCODE_CTRL_A")
-            return True
-        except:
-            return False
-    
-    def _input_text_to_field(self, text):
-        """Input text to field via Shizuku"""
-        if not self.shizuku_connected:
-            return False
-        
-        ShizukuManager.keyevent("KEYCODE_CTRL_A")
-        ShizukuManager.keyevent("KEYCODE_DEL")
-        return ShizukuManager.input_text(text)
-    
-    def _fill_registration_form(self, phone_number):
-        """Fill Facebook registration form"""
-        try:
-            self._input_text_to_field(phone_number)
+            print(f"{Color.CYAN}  [*] Generated name: {full_name} ({country_code}){Color.RESET}")
+            
+            # Phone number input
+            print(f"{Color.CYAN}  [*] Filling phone number: {phone_number}{Color.RESET}")
+            self.browser_manager.type_text(FB_CONFIG['UI_ELEMENTS']['phone_input'], phone_number)
             time.sleep(1)
-            # Click next button (using coordinates)
-            ShizukuManager.click_element(500, 800)
-            time.sleep(2)
+            
+            print(f"{Color.CYAN}  [*] Clicking Next button{Color.RESET}")
+            self.browser_manager.click(FB_CONFIG['UI_ELEMENTS']['next_button'])
+            time.sleep(3)
+            
+            # Try to fill name if field appears
+            try:
+                self.browser_manager.type_text(FB_CONFIG['UI_ELEMENTS']['fullname_input'], full_name)
+                time.sleep(1)
+            except:
+                pass
+            
             return True
-        except:
+        except Exception as e:
+            print(f"{Color.RED}  [-] Form fill error: {e}{Color.RESET}")
             return False
     
     def _request_otp_with_retry(self):
@@ -772,19 +1039,18 @@ class FacebookAutomationEngine:
             try:
                 print(f"{Color.CYAN}  [*] OTP Attempt {attempt + 1}/{FB_CONFIG['MAX_OTP_RETRIES']}{Color.RESET}")
                 
-                ShizukuManager.click_element(500, 800)
-                time.sleep(2)
+                otp_text = self.browser_manager.wait_for_text(".otp-code, .verification-code, input[name='otp']", 
+                                                             timeout=FB_CONFIG['OTP_WAIT_TIMEOUT'])
                 
-                # Check for OTP notification
-                success, result = ShizukuManager.execute_command("dumpsys notification | grep -i facebook")
-                if success and result and ('OTP' in result or 'code' in result or 'verification' in result):
-                    print(f"{Color.GREEN}  [+] OTP sent successfully{Color.RESET}")
+                if otp_text:
+                    print(f"{Color.GREEN}  [+] OTP received: {otp_text}{Color.RESET}")
                     self.stats['otp_sent'] += 1
-                    return True
+                    return otp_text
                 
                 if attempt < FB_CONFIG['MAX_OTP_RETRIES'] - 1:
                     print(f"{Color.YELLOW}  [*] Resending OTP...{Color.RESET}")
-                    ShizukuManager.click_element(500, 900)  # Resend button
+                    resend_btn = "button:has-text('Resend'), #resend_otp, .resend-btn"
+                    self.browser_manager.click(resend_btn)
                     time.sleep(FB_CONFIG['OTP_RETRY_DELAY'])
                     
             except Exception as e:
@@ -792,78 +1058,106 @@ class FacebookAutomationEngine:
                 time.sleep(FB_CONFIG['OTP_RETRY_DELAY'])
         
         print(f"{Color.RED}  [-] OTP failed after {FB_CONFIG['MAX_OTP_RETRIES']} attempts{Color.RESET}")
-        return False
+        return None
+    
+    def _complete_registration(self, otp_code):
+        """Complete registration with OTP"""
+        try:
+            print(f"{Color.CYAN}  [*] Entering OTP: {otp_code}{Color.RESET}")
+            self.browser_manager.type_text(FB_CONFIG['UI_ELEMENTS']['otp_input'], otp_code)
+            time.sleep(1)
+            
+            print(f"{Color.CYAN}  [*] Submitting OTP{Color.RESET}")
+            self.browser_manager.click(FB_CONFIG['UI_ELEMENTS']['otp_submit'])
+            time.sleep(3)
+            return True
+        except Exception as e:
+            print(f"{Color.RED}  [-] OTP submit error: {e}{Color.RESET}")
+            return False
     
     def _process_single_number(self, phone_number):
-        """Process a single phone number with full automation"""
+        """Process a single phone number with full automation + proxy rotation + auto name"""
         print(f"\n{Color.CYAN}[+] Processing: {phone_number}{Color.RESET}")
         
-        if not self.shizuku_connected:
-            print(f"{Color.RED}  [-] Shizuku not connected!{Color.RESET}")
+        # Get country code from phone number
+        country_code = self.proxy_manager._get_country_from_phone(phone_number)
+        print(f"{Color.CYAN}[+] Country detected: {country_code}{Color.RESET}")
+        
+        # Get proxy for this number
+        proxy, _ = self.proxy_manager.get_proxy_for_number(phone_number)
+        if proxy:
+            print(f"{Color.GREEN}[+] Proxy: {proxy} (Country: {self.proxy_manager.current_country}){Color.RESET}")
+        else:
+            print(f"{Color.YELLOW}[!] No proxy available, using direct connection{Color.RESET}")
+        
+        # Start browser with proxy
+        if not self.browser_manager.start_browser(headless=False, proxy=proxy):
+            print(f"{Color.RED}  [-] Failed to start browser!{Color.RESET}")
             self.stats['failed'] += 1
             return False
         
-        if FB_CONFIG['ROTATE_IP']:
-            print(f"{Color.CYAN}  [*] Rotating IP...{Color.RESET}")
-        
-        if FB_CONFIG['ROTATE_DEVICE']:
-            print(f"{Color.CYAN}  [*] Applying new device fingerprint...{Color.RESET}")
-            self.current_fingerprint = self._generate_device_fingerprint()
-            self._apply_device_spoof(self.current_fingerprint)
-            print(f"{Color.DIM}  [*] Device: {self.current_fingerprint['brand']} {self.current_fingerprint['model']}{Color.RESET}")
-        
-        print(f"{Color.CYAN}  [*] Clearing app data via Shizuku...{Color.RESET}")
-        if not self._clear_app_data():
-            print(f"{Color.RED}  [-] Failed to clear app data{Color.RESET}")
+        try:
+            # Facebook signup page
+            print(f"{Color.CYAN}  [*] Navigating to Facebook signup...{Color.RESET}")
+            self.browser_manager.goto("https://m.facebook.com/create-account")
+            time.sleep(2)
+            
+            # Fill form with auto-generated name
+            if not self._fill_registration_form(phone_number, country_code):
+                print(f"{Color.RED}  [-] Failed to fill form{Color.RESET}")
+                self.stats['failed'] += 1
+                return False
+            time.sleep(2)
+            
+            # Request OTP
+            print(f"{Color.CYAN}  [*] Requesting OTP...{Color.RESET}")
+            otp = self._request_otp_with_retry()
+            
+            if not otp:
+                print(f"{Color.RED}  [-] OTP request failed{Color.RESET}")
+                self.stats['failed'] += 1
+                if self.audio:
+                    self.audio.play_fail()
+                    self.audio.speak_otp_fail()
+                return False
+            
+            # Submit OTP
+            if not self._complete_registration(otp):
+                print(f"{Color.RED}  [-] OTP submission failed{Color.RESET}")
+                self.stats['failed'] += 1
+                return False
+            
+            print(f"{Color.GREEN}  [+] Successfully processed {phone_number}{Color.RESET}")
+            self.stats['success'] += 1
+            
+            if self.audio:
+                self.audio.play_success()
+                self.audio.speak_account_created()
+            
+            return True
+            
+        except Exception as e:
+            print(f"{Color.RED}  [-] Error: {e}{Color.RESET}")
             self.stats['failed'] += 1
             return False
-        time.sleep(2)
-        
-        print(f"{Color.CYAN}  [*] Launching Facebook Lite via Shizuku...{Color.RESET}")
-        if not self._launch_facebook_lite():
-            print(f"{Color.RED}  [-] Failed to launch app{Color.RESET}")
-            self.stats['failed'] += 1
-            return False
-        time.sleep(3)
-        
-        print(f"{Color.CYAN}  [*] Filling registration form via Shizuku...{Color.RESET}")
-        if not self._fill_registration_form(phone_number):
-            print(f"{Color.RED}  [-] Failed to fill form{Color.RESET}")
-            self.stats['failed'] += 1
-            return False
-        time.sleep(2)
-        
-        print(f"{Color.CYAN}  [*] Requesting OTP via Shizuku...{Color.RESET}")
-        if not self._request_otp_with_retry():
-            print(f"{Color.RED}  [-] OTP request failed{Color.RESET}")
-            self.stats['failed'] += 1
-            return False
-        
-        print(f"{Color.GREEN}  [+] Successfully processed {phone_number}{Color.RESET}")
-        self.stats['success'] += 1
-        
-        ShizukuManager.execute_command(f"am force-stop {FB_CONFIG['FB_LITE_PACKAGE']}")
-        
-        return True
+        finally:
+            self.browser_manager.close_browser()
     
     def start_batch_processing(self, numbers):
-        """Process batch of phone numbers"""
+        """Process batch of phone numbers with proxy rotation"""
         if not numbers:
             print(f"{Color.RED}[-] No numbers to process{Color.RESET}")
             return
         
-        # Check Shizuku connection
-        if not self._check_shizuku():
-            print(f"{Color.RED}[-] Shizuku is not connected!{Color.RESET}")
-            print(f"{Color.YELLOW}[!] Please connect Shizuku first via option 1{Color.RESET}")
-            return
-        
-        print(f"\n{Color.GREEN}[+] Starting batch processing via Shizuku{Color.RESET}")
+        print(f"\n{Color.GREEN}[+] Starting batch processing with Proxy Rotation + Auto Name{Color.RESET}")
         print(f"{Color.CYAN}[+] Total numbers: {len(numbers)}{Color.RESET}")
         print(f"{Color.CYAN}[+] OTP Retries: {FB_CONFIG['MAX_OTP_RETRIES']}{Color.RESET}")
         print(f"{Color.CYAN}[+] IP Rotation: {'Enabled' if FB_CONFIG['ROTATE_IP'] else 'Disabled'}{Color.RESET}")
         print(f"{Color.CYAN}[+] Device Rotation: {'Enabled' if FB_CONFIG['ROTATE_DEVICE'] else 'Disabled'}{Color.RESET}")
         print("-" * 60)
+        
+        # Refresh proxy pool
+        self.proxy_manager.refresh_proxy_pool()
         
         self.is_running = True
         
@@ -877,16 +1171,6 @@ class FacebookAutomationEngine:
             
             try:
                 success = self._process_single_number(phone)
-                if success:
-                    print(f"{Color.GREEN}[+] Completed: {phone}{Color.RESET}")
-                    if self.audio:
-                        self.audio.play_success()
-                        self.audio.speak_account_created()
-                else:
-                    print(f"{Color.RED}[-] Failed: {phone}{Color.RESET}")
-                    if self.audio:
-                        self.audio.play_fail()
-                
                 self.stats['processed'] += 1
                 
             except Exception as e:
@@ -922,7 +1206,7 @@ class FacebookAutomationEngine:
         """Stop the automation"""
         print(f"\n{Color.YELLOW}[!] Stopping automation...{Color.RESET}")
         self.is_running = False
-        ShizukuManager.execute_command(f"am force-stop {FB_CONFIG['FB_LITE_PACKAGE']}")
+        self.browser_manager.close_browser()
 
 # ==================== FACEBOOK BOT ====================
 class FacebookBot:
@@ -949,7 +1233,7 @@ class FacebookBot:
         self.running = True
         self.stats = {'success': 0, 'failed': 0, 'total': 0}
         
-        print(f'\n{Color.GREEN}[+] Starting bot with Shizuku automation...{Color.RESET}')
+        print(f'\n{Color.GREEN}[+] Starting bot with Proxy Rotation + Auto Name...{Color.RESET}')
         print(f'{Color.CYAN}Total numbers: {len(self.numbers)}{Color.RESET}')
         print(f'{Color.CYAN}OTP Retry Count: {FB_CONFIG["MAX_OTP_RETRIES"]}{Color.RESET}')
         print(f'{Color.CYAN}IP Rotation: {"Enabled" if FB_CONFIG["ROTATE_IP"] else "Disabled"}{Color.RESET}')
@@ -1027,25 +1311,36 @@ class Animation:
 # ==================== MAIN MENU ====================
 class MainMenu:
     def __init__(self):
-        self.shizuku = ShizukuManager()
+        self.browser_manager = BrowserPilotManager()
+        self.proxy_manager = ProxyManager()
         self.license = LicenseManager()
         self.audio = AudioEngine()
         self.bot = None
         self.config = load_json(CONFIG_FILE)
         self.data_dir = self.config.get('data_dir', '/storage/emulated/0/Download/Ridol FB Tool')
-        self.shizuku_connected = self.config.get('shizuku_connected', False)
+        self.browser_ready = self.config.get('browser_ready', False)
+        
+        # Load proxy API key from config
+        api_key = self.config.get('proxy_api_key', '')
+        if api_key:
+            PROXY_API_KEY = api_key
     
     def show_header(self):
         clear_screen()
         TitleAnimation.compact_banner()
         
-        # Show Shizuku status
-        status, status_msg = self.shizuku.get_shizuku_status()
-        self.shizuku_connected = status
-        status_text = "● CONNECTED" if status else "● DISCONNECTED"
-        status_color = Color.GREEN if status else Color.RED
+        # Check proxy status
+        proxy_stats = self.proxy_manager.get_proxy_stats()
+        proxy_status = f"● {proxy_stats['total']} proxies"
+        proxy_color = Color.GREEN if proxy_stats['total'] > 0 else Color.RED
         
-        print(f' {status_color}{status_text}{Color.RESET} Shizuku: {Color.WHITE}{"Running" if status else "Not connected"}{Color.RESET}')
+        print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Empty"}{Color.RESET}')
+        
+        # Check browser pilot
+        browser_status = "● READY" if self.browser_manager.browser_available else "● NOT INSTALLED"
+        browser_color = Color.GREEN if self.browser_manager.browser_available else Color.RED
+        
+        print(f' {browser_color}{browser_status}{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Run Setup"}{Color.RESET}')
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if lic_key else "Not Set"}{Color.RESET}')
         
@@ -1075,81 +1370,135 @@ class MainMenu:
         while True:
             self.show_header()
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU{Color.RESET}{Color.CYAN}                                    ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU - PROXY + AUTO NAME{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Shizuku Management              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} License Management              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Data Folder                     {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Start Bot                        {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Status                           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[6]{Color.RESET} Audio Settings                    {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[7]{Color.RESET} Demo                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[8]{Color.RESET} Help                              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Browser Pilot Setup             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Proxy Management                 {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} License Management              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Data Folder                     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Start Bot                        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[6]{Color.RESET} Status                           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[7]{Color.RESET} Audio Settings                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[8]{Color.RESET} Demo                             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[9]{Color.RESET} Help                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
-            if choice == '1': self.menu_shizuku()
-            elif choice == '2': self.menu_license()
-            elif choice == '3': self.menu_folder()
-            elif choice == '4': self.menu_start_bot()
-            elif choice == '5': self.menu_status()
-            elif choice == '6': self.menu_audio()
-            elif choice == '7': self.menu_demo()
-            elif choice == '8': self.menu_help()
+            if choice == '1': self.menu_browser()
+            elif choice == '2': self.menu_proxy()
+            elif choice == '3': self.menu_license()
+            elif choice == '4': self.menu_folder()
+            elif choice == '5': self.menu_start_bot()
+            elif choice == '6': self.menu_status()
+            elif choice == '7': self.menu_audio()
+            elif choice == '8': self.menu_demo()
+            elif choice == '9': self.menu_help()
             elif choice == '0': self.menu_exit(); break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
     
-    def menu_shizuku(self):
+    def menu_proxy(self):
         while True:
             self.show_header()
-            status, status_msg = self.shizuku.get_shizuku_status()
-            self.shizuku_connected = status
+            proxy_stats = self.proxy_manager.get_proxy_stats()
             
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}SHIZUKU MANAGEMENT{Color.RESET}{Color.CYAN}                          ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}PROXY MANAGEMENT{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Status: {Color.WHITE}{"● Connected" if status else "○ Disconnected"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Check Shizuku Status             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Connect Shizuku                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Test Shizuku Command             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Total: {Color.WHITE}{proxy_stats['total']}{Color.RESET}  Current: {Color.WHITE}{proxy_stats.get('current', 'None')}{Color.RESET}  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Country: {Color.WHITE}{proxy_stats.get('country', 'None')}{Color.RESET}  History: {Color.WHITE}{proxy_stats['history_count']}{Color.RESET}        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Refresh Proxy Pool               {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Set API Key (9proxy/webshare)   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Test Proxy Connection            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} View Proxy History               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
-                status, msg = self.shizuku.get_shizuku_status()
-                if status:
-                    print(f'  {Color.GREEN}[+] Shizuku is connected{Color.RESET}')
-                    print(f'  {Color.DIM}Version: {msg}{Color.RESET}')
+                print(f'  {Color.CYAN}[*] Refreshing proxy pool...{Color.RESET}')
+                count = self.proxy_manager.refresh_proxy_pool()
+                if count > 0:
+                    print(f'  {Color.GREEN}[+] Proxy pool refreshed! {count} proxies available{Color.RESET}')
                 else:
-                    print(f'  {Color.RED}[-] Shizuku is not connected{Color.RESET}')
-                    print(f'  {Color.YELLOW}[!] {msg}{Color.RESET}')
+                    print(f'  {Color.RED}[-] No proxies found. Please check API key.{Color.RESET}')
                 press_enter()
             elif choice == '2':
-                print(f'  {Color.CYAN}[*] Attempting to connect Shizuku...{Color.RESET}')
-                success, msg = self.shizuku.start_shizuku()
-                if success:
-                    print(f'  {Color.GREEN}[+] Shizuku connected successfully!{Color.RESET}')
-                    self.license.set_shizuku_status(True)
-                    self.shizuku_connected = True
-                    if self.audio:
-                        self.audio.speak_shizuku_connected()
-                else:
-                    print(f'  {Color.RED}[-] Failed to connect Shizuku{Color.RESET}')
-                    print(f'  {Color.YELLOW}[!] {msg}{Color.RESET}')
-                    print(f'  {Color.CYAN}[*] Make sure Shizuku is installed and authorized{Color.RESET}')
+                api_key = input(f'  {Color.CYAN}Enter 9proxy/webshare API key: {Color.RESET}').strip()
+                if api_key:
+                    self.license.set_proxy_api_key(api_key)
+                    self.proxy_manager.api_key = api_key
+                    print(f'  {Color.GREEN}[+] API key saved!{Color.RESET}')
                 press_enter()
             elif choice == '3':
-                cmd = input(f'  {Color.CYAN}Enter command to test (e.g., settings get global device_name): {Color.RESET}').strip()
-                if cmd:
-                    success, result = self.shizuku.execute_command(cmd)
-                    if success:
-                        print(f'  {Color.GREEN}[+] Command executed successfully{Color.RESET}')
-                        print(f'  {Color.DIM}Output: {result}{Color.RESET}')
-                    else:
-                        print(f'  {Color.RED}[-] Command failed{Color.RESET}')
-                        print(f'  {Color.YELLOW}[!] {result}{Color.RESET}')
+                proxy = input(f'  {Color.CYAN}Enter proxy to test (http://ip:port): {Color.RESET}').strip()
+                if proxy:
+                    try:
+                        test_proxies = {'http': proxy, 'https': proxy}
+                        response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=10)
+                        if response.status_code == 200:
+                            data = response.json()
+                            print(f'  {Color.GREEN}[+] Proxy working!{Color.RESET}')
+                            print(f'  {Color.DIM}IP: {data.get("query")} | Country: {data.get("countryCode")}{Color.RESET}')
+                        else:
+                            print(f'  {Color.RED}[-] Proxy not working{Color.RESET}')
+                    except Exception as e:
+                        print(f'  {Color.RED}[-] Proxy test failed: {e}{Color.RESET}')
+                press_enter()
+            elif choice == '4':
+                history = self.proxy_manager.proxy_history[-10:] if self.proxy_manager.proxy_history else []
+                if history:
+                    print(f'\n  {Color.CYAN}Last {len(history)} proxy uses:{Color.RESET}')
+                    for item in history:
+                        print(f'    {Color.DIM}{item["phone"]} → {item["country"]}: {item["proxy"]}{Color.RESET}')
+                else:
+                    print(f'\n  {Color.DIM}No proxy history yet{Color.RESET}')
+                press_enter()
+            elif choice == '0': break
+            else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
+    
+    def menu_browser(self):
+        while True:
+            self.show_header()
+            browser_available = self.browser_manager.browser_available
+            
+            print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}BROWSER PILOT SETUP{Color.RESET}{Color.CYAN}                          ║{Color.RESET}
+ {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Status: {Color.WHITE}{"● Installed" if browser_available else "○ Not Installed"}{Color.RESET}{Color.CYAN}       ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Install Browser Pilot            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Test Browser Launch              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Test Facebook Navigation         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
+            choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
+            self.audio.play_click()
+            if choice == '1':
+                print(f'  {Color.CYAN}[*] Installing termux-browser-pilot...{Color.RESET}')
+                success = self.browser_manager._install_browser_pilot()
+                if success:
+                    self.browser_manager.browser_available = True
+                    print(f'  {Color.GREEN}[+] Installation complete!{Color.RESET}')
+                press_enter()
+            elif choice == '2':
+                print(f'  {Color.CYAN}[*] Testing browser launch...{Color.RESET}')
+                success = self.browser_manager.start_browser(headless=False)
+                if success:
+                    print(f'  {Color.GREEN}[+] Browser launched successfully!{Color.RESET}')
+                    time.sleep(3)
+                    self.browser_manager.close_browser()
+                press_enter()
+            elif choice == '3':
+                print(f'  {Color.CYAN}[*] Testing Facebook navigation...{Color.RESET}')
+                if self.browser_manager.start_browser(headless=False):
+                    self.browser_manager.goto("https://m.facebook.com")
+                    time.sleep(3)
+                    print(f'  {Color.GREEN}[+] Navigation successful!{Color.RESET}')
+                    self.browser_manager.screenshot("test_facebook.png")
+                    print(f'  {Color.DIM}[*] Screenshot saved: test_facebook.png{Color.RESET}')
+                    time.sleep(2)
+                    self.browser_manager.close_browser()
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -1263,15 +1612,15 @@ class MainMenu:
     
     def menu_start_bot(self):
         self.show_header()
-        status, _ = self.shizuku.get_shizuku_status()
-        self.shizuku_connected = status
         
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT{Color.RESET}{Color.CYAN}                                    ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT - PROXY + AUTO NAME{Color.RESET}{Color.CYAN}                     ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Numbers: {len(load_file_lines(os.path.join(self.data_dir, "numbers.txt")))}                        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Shizuku: {Color.DIM}{"● Connected" if status else "○ Disconnected"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Browser: {Color.DIM}{"● Ready" if self.browser_manager.browser_available else "○ Not installed"}{Color.RESET}{Color.CYAN}    ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Proxy Pool: {Color.DIM}{self.proxy_manager.get_proxy_stats()["total"]} proxies{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Auto Name: {Color.DIM}{"ON (Country based)"}{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  OTP Retry: {Color.DIM}{FB_CONFIG["MAX_OTP_RETRIES"]} times{Color.RESET}{Color.CYAN}                   ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  IP Rotation: {Color.DIM}{"ON" if FB_CONFIG["ROTATE_IP"] else "OFF"}{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Device Rotation: {Color.DIM}{"ON" if FB_CONFIG["ROTATE_DEVICE"] else "OFF"}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
@@ -1282,11 +1631,20 @@ class MainMenu:
             press_enter()
             return
         
-        if not status:
-            print(f'\n{Color.RED}[-] Shizuku not connected! Please connect Shizuku first.{Color.RESET}')
-            print(f'{Color.YELLOW}[!] Go to Main Menu -> 1. Shizuku Management -> 2. Connect Shizuku{Color.RESET}')
+        if not self.browser_manager.browser_available:
+            print(f'\n{Color.RED}[-] Browser Pilot not installed!{Color.RESET}')
+            print(f'{Color.YELLOW}[!] Go to Main Menu -> 1. Browser Pilot Setup -> 1. Install Browser Pilot{Color.RESET}')
             press_enter()
             return
+        
+        # Check proxy pool
+        if self.proxy_manager.get_proxy_stats()["total"] == 0:
+            print(f'\n{Color.YELLOW}[!] No proxies in pool. Refreshing...{Color.RESET}')
+            self.proxy_manager.refresh_proxy_pool()
+            if self.proxy_manager.get_proxy_stats()["total"] == 0:
+                print(f'\n{Color.RED}[-] No proxies available! Please set API key or add proxies manually.{Color.RESET}')
+                press_enter()
+                return
         
         workers = input(f'\n {Color.CYAN}Number of workers [1-5, default 1]: {Color.RESET}').strip()
         try:
@@ -1305,20 +1663,22 @@ class MainMenu:
     
     def menu_status(self):
         self.show_header()
-        status, status_msg = self.shizuku.get_shizuku_status()
-        self.shizuku_connected = status
+        proxy_stats = self.proxy_manager.get_proxy_stats()
         
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}SYSTEM STATUS{Color.RESET}{Color.CYAN}                                 ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Shizuku: {Color.WHITE}{"Connected" if status else "Disconnected"}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Not installed"}{Color.RESET}{Color.CYAN} ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Pool: {Color.WHITE}{proxy_stats["total"]} proxies{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Current Proxy: {Color.WHITE}{proxy_stats.get("current", "None")}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Country: {Color.WHITE}{proxy_stats.get("country", "None")}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Auto Name: {Color.WHITE}{"Enabled (Country based)"}{Color.RESET}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {self.audio.get_status()}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Automation: {Color.WHITE}{"Running" if self.bot and self.bot.running else "Idle"}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} OTP Retry: {Color.WHITE}{FB_CONFIG["MAX_OTP_RETRIES"]} times{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} IP Rotation: {Color.WHITE}{"Enabled" if FB_CONFIG["ROTATE_IP"] else "Disabled"}{Color.RESET}{Color.CYAN}         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Device Rotation: {Color.WHITE}{"Enabled" if FB_CONFIG["ROTATE_DEVICE"] else "Disabled"}{Color.RESET}{Color.CYAN}   ║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         
         try:
@@ -1441,23 +1801,27 @@ class MainMenu:
     def menu_help(self):
         self.show_header()
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP{Color.RESET}{Color.CYAN}                                     ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - PROXY + AUTO NAME{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Use{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  1. Set up your data folder (Option 3)            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  2. Add phone numbers to numbers.txt              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  3. Enter your license key (Option 2)             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  4. Connect Shizuku (Option 1)                    {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  5. Start the bot (Option 4)                      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  1. Install Browser Pilot (Option 1)               {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  2. Set API Key for 9proxy (Option 2)              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  3. Refresh Proxy Pool (Option 2)                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  4. Set up data folder (Option 4)                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  5. Add phone numbers to numbers.txt              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  6. Enter license key (Option 3)                   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  7. Start the bot (Option 5)                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - License stored in MongoDB                      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - MP3 from Google Drive                         {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - MP3 support via mpv                           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Server: {Color.DIM}{LICENSE_SERVER}{Color.RESET}{Color.CYAN}    ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Automatic proxy rotation per number            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Country detection from phone number            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Auto-generates local names per country         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Matches proxy country with number country      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - No Shizuku required!                           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Uses termux-browser-pilot                      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Real Firefox/Chromium browser                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Human-like typing & clicks                    {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - OTP Retry: 3 times                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - IP Rotation: Auto                            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Device Spoofing: Shizuku                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - No ADB or device management required           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         press_enter()
