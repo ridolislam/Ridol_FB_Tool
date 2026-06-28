@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v6.5 - Proxy Rotation & Auto Name Generation
+Ridol FB Tool v7.0 - Proxy Rotation & Auto Name Generation
 Author: Ridol Islam
 License: MIT
 """
@@ -30,7 +30,7 @@ SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
 CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
 LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
-APP_VERSION = 'v6.5'
+APP_VERSION = 'v7.0'
 
 # ==================== PROXY CONFIG ====================
 PROXY_SOURCES = {
@@ -46,7 +46,8 @@ CLIPROXY_CONFIG = {
     'port': 3010,
     'base_username': 'ridolislam-region',
     'password': 'Ridol123',
-    'enabled': True
+    'enabled': True,
+    'connected_ip': None  # Stores the connected IP URL
 }
 
 PROXY_API_KEY = os.environ.get('PROXY_API_KEY', '')
@@ -292,17 +293,34 @@ COUNTRY_CODES = {
 
 # Country to region mapping for Cliproxy
 COUNTRY_TO_REGION = {
-    'US': 'US', 'CA': 'US',  # North America
-    'GB': 'GB', 'DE': 'DE', 'FR': 'FR', 'IT': 'IT', 'ES': 'ES', 'NL': 'NL', # Europe
-    'AU': 'AU', 'NZ': 'AU',  # Oceania
-    'SG': 'SG', 'MY': 'MY', 'ID': 'ID', 'PH': 'PH', 'TH': 'TH', 'VN': 'VN', # Southeast Asia
-    'BD': 'BD', 'IN': 'IN', 'PK': 'PK', 'LK': 'LK', 'NP': 'NP', # South Asia
-    'CN': 'CN', 'JP': 'JP', 'KR': 'KR', # East Asia
-    'AE': 'AE', 'SA': 'SA', 'KW': 'KW', 'QA': 'QA', # Middle East
-    'BR': 'BR', 'AR': 'AR', 'CL': 'CL', # South America
-    'ZA': 'ZA', 'NG': 'NG', 'EG': 'EG', # Africa
-    'RU': 'RU', # Russia
-    'TR': 'TR', # Turkey
+    'AF': 'AF', 'AL': 'AL', 'DZ': 'DZ', 'AD': 'AD', 'AO': 'AO', 'AR': 'AR', 'AM': 'AM',
+    'AU': 'AU', 'AT': 'AT', 'AZ': 'AZ', 'BS': 'BS', 'BH': 'BH', 'BD': 'BD', 'BB': 'BB',
+    'BY': 'BY', 'BE': 'BE', 'BZ': 'BZ', 'BJ': 'BJ', 'BT': 'BT', 'BA': 'BA', 'BR': 'BR',
+    'BN': 'BN', 'BG': 'BG', 'BF': 'BF', 'BI': 'BI', 'KH': 'KH', 'CM': 'CM', 'CA': 'CA',
+    'CV': 'CV', 'CF': 'CF', 'TD': 'TD', 'CL': 'CL', 'CN': 'CN', 'CO': 'CO', 'KM': 'KM',
+    'CG': 'CG', 'CD': 'CD', 'CR': 'CR', 'HR': 'HR', 'CU': 'CU', 'CY': 'CY', 'CZ': 'CZ',
+    'DK': 'DK', 'DJ': 'DJ', 'DM': 'DM', 'DO': 'DO', 'EC': 'EC', 'EG': 'EG', 'SV': 'SV',
+    'GQ': 'GQ', 'ER': 'ER', 'EE': 'EE', 'ET': 'ET', 'FJ': 'FJ', 'FI': 'FI', 'FR': 'FR',
+    'GA': 'GA', 'GM': 'GM', 'GE': 'GE', 'DE': 'DE', 'GH': 'GH', 'GR': 'GR', 'GD': 'GD',
+    'GT': 'GT', 'GN': 'GN', 'GW': 'GW', 'GY': 'GY', 'HT': 'HT', 'HN': 'HN', 'HK': 'HK',
+    'HU': 'HU', 'IS': 'IS', 'IN': 'IN', 'ID': 'ID', 'IR': 'IR', 'IQ': 'IQ', 'IE': 'IE',
+    'IL': 'IL', 'IT': 'IT', 'JM': 'JM', 'JP': 'JP', 'JO': 'JO', 'KZ': 'KZ', 'KE': 'KE',
+    'KI': 'KI', 'KP': 'KP', 'KR': 'KR', 'KW': 'KW', 'KG': 'KG', 'LA': 'LA', 'LV': 'LV',
+    'LB': 'LB', 'LS': 'LS', 'LR': 'LR', 'LY': 'LY', 'LI': 'LI', 'LT': 'LT', 'LU': 'LU',
+    'MO': 'MO', 'MG': 'MG', 'MW': 'MW', 'MY': 'MY', 'MV': 'MV', 'ML': 'ML', 'MT': 'MT',
+    'MH': 'MH', 'MR': 'MR', 'MU': 'MU', 'MX': 'MX', 'FM': 'FM', 'MD': 'MD', 'MC': 'MC',
+    'MN': 'MN', 'ME': 'ME', 'MA': 'MA', 'MZ': 'MZ', 'MM': 'MM', 'NA': 'NA', 'NR': 'NR',
+    'NP': 'NP', 'NL': 'NL', 'NZ': 'NZ', 'NI': 'NI', 'NE': 'NE', 'NG': 'NG', 'MK': 'MK',
+    'NO': 'NO', 'OM': 'OM', 'PK': 'PK', 'PW': 'PW', 'PA': 'PA', 'PG': 'PG', 'PY': 'PY',
+    'PE': 'PE', 'PH': 'PH', 'PL': 'PL', 'PT': 'PT', 'QA': 'QA', 'RO': 'RO', 'RU': 'RU',
+    'RW': 'RW', 'LC': 'LC', 'VC': 'VC', 'WS': 'WS', 'SM': 'SM', 'ST': 'ST', 'SA': 'SA',
+    'SN': 'SN', 'RS': 'RS', 'SC': 'SC', 'SL': 'SL', 'SG': 'SG', 'SK': 'SK', 'SI': 'SI',
+    'SB': 'SB', 'ZA': 'ZA', 'SS': 'SS', 'ES': 'ES', 'LK': 'LK', 'SD': 'SD', 'SR': 'SR',
+    'SZ': 'SZ', 'SE': 'SE', 'CH': 'CH', 'SY': 'SY', 'TW': 'TW', 'TJ': 'TJ', 'TZ': 'TZ',
+    'TH': 'TH', 'TG': 'TG', 'TO': 'TO', 'TT': 'TT', 'TN': 'TN', 'TR': 'TR', 'TM': 'TM',
+    'TV': 'TV', 'UG': 'UG', 'UA': 'UA', 'AE': 'AE', 'GB': 'GB', 'US': 'US', 'UY': 'UY',
+    'UZ': 'UZ', 'VU': 'VU', 'VA': 'VA', 'VE': 'VE', 'VN': 'VN', 'YE': 'YE', 'ZM': 'ZM',
+    'ZW': 'ZW', 'XX': 'XX'
 }
 
 # ==================== COLOR CODES ====================
@@ -574,6 +592,8 @@ class ProxyManager:
         self.refresh_interval = 300  # 5 minutes
         self.use_default_ip = True
         self.cliproxy_enabled = CLIPROXY_CONFIG['enabled']
+        self.connected_ip_url = CLIPROXY_CONFIG.get('connected_ip', None)
+        self.ip_connected = False
         
     def _get_country_from_phone(self, phone_number):
         """Get country code from phone number"""
@@ -586,20 +606,65 @@ class ProxyManager:
         
         return 'XX'  # Unknown
     
-    def _get_cliproxy_for_country(self, country_code):
-        """Generate Cliproxy SOCKS5 URL for a specific country"""
+    def connect_ip(self, ip_url):
+        """Connect to a specific IP URL (Cliproxy SOCKS5 URL)"""
+        try:
+            print(f"{Color.CYAN}[*] Connecting to IP: {ip_url}{Color.RESET}")
+            
+            # Test the connection
+            test_proxies = {
+                'http': ip_url,
+                'https': ip_url
+            }
+            
+            # Try to make a test request
+            response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"{Color.GREEN}[+] IP Connected Successfully!{Color.RESET}")
+                print(f"{Color.CYAN}[+] IP: {data.get('query', 'Unknown')}{Color.RESET}")
+                print(f"{Color.CYAN}[+] Country: {data.get('countryCode', 'Unknown')}{Color.RESET}")
+                print(f"{Color.CYAN}[+] Region: {data.get('regionName', 'Unknown')}{Color.RESET}")
+                print(f"{Color.CYAN}[+] ISP: {data.get('isp', 'Unknown')}{Color.RESET}")
+                
+                self.connected_ip_url = ip_url
+                self.ip_connected = True
+                CLIPROXY_CONFIG['connected_ip'] = ip_url
+                return True
+            else:
+                print(f"{Color.RED}[-] Failed to connect to IP. Status: {response.status_code}{Color.RESET}")
+                return False
+                
+        except Exception as e:
+            print(f"{Color.RED}[-] Connection failed: {e}{Color.RESET}")
+            return False
+    
+    def disconnect_ip(self):
+        """Disconnect current IP"""
+        self.connected_ip_url = None
+        self.ip_connected = False
+        CLIPROXY_CONFIG['connected_ip'] = None
+        print(f"{Color.YELLOW}[!] IP Disconnected{Color.RESET}")
+        return True
+    
+    def get_cliproxy_for_country(self, country_code):
+        """Generate Cliproxy SOCKS5 URL for a specific country using connected IP"""
         if not self.cliproxy_enabled:
             return None
         
-        # Get region for this country
-        region = COUNTRY_TO_REGION.get(country_code, country_code)
+        # If a specific IP is connected, use that
+        if self.connected_ip_url and self.ip_connected:
+            print(f"{Color.GREEN}[+] Using Connected IP: {self.connected_ip_url}{Color.RESET}")
+            return self.connected_ip_url
         
+        # Otherwise generate based on country
+        region = COUNTRY_TO_REGION.get(country_code, 'XX')
         username = f"{CLIPROXY_CONFIG['base_username']}-{region}"
         host = CLIPROXY_CONFIG['host']
         port = CLIPROXY_CONFIG['port']
         password = CLIPROXY_CONFIG['password']
         
-        # SOCKS5 proxy URL
         proxy_url = f"socks5://{username}:{password}@{host}:{port}"
         return proxy_url
     
@@ -685,6 +750,11 @@ class ProxyManager:
         
         all_proxies = []
         
+        # If IP is connected, add it to pool
+        if self.connected_ip_url and self.ip_connected:
+            all_proxies.append({'proxy': self.connected_ip_url, 'country': 'XX', 'type': 'socks5'})
+            print(f"{Color.GREEN}[+] Added Connected IP to pool{Color.RESET}")
+        
         # Try 9proxy
         proxies = self._fetch_proxies_from_9proxy()
         if proxies:
@@ -704,12 +774,12 @@ class ProxyManager:
             all_proxies.extend(proxies)
         
         # Add Cliproxy proxies for all supported countries
-        if self.cliproxy_enabled:
+        if self.cliproxy_enabled and not self.connected_ip_url:
             print(f"{Color.CYAN}[*] Adding Cliproxy proxies for all countries...{Color.RESET}")
             cliproxy_proxies = []
             for country_code in set(COUNTRY_CODES.values()):
                 if country_code != 'XX':
-                    proxy_url = self._get_cliproxy_for_country(country_code)
+                    proxy_url = self.get_cliproxy_for_country(country_code)
                     if proxy_url:
                         cliproxy_proxies.append({'proxy': proxy_url, 'country': country_code, 'type': 'socks5'})
             if cliproxy_proxies:
@@ -740,9 +810,22 @@ class ProxyManager:
         country_code = self._get_country_from_phone(phone_number)
         print(f"{Color.CYAN}[+] Country detected: {country_code}{Color.RESET}")
         
-        # First, try to get Cliproxy for this country
+        # First priority: Use connected IP if available
+        if self.connected_ip_url and self.ip_connected:
+            print(f"{Color.GREEN}[+] Using Connected IP: {self.connected_ip_url}{Color.RESET}")
+            self.current_proxy = self.connected_ip_url
+            self.current_country = country_code
+            self.proxy_history.append({
+                'phone': phone_number,
+                'proxy': self.connected_ip_url,
+                'country': country_code,
+                'type': 'connected_ip'
+            })
+            return self.connected_ip_url, country_code
+        
+        # Second: Try Cliproxy for this country
         if self.cliproxy_enabled:
-            proxy_url = self._get_cliproxy_for_country(country_code)
+            proxy_url = self.get_cliproxy_for_country(country_code)
             if proxy_url:
                 print(f"{Color.GREEN}[+] Using Cliproxy for {country_code}: {proxy_url}{Color.RESET}")
                 self.current_proxy = proxy_url
@@ -755,7 +838,7 @@ class ProxyManager:
                 })
                 return proxy_url, country_code
         
-        # If no Cliproxy, try proxy pool
+        # Third: If no Cliproxy, try proxy pool
         if not self.proxy_pool:
             self.refresh_proxy_pool()
             if not self.proxy_pool:
@@ -795,7 +878,9 @@ class ProxyManager:
             'history_count': len(self.proxy_history),
             'last_refresh': self.last_refresh,
             'using_default_ip': self.current_proxy is None,
-            'cliproxy_enabled': self.cliproxy_enabled
+            'cliproxy_enabled': self.cliproxy_enabled,
+            'ip_connected': self.ip_connected,
+            'connected_ip': self.connected_ip_url
         }
 
 # ==================== SOUND FUNCTIONS ====================
@@ -937,7 +1022,7 @@ class TitleAnimation:
 {Color.CYAN}╠════════════════════════════════════════════════════════════╣{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}FACEBOOK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO CREATE{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}PROXY ROTATION{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO NAME{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}SOUND SYSTEM{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}IP CONNECT{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}VOICE FEEDBACK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}CLIPROXY{Color.RESET}     {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╚════════════════════════════════════════════════════════════╝{Color.RESET}
 """
@@ -1098,6 +1183,8 @@ class AudioEngine:
     def speak_content_found(self): self.speak('Content found', 'high')
     def speak_content_not_found(self): self.speak('Content not found', 'high')
     def speak_stopping(self): self.speak('Stopping operation', 'high')
+    def speak_ip_connected(self): self.speak('IP connected successfully', 'high')
+    def speak_ip_disconnected(self): self.speak('IP disconnected', 'high')
     
     def get_status(self):
         bg_status = 'Playing' if self.bg_playing else 'Stopped'
@@ -1697,11 +1784,18 @@ class MainMenu:
         proxy_status = f"● {proxy_stats['total']} proxies"
         proxy_color = Color.GREEN if proxy_stats['total'] > 0 else Color.RED
         
+        ip_status = "● CONNECTED" if proxy_stats.get('ip_connected') else "● DISCONNECTED"
+        ip_color = Color.GREEN if proxy_stats.get('ip_connected') else Color.RED
+        
         cliproxy_status = "● ON" if proxy_stats.get('cliproxy_enabled') else "● OFF"
         cliproxy_color = Color.GREEN if proxy_stats.get('cliproxy_enabled') else Color.RED
         
         print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Default IP Only"}{Color.RESET}')
+        print(f' {ip_color}{ip_status}{Color.RESET} IP Connect: {Color.WHITE}{"Connected" if proxy_stats.get("ip_connected") else "Disconnected"}{Color.RESET}')
         print(f' {cliproxy_color}{cliproxy_status}{Color.RESET} Cliproxy: {Color.WHITE}{"Enabled" if proxy_stats.get("cliproxy_enabled") else "Disabled"}{Color.RESET}')
+        
+        if proxy_stats.get('connected_ip'):
+            print(f' {Color.DIM}Connected IP: {proxy_stats.get("connected_ip")}{Color.RESET}')
         
         # Check browser pilot
         browser_status = "● READY" if self.browser_manager.browser_available else "● NOT INSTALLED"
@@ -1790,23 +1884,41 @@ class MainMenu:
             proxy_stats = self.proxy_manager.get_proxy_stats()
             
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}PROXY MANAGEMENT{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}PROXY MANAGEMENT - IP CONNECT{Color.RESET}{Color.CYAN}                   ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Total: {Color.WHITE}{proxy_stats['total']}{Color.RESET}  Current: {Color.WHITE}{proxy_stats.get('current', 'Default IP')}{Color.RESET}  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Country: {Color.WHITE}{proxy_stats.get('country', 'XX')}{Color.RESET}  History: {Color.WHITE}{proxy_stats['history_count']}{Color.RESET}        {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Using Default IP: {Color.WHITE}{'Yes' if proxy_stats.get('using_default_ip') else 'No'}{Color.RESET}{Color.CYAN}        {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Cliproxy: {Color.WHITE}{'Enabled' if proxy_stats.get('cliproxy_enabled') else 'Disabled'}{Color.RESET}{Color.CYAN}                {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  IP Connected: {Color.WHITE}{'Yes' if proxy_stats.get('ip_connected') else 'No'}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Connected IP: {Color.WHITE}{proxy_stats.get('connected_ip', 'None')}{Color.RESET}{Color.CYAN}      ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Cliproxy: {Color.WHITE}{'Enabled' if proxy_stats.get('cliproxy_enabled') else 'Disabled'}{Color.RESET}{Color.CYAN}                ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Refresh Proxy Pool               {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Set API Key (9proxy/webshare)   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Test Proxy Connection            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} View Proxy History               {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Toggle Cliproxy                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect IP (Enter IP URL)         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Disconnect IP                      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Refresh Proxy Pool                 {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Set API Key (9proxy/webshare)     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Toggle Cliproxy                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[6]{Color.RESET} View Proxy History                 {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
+                print(f'\n  {Color.CYAN}Enter IP URL to connect (Example: socks5://ridolislam-region-BD:Ridol123@sg.cliproxy.io:3010){Color.RESET}')
+                ip_url = input(f'  {Color.CYAN}IP URL: {Color.RESET}').strip()
+                if ip_url:
+                    print(f'\n  {Color.CYAN}[*] Connecting to IP...{Color.RESET}')
+                    success = self.proxy_manager.connect_ip(ip_url)
+                    if success:
+                        self.audio.speak_ip_connected()
+                        print(f'  {Color.GREEN}[+] IP Connected Successfully!{Color.RESET}')
+                    else:
+                        print(f'  {Color.RED}[-] Failed to connect IP{Color.RESET}')
+                press_enter()
+            elif choice == '2':
+                self.proxy_manager.disconnect_ip()
+                self.audio.speak_ip_disconnected()
+                press_enter()
+            elif choice == '3':
                 print(f'  {Color.CYAN}[*] Refreshing proxy pool...{Color.RESET}')
                 count = self.proxy_manager.refresh_proxy_pool()
                 if count > 0:
@@ -1814,29 +1926,18 @@ class MainMenu:
                 else:
                     print(f'  {Color.YELLOW}[!] No proxies found. Will use default IP.{Color.RESET}')
                 press_enter()
-            elif choice == '2':
+            elif choice == '4':
                 api_key = input(f'  {Color.CYAN}Enter 9proxy/webshare API key: {Color.RESET}').strip()
                 if api_key:
                     self.license.set_proxy_api_key(api_key)
                     self.proxy_manager.api_key = api_key
                     print(f'  {Color.GREEN}[+] API key saved!{Color.RESET}')
                 press_enter()
-            elif choice == '3':
-                proxy = input(f'  {Color.CYAN}Enter proxy to test (http://ip:port): {Color.RESET}').strip()
-                if proxy:
-                    try:
-                        test_proxies = {'http': proxy, 'https': proxy}
-                        response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=10)
-                        if response.status_code == 200:
-                            data = response.json()
-                            print(f'  {Color.GREEN}[+] Proxy working!{Color.RESET}')
-                            print(f'  {Color.DIM}IP: {data.get("query")} | Country: {data.get("countryCode")}{Color.RESET}')
-                        else:
-                            print(f'  {Color.RED}[-] Proxy not working{Color.RESET}')
-                    except Exception as e:
-                        print(f'  {Color.RED}[-] Proxy test failed: {e}{Color.RESET}')
+            elif choice == '5':
+                self.proxy_manager.cliproxy_enabled = not self.proxy_manager.cliproxy_enabled
+                print(f'  {Color.GREEN}[+] Cliproxy {"Enabled" if self.proxy_manager.cliproxy_enabled else "Disabled"}{Color.RESET}')
                 press_enter()
-            elif choice == '4':
+            elif choice == '6':
                 history = self.proxy_manager.proxy_history[-10:] if self.proxy_manager.proxy_history else []
                 if history:
                     print(f'\n  {Color.CYAN}Last {len(history)} proxy uses:{Color.RESET}')
@@ -1844,10 +1945,6 @@ class MainMenu:
                         print(f'    {Color.DIM}{item["phone"]} → {item["country"]}: {item["proxy"]}{Color.RESET}')
                 else:
                     print(f'\n  {Color.DIM}No proxy history yet{Color.RESET}')
-                press_enter()
-            elif choice == '5':
-                self.proxy_manager.cliproxy_enabled = not self.proxy_manager.cliproxy_enabled
-                print(f'  {Color.GREEN}[+] Cliproxy {"Enabled" if self.proxy_manager.cliproxy_enabled else "Disabled"}{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
@@ -2052,6 +2149,7 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Browser: {Color.DIM}{"● Ready" if self.browser_manager.browser_available else "○ Not installed"}{Color.RESET}{Color.CYAN}    ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Proxy Pool: {Color.DIM}{self.proxy_manager.get_proxy_stats()["total"]} proxies{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  IP Connected: {Color.DIM}{"Yes" if self.proxy_manager.get_proxy_stats().get("ip_connected") else "No"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Cliproxy: {Color.DIM}{"Enabled" if self.proxy_manager.cliproxy_enabled else "Disabled"}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Auto Name: {Color.DIM}{"ON (Country based)"}{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  OTP Retry: {Color.DIM}{FB_CONFIG["MAX_OTP_RETRIES"]} times{Color.RESET}{Color.CYAN}                   ║{Color.RESET}
@@ -2115,6 +2213,8 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Current Proxy: {Color.WHITE}{proxy_stats.get("current", "Default IP")}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Country: {Color.WHITE}{proxy_stats.get("country", "XX")}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Using Default IP: {Color.WHITE}{'Yes' if proxy_stats.get('using_default_ip') else 'No'}{Color.RESET}{Color.CYAN}      ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} IP Connected: {Color.WHITE}{'Yes' if proxy_stats.get('ip_connected') else 'No'}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Connected IP: {Color.WHITE}{proxy_stats.get('connected_ip', 'None')}{Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Cliproxy: {Color.WHITE}{'Enabled' if proxy_stats.get('cliproxy_enabled') else 'Disabled'}{Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Auto Name: {Color.WHITE}{"Enabled (Country based)"}{Color.RESET}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
@@ -2245,31 +2345,24 @@ class MainMenu:
     def menu_help(self):
         self.show_header()
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - PROXY + AUTO NAME{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - IP CONNECT + PROXY{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Use{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  1. Install Browser Pilot (Option 1)               {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  2. Set API Key for 9proxy (Option 2)              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  3. Refresh Proxy Pool (Option 2)                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  4. Set up data folder (Option 4)                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  5. Add phone numbers to numbers.txt              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  6. Enter license key (Option 3)                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  7. Start the bot (Option 5)                      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Use IP Connect{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  1. Go to Proxy Management (Option 2)               {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  2. Select "Connect IP" (Option 1)                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  3. Enter IP URL:                                   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     socks5://ridolislam-region-XX:Ridol123@...     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  4. IP will be connected and tested                 {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  5. Start bot - it will use connected IP           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Automatic proxy rotation per number            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Country detection from phone number            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Auto-generates local names per country         {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Matches proxy country with number country      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Uses default IP if proxy fails                 {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Cliproxy SOCKS5 support with dynamic region    {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - 150+ countries supported                       {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Uses termux-browser-pilot                      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Real Firefox/Chromium browser                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Human-like typing & clicks                    {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - OTP Retry: 3 times                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Voice feedback for folder operations           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Stop bot with '0' key                          {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Connect any SOCKS5 IP manually                   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Auto-detect country from phone number            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Uses connected IP for all operations             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Fallback to Cliproxy if no IP connected         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - 150+ countries supported                         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Voice feedback for IP connect/disconnect         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Stop bot with '0' key                           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         press_enter()
     
