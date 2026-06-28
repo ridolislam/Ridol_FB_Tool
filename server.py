@@ -47,7 +47,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ==================== BOT API ROUTES (Matches bot.py) ====================
+# ==================== ROOT ROUTE ====================
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({
+        'message': 'Server is ready for GET requests',
+        'status': 'online',
+        'version': '4.0',
+        'timestamp': datetime.now().isoformat()
+    })
+
+# ==================== BOT API ROUTES ====================
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
@@ -115,7 +125,7 @@ def register_device():
     save_db(db)
     return jsonify({'success': True, 'message': 'Device registered'})
 
-# ==================== SOUND API (Matches bot.py) ====================
+# ==================== SOUND API ====================
 
 @app.route('/api/v1/sounds/list', methods=['GET'])
 def list_sounds():
@@ -192,7 +202,7 @@ def logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
-# ==================== HTML TEMPLATES (Shortened) ====================
+# ==================== HTML TEMPLATES ====================
 LOGIN_HTML = '''
 <!DOCTYPE html>
 <html>
