@@ -247,7 +247,7 @@ class NameGenerator:
 
 # ==================== PROXY MANAGER ====================
 class ProxyManager:
-    """Manage proxy rotation with country detection"""
+    """Manage proxy rotation with country detection - uses default IP if no proxies available"""
     
     def __init__(self):
         self.proxy_pool = []
@@ -383,14 +383,19 @@ class ProxyManager:
         self.proxy_pool = unique_proxies
         self.last_refresh = time.time()
         
-        print(f"{Color.GREEN}[+] Total unique proxies: {len(self.proxy_pool)}{Color.RESET}")
+        if len(self.proxy_pool) == 0:
+            print(f"{Color.YELLOW}[!] No proxies found. Will use default IP for all operations.{Color.RESET}")
+        else:
+            print(f"{Color.GREEN}[+] Total unique proxies: {len(self.proxy_pool)}{Color.RESET}")
         return len(self.proxy_pool)
     
     def get_proxy_for_number(self, phone_number):
-        """Get a proxy based on phone number's country code"""
+        """Get a proxy based on phone number's country code. Returns None for default IP."""
         country_code = self._get_country_from_phone(phone_number)
         
+        # If proxy pool is empty, use default IP
         if not self.proxy_pool:
+            # Try to refresh once
             self.refresh_proxy_pool()
             if not self.proxy_pool:
                 print(f"{Color.YELLOW}[!] No proxies available. Using default IP.{Color.RESET}")
@@ -404,22 +409,20 @@ class ProxyManager:
         if matching_proxies:
             selected = random.choice(matching_proxies)
             print(f"{Color.GREEN}[+] Using proxy from {selected['country']} (matching number){Color.RESET}")
+            self.current_proxy = selected['proxy']
+            self.current_country = selected['country']
+            self.proxy_history.append({
+                'phone': phone_number,
+                'proxy': selected['proxy'],
+                'country': selected['country']
+            })
+            return selected['proxy'], country_code
         else:
             # If no match, use default IP
             print(f"{Color.YELLOW}[!] No proxy for {country_code}, using default IP{Color.RESET}")
             self.current_proxy = None
             self.current_country = 'XX'
             return None, country_code
-        
-        self.current_proxy = selected['proxy']
-        self.current_country = selected['country']
-        self.proxy_history.append({
-            'phone': phone_number,
-            'proxy': selected['proxy'],
-            'country': selected['country']
-        })
-        
-        return selected['proxy'], country_code
     
     def _get_country_from_phone(self, phone_number):
         """Get country code from phone number"""
@@ -822,6 +825,11 @@ class BrowserPilotManager:
                 os.environ['http_proxy'] = proxy
                 os.environ['https_proxy'] = proxy
                 print(f"{Color.CYAN}[*] Browser using proxy: {proxy}{Color.RESET}")
+            else:
+                # Clear proxy environment variables for default IP
+                os.environ.pop('http_proxy', None)
+                os.environ.pop('https_proxy', None)
+                print(f"{Color.CYAN}[*] Browser using default IP (no proxy){Color.RESET}")
             
             self.browser = Browser(headless=headless)
             self.browser_started = True
@@ -1094,12 +1102,12 @@ class FacebookAutomationEngine:
         country_code = self.proxy_manager._get_country_from_phone(phone_number)
         print(f"{Color.CYAN}[+] Country detected: {country_code}{Color.RESET}")
         
-        # Get proxy for this number
+        # Get proxy for this number (returns None if using default IP)
         proxy, _ = self.proxy_manager.get_proxy_for_number(phone_number)
         if proxy:
             print(f"{Color.GREEN}[+] Proxy: {proxy} (Country: {self.proxy_manager.current_country}){Color.RESET}")
         else:
-            print(f"{Color.YELLOW}[!] No proxy available, using default IP{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Using default IP (no proxy){Color.RESET}")
         
         # Start browser with proxy (or without if None)
         if not self.browser_manager.start_browser(headless=False, proxy=proxy):
@@ -1350,7 +1358,7 @@ class MainMenu:
         proxy_status = f"● {proxy_stats['total']} proxies"
         proxy_color = Color.GREEN if proxy_stats['total'] > 0 else Color.RED
         
-        print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Empty"}{Color.RESET}')
+        print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Default IP Only"}{Color.RESET}')
         
         # Check browser pilot
         browser_status = "● READY" if self.browser_manager.browser_available else "● NOT INSTALLED"
@@ -1385,15 +1393,18 @@ class MainMenu:
         """Check for stop input during bot operation"""
         while self.bot_running:
             try:
+                # Check for stdin input without blocking
                 if sys.stdin.isatty():
-                    inp = sys.stdin.read(1)
-                    if inp == '0':
-                        print(f"\n\n{Color.YELLOW}[!] Stop command received! Stopping bot...{Color.RESET}")
-                        self.bot_running = False
-                        if self.bot and self.bot.automation_engine:
-                            self.bot.automation_engine.stop()
-                        self.audio.speak_stopping()
-                        break
+                    import select
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        inp = sys.stdin.read(1).strip()
+                        if inp == '0':
+                            print(f"\n\n{Color.YELLOW}[!] Stop command received! Stopping bot...{Color.RESET}")
+                            self.bot_running = False
+                            if self.bot and self.bot.automation_engine:
+                                self.bot.automation_engine.stop()
+                            self.audio.speak_stopping()
+                            break
             except:
                 pass
             time.sleep(0.5)
@@ -1438,8 +1449,8 @@ class MainMenu:
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}PROXY MANAGEMENT{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Total: {Color.WHITE}{proxy_stats['total']}{Color.RESET}  Current: {Color.WHITE}{proxy_stats.get('current', 'None')}{Color.RESET}  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Country: {Color.WHITE}{proxy_stats.get('country', 'None')}{Color.RESET}  History: {Color.WHITE}{proxy_stats['history_count']}{Color.RESET}        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Total: {Color.WHITE}{proxy_stats['total']}{Color.RESET}  Current: {Color.WHITE}{proxy_stats.get('current', 'Default IP')}{Color.RESET}  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Country: {Color.WHITE}{proxy_stats.get('country', 'XX')}{Color.RESET}  History: {Color.WHITE}{proxy_stats['history_count']}{Color.RESET}        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Using Default IP: {Color.WHITE}{'Yes' if proxy_stats.get('using_default_ip') else 'No'}{Color.RESET}{Color.CYAN}        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Refresh Proxy Pool               {Color.CYAN}║{Color.RESET}
@@ -1616,8 +1627,12 @@ class MainMenu:
                     # Check for numbers.txt
                     numbers_file = os.path.join(folder_path, 'numbers.txt')
                     if os.path.exists(numbers_file):
-                        count = sum(1 for _ in open(numbers_file) if _.strip() and not _.startswith('#'))
-                        print(f'  {Color.CYAN}[*] numbers.txt contains {count} numbers{Color.RESET}')
+                        try:
+                            with open(numbers_file, 'r') as f:
+                                count = sum(1 for line in f if line.strip() and not line.startswith('#'))
+                            print(f'  {Color.CYAN}[*] numbers.txt contains {count} numbers{Color.RESET}')
+                        except:
+                            print(f'  {Color.YELLOW}[!] Could not read numbers.txt{Color.RESET}')
                     else:
                         print(f'  {Color.YELLOW}[!] numbers.txt not found{Color.RESET}')
                 else:
@@ -1630,21 +1645,25 @@ class MainMenu:
                 if os.path.exists(folder_path):
                     print(f'\n  {Color.GREEN}[+] Folder contents: {folder_path}{Color.RESET}')
                     self.audio.speak_content_found()
-                    files = os.listdir(folder_path)
-                    txt_files = [f for f in files if f.endswith('.txt')]
-                    
-                    if txt_files:
-                        print(f'  {Color.CYAN}[*] Found {len(txt_files)} text files:{Color.RESET}')
-                        for txt in txt_files:
-                            filepath = os.path.join(folder_path, txt)
-                            try:
-                                with open(filepath, 'r') as f:
-                                    lines = [l.strip() for l in f if l.strip() and not l.startswith('#')]
+                    try:
+                        files = os.listdir(folder_path)
+                        txt_files = [f for f in files if f.endswith('.txt')]
+                        
+                        if txt_files:
+                            print(f'  {Color.CYAN}[*] Found {len(txt_files)} text files:{Color.RESET}')
+                            for txt in txt_files:
+                                filepath = os.path.join(folder_path, txt)
+                                try:
+                                    with open(filepath, 'r') as f:
+                                        lines = [l.strip() for l in f if l.strip() and not l.startswith('#')]
                                     print(f'    {Color.WHITE}{txt}{Color.RESET}: {len(lines)} entries')
-                            except:
-                                print(f'    {Color.WHITE}{txt}{Color.RESET}: (error reading)')
-                    else:
-                        print(f'  {Color.YELLOW}[!] No .txt files found{Color.RESET}')
+                                except:
+                                    print(f'    {Color.WHITE}{txt}{Color.RESET}: (error reading)')
+                        else:
+                            print(f'  {Color.YELLOW}[!] No .txt files found{Color.RESET}')
+                            self.audio.speak_content_not_found()
+                    except:
+                        print(f'  {Color.RED}[-] Error reading folder contents{Color.RESET}')
                         self.audio.speak_content_not_found()
                 else:
                     print(f'\n  {Color.RED}[-] Folder not found: {folder_path}{Color.RESET}')
