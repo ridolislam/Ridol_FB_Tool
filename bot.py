@@ -144,7 +144,7 @@ class Color:
 
 def server_request(endpoint, method='GET', data=None):
     """Make request to server API"""
-    url = f"{LICENSE_SERVER}/api/v1/{endpoint}"
+    url = f"{LICENSE_SERVER}/{endpoint}"
     headers = {'Content-Type': 'application/json'}
     
     try:
@@ -164,7 +164,7 @@ def server_request(endpoint, method='GET', data=None):
 
 def verify_license(key, device_serial):
     """Verify license using server"""
-    result = server_request("license/verify", 'POST', {
+    result = server_request("verify.php", 'POST', {
         'license_key': key,
         'device_serial': device_serial
     })
@@ -174,7 +174,7 @@ def verify_license(key, device_serial):
 
 def register_device(device_serial, license_key):
     """Register device with server"""
-    result = server_request("device/register", 'POST', {
+    result = server_request("register.php", 'POST', {
         'device_serial': device_serial,
         'license_key': license_key
     })
@@ -332,7 +332,7 @@ class ProxyManager:
         self.password = 'Ridol123'
         self.host = 'sg.cliproxy.io'
         self.port = '3010'
-        self.user_id = None  # Will store connected user ID
+        self.user_id = None
         
     def _get_country_from_phone(self, phone_number):
         phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
@@ -347,13 +347,11 @@ class ProxyManager:
             print(f"{Color.CYAN}[*] Connecting to IP: {ip_url}{Color.RESET}")
             
             # Extract user ID from URL
-            # Format: socks5://ridolislam-region-XX:Ridol123@sg.cliproxy.io:3010
             match = re.search(r'ridolislam-region-([A-Z]+):', ip_url)
             if match:
                 self.user_id = match.group(1)
                 print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
             else:
-                # Try to extract any username
                 match2 = re.search(r'socks5://([^:]+):', ip_url)
                 if match2:
                     self.user_id = match2.group(1)
@@ -399,13 +397,8 @@ class ProxyManager:
             print(f"{Color.YELLOW}[!] No IP connected. Please connect first.{Color.RESET}")
             return None
         
-        # Extract base URL and replace region
-        # Original: socks5://ridolislam-region-XX:Ridol123@sg.cliproxy.io:3010
-        # Replace XX with country code
-        base_url = self.connected_ip_url
         # Replace region in URL
-        new_url = re.sub(r'ridolislam-region-[A-Z]+:', f'ridolislam-region-{country_code}:', base_url)
-        
+        new_url = re.sub(r'ridolislam-region-[A-Z]+:', f'ridolislam-region-{country_code}:', self.connected_ip_url)
         return new_url
     
     def refresh_proxy_pool(self):
@@ -432,9 +425,7 @@ class ProxyManager:
         country_code = self._get_country_from_phone(phone_number)
         print(f"{Color.CYAN}[+] Country detected: {country_code}{Color.RESET}")
         
-        # Use connected IP with country-specific region
         if self.connected_ip_url and self.ip_connected:
-            # Generate country-specific proxy URL
             proxy_url = self.get_proxy_for_country(country_code)
             if proxy_url:
                 print(f"{Color.GREEN}[+] Generated proxy for {country_code}: {proxy_url}{Color.RESET}")
@@ -448,8 +439,7 @@ class ProxyManager:
                 })
                 return proxy_url, country_code
         
-        # Fallback: Use default IP
-        print(f"{Color.YELLOW}[!] No IP connected or country proxy failed. Using default IP.{Color.RESET}")
+        print(f"{Color.YELLOW}[!] No IP connected. Using default IP.{Color.RESET}")
         self.current_proxy = None
         self.current_country = 'XX'
         return None, country_code
@@ -828,25 +818,25 @@ class LicenseManager:
     def set_proxy_api_key(self, key): self.config['proxy_api_key'] = key; self.save()
     
     def verify(self, key):
-        print(f'  {Color.YELLOW}[*] Verifying license via server...{Color.RESET}')
+        print(f'  {Color.YELLOW}[*] Verifying license...{Color.RESET}')
         result = verify_license(key, self.get_device_serial())
-        if result.get('valid'):
+        if result and result.get('valid'):
             print(f'  {Color.GREEN}[+] License Active! Expires: {result.get("expires_at", "N/A")}{Color.RESET}')
             self.set_license_key(key)
             return True, result
         else:
-            print(f'  {Color.RED}[-] {result.get("message", "Invalid license")}{Color.RESET}')
+            print(f'  {Color.RED}[-] {result.get("message", "Invalid license") if result else "Server error"}{Color.RESET}')
             return False, result
     
     def register_device(self, device_serial):
-        print(f'  {Color.CYAN}[*] Registering device via server...{Color.RESET}')
+        print(f'  {Color.CYAN}[*] Registering device...{Color.RESET}')
         result = register_device(device_serial, self.get_license_key())
-        if result.get('success'):
+        if result and result.get('success'):
             self.set_device_serial(device_serial)
             print(f'  {Color.GREEN}[+] Device registered successfully{Color.RESET}')
             return True
         else:
-            print(f'  {Color.RED}[-] {result.get("message", "Registration failed")}{Color.RESET}')
+            print(f'  {Color.RED}[-] {result.get("message", "Registration failed") if result else "Server error"}{Color.RESET}')
             return False
 
 # ==================== UTILITY FUNCTIONS ====================
@@ -1149,6 +1139,15 @@ class MainMenu:
         user_id = proxy_stats.get('user_id', 'None')
         user_display = f"User: {user_id}" if user_id else "User: None"
         
+        # Check server status
+        try:
+            response = requests.get(f"{LICENSE_SERVER}/", timeout=5)
+            server_status = "ONLINE" if response.status_code == 200 else "OFFLINE"
+            server_color = Color.GREEN if response.status_code == 200 else Color.RED
+        except:
+            server_status = "OFFLINE"
+            server_color = Color.RED
+        
         print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Empty"}{Color.RESET}')
         print(f' {ip_color}{ip_status}{Color.RESET} IP Connect: {Color.WHITE}{"Connected" if proxy_stats.get("ip_connected") else "Disconnected"} | {user_display}{Color.RESET}')
         browser_status = "● READY" if self.browser_manager.browser_available else "● NOT INSTALLED"
@@ -1156,14 +1155,7 @@ class MainMenu:
         print(f' {browser_color}{browser_status}{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Run Setup"}{Color.RESET}')
         lic_key = self.license.get_license_key()
         print(f' {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if lic_key else "Not Set"}{Color.RESET}')
-        try:
-            result = server_request("ping", 'GET')
-            connected = result is not None
-        except:
-            connected = False
-        status_color = Color.GREEN if connected else Color.RED
-        status_text = "ONLINE" if connected else "OFFLINE"
-        print(f' {Color.CYAN}◉{Color.RESET} Server: {status_color}{status_text}{Color.RESET}\n')
+        print(f' {Color.CYAN}◉{Color.RESET} Server: {server_color}{server_status}{Color.RESET}\n')
     
     def welcome_screen(self):
         clear_screen()
@@ -1216,10 +1208,8 @@ class MainMenu:
             print(f'  {Color.YELLOW}[!] URL should start with socks5://{Color.RESET}')
             proxy_url = f"socks5://{proxy_url}"
         
-        # Check if URL contains "All" as region
         if 'region-All' not in proxy_url:
             print(f'  {Color.YELLOW}[!] URL should contain "region-All" for auto country switching{Color.RESET}')
-            print(f'  {Color.DIM}Example: socks5://ridolislam-region-All:Ridol123@sg.cliproxy.io:3010{Color.RESET}')
             confirm = input(f'  {Color.CYAN}Continue anyway? (y/n): {Color.RESET}').strip().lower()
             if confirm != 'y':
                 press_enter()
@@ -1227,7 +1217,6 @@ class MainMenu:
         
         print(f'\n  {Color.CYAN}[*] Connecting to: {proxy_url}{Color.RESET}')
         
-        # Test and connect
         success = self.proxy_manager.connect_ip(proxy_url)
         
         if success:
@@ -1326,7 +1315,6 @@ class MainMenu:
         press_enter()
     
     def ip_management_menu(self):
-        """IP Management Menu - Connect Cliproxy All Region"""
         while True:
             self.show_header()
             proxy_stats = self.proxy_manager.get_proxy_stats()
@@ -1463,8 +1451,8 @@ class MainMenu:
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Verify License (Server)          {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Register Device (Server)         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Check Server Status              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
@@ -1498,16 +1486,14 @@ class MainMenu:
                 press_enter()
             elif choice == '5':
                 try:
-                    result = server_request("status", 'GET')
-                    if result:
-                        print(f'\n  {Color.GREEN}[+] Server Status:{Color.RESET}')
-                        print(f'    Database: {result.get("database", "N/A")}')
-                        print(f'    Licenses: {result.get("license_count", 0)}')
-                        print(f'    Devices: {result.get("device_count", 0)}')
+                    response = requests.get(f"{LICENSE_SERVER}/", timeout=10)
+                    if response.status_code == 200:
+                        print(f'\n  {Color.GREEN}[+] Server Online{Color.RESET}')
+                        print(f'  {Color.CYAN}Status: {response.status_code}{Color.RESET}')
                     else:
-                        print(f'\n  {Color.RED}[-] Server not reachable{Color.RESET}')
+                        print(f'\n  {Color.YELLOW}[!] Server returned: {response.status_code}{Color.RESET}')
                 except Exception as e:
-                    print(f'\n  {Color.RED}[-] Error: {e}{Color.RESET}')
+                    print(f'\n  {Color.RED}[-] Server error: {e}{Color.RESET}')
                 press_enter()
             elif choice == '0':
                 break
@@ -1657,6 +1643,16 @@ class MainMenu:
     def menu_status(self):
         self.show_header()
         proxy_stats = self.proxy_manager.get_proxy_stats()
+        
+        # Check server status
+        try:
+            response = requests.get(f"{LICENSE_SERVER}/", timeout=5)
+            server_status = "ONLINE" if response.status_code == 200 else "OFFLINE"
+            server_color = Color.GREEN if response.status_code == 200 else Color.RED
+        except:
+            server_status = "OFFLINE"
+            server_color = Color.RED
+        
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}SYSTEM STATUS{Color.RESET}{Color.CYAN}                                 ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
@@ -1669,18 +1665,9 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {self.audio.get_status()}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Automation: {Color.WHITE}{"Running" if self.bot and self.bot.running else "Idle"}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Server: {server_color}{server_status}{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
-        try:
-            result = server_request("status", 'GET')
-            if result:
-                print(f'\n{Color.CYAN}Server Status:{Color.RESET}')
-                print(f'  Database: {result.get("database", "N/A")}')
-                print(f'  Licenses: {result.get("license_count", 0)}')
-                print(f'  Devices: {result.get("device_count", 0)}')
-            else:
-                print(f'\n{Color.RED}Server: OFFLINE{Color.RESET}')
-        except:
-            print(f'\n{Color.RED}Server: OFFLINE{Color.RESET}')
+        
         if self.bot:
             print(self.bot.get_status())
         press_enter()
