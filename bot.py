@@ -28,7 +28,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.j
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
 CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
-LICENSE_SERVER = 'https://ridol-fb-tool-vhjy.onrender.com'
+LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v7.0'
 
