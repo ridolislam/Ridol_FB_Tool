@@ -253,42 +253,13 @@ class ProxyManager:
                 return COUNTRY_CODES[code]
         return 'XX'
     
-    def _parse_cliproxy_url(self, proxy_url):
-        """Parse Cliproxy URL in format: SOCKS5://host:port:username:password"""
+    def connect_proxy_url(self, proxy_url):
+        """Connect using SOCKS5 URL format: socks5://user:pass@host:port"""
         try:
-            # Remove protocol if present
-            url = proxy_url.replace('socks5://', '').replace('SOCKS5://', '')
-            
-            # Parse format: host:port:username:password
-            parts = url.split(':')
-            
-            if len(parts) >= 4:
-                host = parts[0]
-                port = parts[1]
-                username = parts[2]
-                password = ':'.join(parts[3:])  # In case password has colon
-                
-                return {
-                    'host': host,
-                    'port': port,
-                    'username': username,
-                    'password': password
-                }
-            else:
-                print(f"{Color.RED}[-] Invalid URL format. Expected: host:port:username:password{Color.RESET}")
-                return None
-                
-        except Exception as e:
-            print(f"{Color.RED}[-] Error parsing URL: {e}{Color.RESET}")
-            return None
-    
-    def connect_cliproxy_url(self, proxy_url):
-        """Connect to Cliproxy using URL format: SOCKS5://host:port:username:password"""
-        try:
-            print(f"{Color.CYAN}[*] Connecting to Cliproxy...{Color.RESET}")
+            print(f"{Color.CYAN}[*] Connecting to Proxy...{Color.RESET}")
             
             # Parse the URL
-            parsed = self._parse_cliproxy_url(proxy_url)
+            parsed = self._parse_proxy_url(proxy_url)
             if not parsed:
                 return False
             
@@ -301,19 +272,18 @@ class ProxyManager:
             print(f"{Color.CYAN}[*] Port: {port}{Color.RESET}")
             print(f"{Color.CYAN}[*] Username: {username}{Color.RESET}")
             
-            # Build standard SOCKS5 URL
-            full_url = f"socks5://{username}:{password}@{host}:{port}"
-            
-            # Store user credentials
+            # Store credentials
             self.user_username = username
             self.user_password = password
             self.user_host = host
             self.user_port = port
             
+            # Full URL for requests
+            full_url = f"socks5://{username}:{password}@{host}:{port}"
+            
             print(f"{Color.CYAN}[*] Generated Proxy URL{Color.RESET}")
             print(f"{Color.DIM}   {full_url}{Color.RESET}")
             
-            # Extract user ID
             self.user_id = username
             print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
             
@@ -336,73 +306,48 @@ class ProxyManager:
             else:
                 print(f"{Color.RED}[-] Failed to connect. Status: {response.status_code}{Color.RESET}")
                 if response.status_code == 403:
-                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check:{Color.RESET}")
-                    print(f"{Color.YELLOW}   1. Username format: yourname-region-XX (e.g., ridolislam-region-US){Color.RESET}")
-                    print(f"{Color.YELLOW}   2. Password is correct{Color.RESET}")
-                    print(f"{Color.YELLOW}   3. Account is active and has balance{Color.RESET}")
-                    print(f"{Color.YELLOW}   4. Host and Port are correct{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check your credentials.{Color.RESET}")
                 return False
                 
         except Exception as e:
             print(f"{Color.RED}[-] Connection failed: {e}{Color.RESET}")
             return False
     
-    def connect_cliproxy(self, username, password, host, port, country_code):
-        """Connect to Cliproxy with user's own credentials - Auto adds region if needed"""
+    def _parse_proxy_url(self, proxy_url):
+        """Parse SOCKS5 URL: socks5://user:pass@host:port"""
         try:
-            print(f"{Color.CYAN}[*] Connecting to Cliproxy with your credentials...{Color.RESET}")
+            # Remove protocol if present
+            url = proxy_url.replace('socks5://', '').replace('SOCKS5://', '')
             
-            # Auto-add region if not present in username
-            original_username = username
-            if '-region-' not in username:
-                username = f"{username}-region-{country_code}"
-                print(f"{Color.CYAN}[+] Auto-added region to username: {username}{Color.RESET}")
-            
-            # Build proxy URL with user's credentials
-            proxy_url = f"socks5://{username}:{password}@{host}:{port}"
-            
-            # Store user credentials for auto country switching
-            self.user_username = username
-            self.user_password = password
-            self.user_host = host
-            self.user_port = port
-            
-            print(f"{Color.CYAN}[*] Generated Proxy URL for {country_code}{Color.RESET}")
-            print(f"{Color.DIM}   {proxy_url}{Color.RESET}")
-            
-            # Extract user ID
-            self.user_id = username
-            print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
-            
-            # Test the connection
-            test_proxies = {'http': proxy_url, 'https': proxy_url}
-            response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"{Color.GREEN}[+] IP Connected Successfully!{Color.RESET}")
-                print(f"{Color.CYAN}[+] IP: {data.get('query', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] Country: {data.get('countryCode', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] Region: {data.get('regionName', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] ISP: {data.get('isp', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] User: {self.user_id}{Color.RESET}")
-                
-                self.connected_ip_url = proxy_url
-                self.ip_connected = True
-                return True
+            # Parse: user:pass@host:port
+            if '@' in url:
+                auth, host_port = url.split('@', 1)
+                if ':' in auth:
+                    username, password = auth.split(':', 1)
+                else:
+                    username = auth
+                    password = ''
             else:
-                print(f"{Color.RED}[-] Failed to connect. Status: {response.status_code}{Color.RESET}")
-                if response.status_code == 403:
-                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check:{Color.RESET}")
-                    print(f"{Color.YELLOW}   1. Username format: yourname-region-XX (e.g., ridolislam-region-US){Color.RESET}")
-                    print(f"{Color.YELLOW}   2. Password is correct{Color.RESET}")
-                    print(f"{Color.YELLOW}   3. Account is active and has balance{Color.RESET}")
-                    print(f"{Color.YELLOW}   4. Host and Port are correct{Color.RESET}")
-                return False
-                
+                username = ''
+                password = ''
+                host_port = url
+            
+            if ':' in host_port:
+                host, port = host_port.rsplit(':', 1)
+            else:
+                host = host_port
+                port = '3010'
+            
+            return {
+                'host': host,
+                'port': port,
+                'username': username,
+                'password': password
+            }
+            
         except Exception as e:
-            print(f"{Color.RED}[-] Connection failed: {e}{Color.RESET}")
-            return False
+            print(f"{Color.RED}[-] Error parsing URL: {e}{Color.RESET}")
+            return None
     
     def get_proxy_for_country(self, country_code):
         """Generate proxy URL for a specific country using user's credentials"""
@@ -414,10 +359,8 @@ class ProxyManager:
         username = self.user_username
         # If username has region, replace it
         if '-region-' in username:
-            # Replace the region part
             username = re.sub(r'-region-[A-Z]+', f'-region-{country_code}', username)
         else:
-            # Add region if not present
             username = f"{username}-region-{country_code}"
         
         # Build URL with user's credentials and new username
@@ -1217,38 +1160,43 @@ class MainMenu:
         provider = config.get('proxy_provider', 'None')
         return provider if provider else 'None'
     
-    def connect_cliproxy_url(self):
-        """Connect to Cliproxy using URL format: SOCKS5://host:port:username:password"""
-        print(f'\n  {Color.CYAN}--- Cliproxy URL Connection ---{Color.RESET}')
-        print(f'  {Color.DIM}Enter your Cliproxy URL in this format:{Color.RESET}')
-        print(f'  {Color.DIM}SOCKS5://host:port:username:password{Color.RESET}')
-        print(f'  {Color.DIM}Example: SOCKS5://sg.cliproxy.io:3010:ridolislam-region-US:Ridol123{Color.RESET}\n')
+    def connect_proxy_url(self):
+        """Connect using SOCKS5 URL: socks5://user:pass@host:port"""
+        print(f'\n  {Color.CYAN}--- SOCKS5 Proxy Connection ---{Color.RESET}')
+        print(f'  {Color.DIM}Enter your SOCKS5 proxy URL in this format:{Color.RESET}')
+        print(f'  {Color.DIM}socks5://username:password@host:port{Color.RESET}')
+        print(f'  {Color.DIM}Example: socks5://ridolislam-region-US:Ridol123@sg.cliproxy.io:3010{Color.RESET}\n')
         
-        proxy_url = input(f'  {Color.CYAN}Enter Cliproxy URL: {Color.RESET}').strip()
+        proxy_url = input(f'  {Color.CYAN}Enter SOCKS5 URL: {Color.RESET}').strip()
         
         if not proxy_url:
             print(f'  {Color.RED}[-] URL cannot be empty!{Color.RESET}')
             press_enter()
             return
         
+        # Ensure socks5:// prefix
+        if not proxy_url.startswith('socks5://'):
+            print(f'  {Color.YELLOW}[!] Adding socks5:// prefix{Color.RESET}')
+            proxy_url = f"socks5://{proxy_url}"
+        
         # Connect using the URL
-        success = self.proxy_manager.connect_cliproxy_url(proxy_url)
+        success = self.proxy_manager.connect_proxy_url(proxy_url)
         
         if success:
-            print(f'  {Color.GREEN}[+] Cliproxy Connected Successfully!{Color.RESET}')
+            print(f'  {Color.GREEN}[+] Proxy Connected Successfully!{Color.RESET}')
             print(f'  {Color.CYAN}[+] Auto country switching enabled!{Color.RESET}')
             print(f'  {Color.CYAN}[+] Your proxy will be used for all countries{Color.RESET}')
             self.audio.speak_ip_connected()
             
             config = load_json(CONFIG_FILE)
-            config['proxy_provider'] = 'Cliproxy (URL)'
+            config['proxy_provider'] = 'SOCKS5 URL'
             config['proxy_url'] = proxy_url
             save_json(CONFIG_FILE, config)
             
             self.proxy_manager.ip_connected = True
         else:
             print(f'  {Color.RED}[-] Failed to connect. Please check your URL format.{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Format: SOCKS5://host:port:username:password{Color.RESET}')
+            print(f'  {Color.YELLOW}[!] Format: socks5://username:password@host:port{Color.RESET}')
         
         press_enter()
     
@@ -1421,8 +1369,8 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  Your ID: {Color.WHITE}{user_id}{Color.RESET}{Color.CYAN}                                         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Auto Country: {Color.WHITE}Enabled (your proxy used for all){Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect via URL                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Connect via Credentials           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect SOCKS5 URL                {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Connect Cliproxy Credentials      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} View Connected IP                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Disconnect IP                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Test Current IP                    {Color.CYAN}║{Color.RESET}
@@ -1431,7 +1379,7 @@ class MainMenu:
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
-                self.connect_cliproxy_url()
+                self.connect_proxy_url()
             elif choice == '2':
                 self.connect_cliproxy()
             elif choice == '3':
@@ -1709,7 +1657,7 @@ class MainMenu:
             return
         if not proxy_stats.get('ip_connected'):
             print(f'\n{Color.YELLOW}[!] No IP connected! Please connect your proxy first.{Color.RESET}')
-            print(f'  {Color.DIM}Go to IP Management -> Connect Your Proxy{Color.RESET}')
+            print(f'  {Color.DIM}Go to IP Management -> Connect SOCKS5 URL{Color.RESET}')
             press_enter()
             return
         
@@ -1868,16 +1816,23 @@ class MainMenu:
     def menu_help(self):
         self.show_header()
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - YOUR PROXY SETUP{Color.RESET}{Color.CYAN}                          ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - PROXY SETUP{Color.RESET}{Color.CYAN}                               ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Setup Your Proxy{Color.RESET}{Color.CYAN}                      ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  1. Go to IP Management (Option 2)                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  2. Select "Connect via URL" (Option 1)              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  2. Select "Connect SOCKS5 URL" (Option 1)           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  3. Enter URL in format:                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     SOCKS5://host:port:username:password             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     Example: SOCKS5://sg.cliproxy.io:3010:user:pw   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  4. Or use Credentials option for guided setup      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     socks5://username:password@host:port             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     Example: socks5://user:pass@proxy.com:1080       {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  4. Or use Cliproxy Credentials (Option 2)           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  5. Bot will auto-detect country and switch proxy   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - SOCKS5 URL format support                         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Auto country detection from phone number         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Auto name generation by country                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - OTP retry with voice feedback                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Stop bot with '0' key                            {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         press_enter()
     
