@@ -241,7 +241,6 @@ class ProxyManager:
         self.ip_connected = False
         self.user_id = None
         self.session_id = None
-        # User's own credentials (will be set during connection)
         self.user_username = None
         self.user_password = None
         self.user_host = None
@@ -255,9 +254,15 @@ class ProxyManager:
         return 'XX'
     
     def connect_cliproxy(self, username, password, host, port, country_code):
-        """Connect to Cliproxy with user's own credentials"""
+        """Connect to Cliproxy with user's own credentials - Auto adds region if needed"""
         try:
             print(f"{Color.CYAN}[*] Connecting to Cliproxy with your credentials...{Color.RESET}")
+            
+            # Auto-add region if not present in username
+            original_username = username
+            if '-region-' not in username:
+                username = f"{username}-region-{country_code}"
+                print(f"{Color.CYAN}[+] Auto-added region to username: {username}{Color.RESET}")
             
             # Build proxy URL with user's credentials
             proxy_url = f"socks5://{username}:{password}@{host}:{port}"
@@ -294,7 +299,11 @@ class ProxyManager:
             else:
                 print(f"{Color.RED}[-] Failed to connect. Status: {response.status_code}{Color.RESET}")
                 if response.status_code == 403:
-                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check your credentials.{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check:{Color.RESET}")
+                    print(f"{Color.YELLOW}   1. Username format: yourname-region-XX (e.g., ridolislam-region-US){Color.RESET}")
+                    print(f"{Color.YELLOW}   2. Password is correct{Color.RESET}")
+                    print(f"{Color.YELLOW}   3. Account is active and has balance{Color.RESET}")
+                    print(f"{Color.YELLOW}   4. Host and Port are correct{Color.RESET}")
                 return False
                 
         except Exception as e:
@@ -307,8 +316,18 @@ class ProxyManager:
             print(f"{Color.YELLOW}[!] No IP connected. Please connect first.{Color.RESET}")
             return None
         
-        # Build URL with user's credentials and country
-        proxy_url = f"socks5://{self.user_username}:{self.user_password}@{self.user_host}:{self.user_port}"
+        # Replace region in username with new country
+        username = self.user_username
+        # If username has region, replace it
+        if '-region-' in username:
+            # Replace the region part
+            username = re.sub(r'-region-[A-Z]+', f'-region-{country_code}', username)
+        else:
+            # Add region if not present
+            username = f"{username}-region-{country_code}"
+        
+        # Build URL with user's credentials and new username
+        proxy_url = f"socks5://{username}:{self.user_password}@{self.user_host}:{self.user_port}"
         return proxy_url
     
     def disconnect_ip(self):
@@ -343,7 +362,8 @@ class ProxyManager:
         if self.connected_ip_url and self.ip_connected:
             proxy_url = self.get_proxy_for_country(country_code)
             if proxy_url:
-                print(f"{Color.GREEN}[+] Using your proxy for {country_code}{Color.RESET}")
+                print(f"{Color.GREEN}[+] Generated proxy for {country_code}{Color.RESET}")
+                print(f"{Color.DIM}   {proxy_url}{Color.RESET}")
                 self.current_proxy = proxy_url
                 self.current_country = country_code
                 self.proxy_history.append({
@@ -1104,11 +1124,11 @@ class MainMenu:
         return provider if provider else 'None'
     
     def connect_cliproxy(self):
-        """Connect Cliproxy - User provides their own credentials"""
+        """Connect Cliproxy - User provides credentials, tool auto-adds region"""
         print(f'\n  {Color.CYAN}--- Cliproxy Connection ---{Color.RESET}')
         print(f'  {Color.DIM}Enter your Cliproxy credentials (from your own account){Color.RESET}')
-        print(f'  {Color.DIM}Format: socks5://username:password@host:port{Color.RESET}')
-        print(f'  {Color.DIM}Example: socks5://your-username:your-password@sg.cliproxy.io:3010{Color.RESET}\n')
+        print(f'  {Color.DIM}Your username will be auto-formatted with region if needed{Color.RESET}')
+        print(f'  {Color.DIM}Example: If you enter "ridolislam" and select US, it becomes "ridolislam-region-US"{Color.RESET}\n')
         
         print(f'  {Color.CYAN}Select Country for initial connection:{Color.RESET}')
         print(f'  {Color.DIM}1. 🇧🇩 Bangladesh (BD)    2. 🇮🇳 India (IN)    3. 🇵🇰 Pakistan (PK){Color.RESET}')
@@ -1727,7 +1747,8 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}     - Host (e.g., sg.cliproxy.io)                    {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}     - Port (e.g., 3010)                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  4. Select country for initial connection            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  5. Bot will use your proxy for all countries        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  5. Tool auto-adds region to username if needed      {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  6. Bot will use your proxy for all countries        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Use your own Cliproxy account                     {Color.CYAN}║{Color.RESET}
