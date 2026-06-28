@@ -69,7 +69,6 @@ FB_CONFIG = {
 
 # ==================== COUNTRY CODES ====================
 COUNTRY_CODES = {
-    # Asia
     '93': 'AF', '374': 'AM', '994': 'AZ', '880': 'BD', '975': 'BT',
     '673': 'BN', '855': 'KH', '86': 'CN', '852': 'HK', '91': 'IN',
     '62': 'ID', '98': 'IR', '964': 'IQ', '972': 'IL', '81': 'JP',
@@ -80,7 +79,6 @@ COUNTRY_CODES = {
     '94': 'LK', '963': 'SY', '886': 'TW', '992': 'TJ', '66': 'TH',
     '90': 'TR', '993': 'TM', '971': 'AE', '998': 'UZ', '84': 'VN',
     '967': 'YE',
-    # Europe
     '355': 'AL', '376': 'AD', '43': 'AT', '375': 'BY', '32': 'BE',
     '387': 'BA', '359': 'BG', '385': 'HR', '357': 'CY', '420': 'CZ',
     '45': 'DK', '372': 'EE', '358': 'FI', '33': 'FR', '995': 'GE',
@@ -90,16 +88,13 @@ COUNTRY_CODES = {
     '31': 'NL', '47': 'NO', '48': 'PL', '351': 'PT', '40': 'RO',
     '7': 'RU', '381': 'RS', '421': 'SK', '386': 'SI', '34': 'ES',
     '46': 'SE', '41': 'CH', '380': 'UA', '44': 'GB', '379': 'VA',
-    # North America
     '1': 'US', '52': 'MX', '501': 'BZ', '506': 'CR', '53': 'CU',
     '1': 'DM', '1': 'DO', '503': 'SV', '502': 'GT', '504': 'HN',
     '1': 'JM', '505': 'NI', '507': 'PA', '1': 'TT', '1': 'BS',
     '1': 'BB', '1': 'GD', '1': 'LC', '1': 'VC',
-    # South America
     '54': 'AR', '591': 'BO', '55': 'BR', '56': 'CL', '57': 'CO',
     '593': 'EC', '592': 'GY', '595': 'PY', '51': 'PE', '597': 'SR',
     '598': 'UY', '58': 'VE',
-    # Africa
     '213': 'DZ', '244': 'AO', '229': 'BJ', '267': 'BW', '226': 'BF',
     '257': 'BI', '237': 'CM', '238': 'CV', '236': 'CF', '235': 'TD',
     '269': 'KM', '243': 'CD', '242': 'CG', '253': 'DJ', '20': 'EG',
@@ -111,11 +106,9 @@ COUNTRY_CODES = {
     '248': 'SC', '232': 'SL', '252': 'SO', '27': 'ZA', '211': 'SS',
     '249': 'SD', '268': 'SZ', '255': 'TZ', '228': 'TG', '216': 'TN',
     '256': 'UG', '260': 'ZM', '263': 'ZW',
-    # Oceania
     '61': 'AU', '679': 'FJ', '686': 'KI', '692': 'MH', '691': 'FM',
     '674': 'NR', '64': 'NZ', '675': 'PG', '685': 'WS', '677': 'SB',
     '676': 'TO', '688': 'TV', '678': 'VU',
-    # Default
     'XX': 'XX',
 }
 
@@ -143,10 +136,8 @@ class Color:
 # ==================== SERVER API FUNCTIONS ====================
 
 def server_request(endpoint, method='GET', data=None):
-    """Make request to server API"""
     url = f"{LICENSE_SERVER}/{endpoint}"
     headers = {'Content-Type': 'application/json'}
-    
     try:
         if method == 'GET':
             response = requests.get(url, headers=headers, timeout=10)
@@ -154,17 +145,15 @@ def server_request(endpoint, method='GET', data=None):
             response = requests.post(url, headers=headers, json=data, timeout=10)
         else:
             return None
-        
         if response.status_code in [200, 201, 204]:
             if response.text:
                 return response.json()
             return {'success': True}
         return None
-    except Exception as e:
+    except:
         return None
 
 def verify_license(key, device_serial):
-    """Verify license using server"""
     try:
         result = server_request("verify.php", 'POST', {
             'license_key': key,
@@ -177,7 +166,6 @@ def verify_license(key, device_serial):
         return {'valid': False, 'message': 'Server error'}
 
 def register_device(device_serial, license_key):
-    """Register device with server"""
     try:
         result = server_request("register.php", 'POST', {
             'device_serial': device_serial,
@@ -190,7 +178,6 @@ def register_device(device_serial, license_key):
         return {'success': False, 'message': 'Server error'}
 
 def check_server_status():
-    """Check if server is online"""
     try:
         response = requests.get(f"{LICENSE_SERVER}/", timeout=5)
         return response.status_code == 200
@@ -199,129 +186,40 @@ def check_server_status():
 
 # ==================== NAME GENERATOR ====================
 class NameGenerator:
-    """Generate local names based on country code"""
-    
     NAMES_DATABASE = {
-        'ID': {
-            'first': ['Ahmad', 'Budi', 'Citra', 'Dewi', 'Eko', 'Fitri', 'Gilang', 'Hana', 'Indra', 'Joko'],
-            'last': ['Siregar', 'Nasution', 'Harahap', 'Lubis', 'Batubara', 'Sinaga', 'Saragih', 'Ginting']
-        },
-        'US': {
-            'first': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles'],
-            'last': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez']
-        },
-        'GB': {
-            'first': ['Oliver', 'George', 'Harry', 'Jack', 'Jacob', 'Charlie', 'Thomas', 'James', 'William', 'Muhammad'],
-            'last': ['Smith', 'Jones', 'Williams', 'Taylor', 'Brown', 'Davies', 'Evans', 'Thomas', 'Johnson', 'Roberts']
-        },
-        'IN': {
-            'first': ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Pranav', 'Dhruv', 'Aryan', 'Reyansh'],
-            'last': ['Sharma', 'Verma', 'Patel', 'Singh', 'Kumar', 'Gupta', 'Joshi', 'Gandhi', 'Prasad', 'Sinha']
-        },
-        'BD': {
-            'first': ['Mohammad', 'Abdullah', 'Rafiq', 'Shahid', 'Kamal', 'Jamal', 'Rahim', 'Karim', 'Hasan', 'Ali'],
-            'last': ['Rahman', 'Ahmed', 'Islam', 'Hossain', 'Ali', 'Khan', 'Haque', 'Sarkar', 'Mia', 'Pramanik']
-        },
-        'PK': {
-            'first': ['Muhammad', 'Ali', 'Ahmed', 'Hassan', 'Usman', 'Omar', 'Zain', 'Hamza', 'Bilal', 'Raza'],
-            'last': ['Khan', 'Malik', 'Akhtar', 'Shah', 'Chaudhry', 'Butt', 'Qureshi', 'Sheikh', 'Abbasi', 'Javed']
-        },
-        'PH': {
-            'first': ['Jose', 'Juan', 'Carlos', 'Ramon', 'Pedro', 'Andres', 'Emilio', 'Josefino', 'Ronaldo', 'Ferdinand'],
-            'last': ['Santos', 'Reyes', 'Cruz', 'Garcia', 'Martinez', 'Lopez', 'Gonzales', 'Flores', 'Perez', 'Ramos']
-        },
-        'MY': {
-            'first': ['Ahmad', 'Mohd', 'Abdullah', 'Ali', 'Hassan', 'Zainal', 'Kamarul', 'Azman', 'Razali', 'Idris'],
-            'last': ['Abdullah', 'Ali', 'Hassan', 'Ahmad', 'Mohd', 'Ismail', 'Othman', 'Rahman', 'Hussein', 'Yusof']
-        },
-        'SG': {
-            'first': ['Wei', 'Ming', 'Li', 'Xin', 'Yi', 'Jun', 'Hui', 'Ling', 'Yan', 'Hao'],
-            'last': ['Tan', 'Lim', 'Lee', 'Ng', 'Wong', 'Ong', 'Goh', 'Chua', 'Koh', 'Chew']
-        },
-        'TH': {
-            'first': ['Somchai', 'Somsak', 'Prasert', 'Kriangkrai', 'Pongsak', 'Nattaporn', 'Wichian', 'Somkiat', 'Suthep', 'Anuchit'],
-            'last': ['Somchai', 'Somsak', 'Prasert', 'Kriangkrai', 'Pongsak', 'Nattaporn', 'Wichian', 'Somkiat', 'Suthep', 'Anuchit']
-        },
-        'VN': {
-            'first': ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu', 'Dang', 'Bui', 'Do', 'Huynh'],
-            'last': ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu', 'Dang', 'Bui', 'Do', 'Huynh']
-        },
-        'AE': {
-            'first': ['Mohammed', 'Ahmed', 'Ali', 'Hassan', 'Omar', 'Khalid', 'Saeed', 'Abdulla', 'Rashid', 'Hamad'],
-            'last': ['Al Maktoum', 'Al Nahyan', 'Al Suwaidi', 'Al Tayer', 'Al Ghurair', 'Al Habtoor', 'Al Futtaim']
-        },
-        'SA': {
-            'first': ['Mohammed', 'Ahmed', 'Ali', 'Abdullah', 'Omar', 'Saud', 'Khalid', 'Sultan', 'Faisal', 'Nayef'],
-            'last': ['Al Saud', 'Al Thani', 'Al Otaibi', 'Al Harbi', 'Al Anzi', 'Al Shamrani', 'Al Mutairi']
-        },
-        'TR': {
-            'first': ['Mehmet', 'Ahmet', 'Ali', 'Mustafa', 'Hasan', 'Huseyin', 'Osman', 'Yusuf', 'Ibrahim', 'Ismail'],
-            'last': ['Yilmaz', 'Kaya', 'Demir', 'Celik', 'Aydin', 'Ozdemir', 'Arslan', 'Dogan', 'Kilic', 'Yildirim']
-        },
-        'RU': {
-            'first': ['Alexander', 'Dmitri', 'Ivan', 'Mikhail', 'Nikolai', 'Sergei', 'Vladimir', 'Yuri', 'Andrei', 'Pavel'],
-            'last': ['Ivanov', 'Petrov', 'Sidorov', 'Kuznetsov', 'Smirnov', 'Popov', 'Sokolov', 'Lebedev', 'Kozlov', 'Novikov']
-        },
-        'BR': {
-            'first': ['Joao', 'Jose', 'Maria', 'Antonio', 'Francisco', 'Carlos', 'Paulo', 'Pedro', 'Lucas', 'Gabriel'],
-            'last': ['Silva', 'Santos', 'Souza', 'Oliveira', 'Pereira', 'Costa', 'Rodrigues', 'Almeida', 'Nascimento', 'Lima']
-        },
-        'JP': {
-            'first': ['Haruto', 'Sota', 'Yuki', 'Riku', 'Hinata', 'Sakura', 'Hana', 'Yui', 'Mio', 'Rin'],
-            'last': ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato']
-        },
-        'CN': {
-            'first': ['Wei', 'Ming', 'Li', 'Xin', 'Yi', 'Jun', 'Hui', 'Ling', 'Yan', 'Hao'],
-            'last': ['Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Yang', 'Huang', 'Zhao', 'Wu', 'Zhou']
-        },
-        'DE': {
-            'first': ['Hans', 'Peter', 'Klaus', 'Wolfgang', 'Thomas', 'Andreas', 'Michael', 'Stefan', 'Markus', 'Daniel'],
-            'last': ['Muller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann']
-        },
-        'FR': {
-            'first': ['Jean', 'Pierre', 'Michel', 'Philippe', 'Alain', 'Bernard', 'Eric', 'Nicolas', 'David', 'Christophe'],
-            'last': ['Martin', 'Bernard', 'Dubois', 'Thomas', 'Robert', 'Richard', 'Petit', 'Durand', 'Leroy', 'Moreau']
-        },
-        'IT': {
-            'first': ['Marco', 'Giuseppe', 'Antonio', 'Giovanni', 'Francesco', 'Andrea', 'Luca', 'Mario', 'Paolo', 'Roberto'],
-            'last': ['Rossi', 'Russo', 'Ferrari', 'Esposito', 'Bianchi', 'Romano', 'Colombo', 'Ricci', 'Marino', 'Greco']
-        },
-        'ES': {
-            'first': ['Antonio', 'Jose', 'Manuel', 'Francisco', 'Juan', 'David', 'Javier', 'Carlos', 'Daniel', 'Luis'],
-            'last': ['Garcia', 'Rodriguez', 'Gonzalez', 'Fernandez', 'Lopez', 'Martinez', 'Sanchez', 'Perez', 'Gomez', 'Martin']
-        },
-        'NL': {
-            'first': ['Jan', 'Peter', 'Hans', 'Kees', 'Pieter', 'Johan', 'Willem', 'Hendrik', 'Dirk', 'Gerard'],
-            'last': ['De Jong', 'Jansen', 'De Vries', 'Van den Berg', 'Van Dijk', 'Bakker', 'Janssen', 'Visser', 'Smit', 'Meijer']
-        },
-        'AU': {
-            'first': ['Jack', 'Oliver', 'William', 'James', 'Thomas', 'Liam', 'Noah', 'Ethan', 'Lucas', 'Mason'],
-            'last': ['Smith', 'Jones', 'Williams', 'Brown', 'Wilson', 'Taylor', 'Johnson', 'White', 'Martin', 'Anderson']
-        },
-        'ZA': {
-            'first': ['Nelson', 'Jacob', 'Cyril', 'Thabo', 'Kofi', 'Mandela', 'Desmond', 'Winnie', 'Graça', 'Miriam'],
-            'last': ['Mbeki', 'Zuma', 'Ramaphosa', 'Tambo', 'Machel', 'Tutu', 'Sisulu', 'Motlanthe', 'Msimang', 'Madikizela']
-        },
-        'EG': {
-            'first': ['Mohammed', 'Ahmed', 'Ali', 'Hassan', 'Omar', 'Mahmoud', 'Tarek', 'Khaled', 'Amr', 'Youssef'],
-            'last': ['Mohammed', 'Ahmed', 'Ali', 'Hassan', 'Mahmoud', 'Tarek', 'Khaled', 'Amr', 'Youssef', 'Ibrahim']
-        },
-        'NG': {
-            'first': ['Oluwaseun', 'Chukwudi', 'Adebayo', 'Olayinka', 'Emeka', 'Chidi', 'Adeola', 'Babatunde', 'Olumide', 'Segun'],
-            'last': ['Adeyemi', 'Ogunlade', 'Bamidele', 'Okonkwo', 'Eze', 'Nwosu', 'Okafor', 'Igwe', 'Umeh', 'Obi']
-        },
-        'XX': {
-            'first': ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Hayden', 'Harper'],
-            'last': ['Chen', 'Singh', 'Garcia', 'Wang', 'Perez', 'Nguyen', 'Patel', 'Smith', 'Jones', 'Williams']
-        }
+        'BD': {'first': ['Mohammad', 'Abdullah', 'Rafiq', 'Shahid', 'Kamal', 'Jamal', 'Rahim', 'Karim', 'Hasan', 'Ali'], 'last': ['Rahman', 'Ahmed', 'Islam', 'Hossain', 'Ali', 'Khan', 'Haque', 'Sarkar', 'Mia', 'Pramanik']},
+        'IN': {'first': ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Pranav', 'Dhruv', 'Aryan', 'Reyansh'], 'last': ['Sharma', 'Verma', 'Patel', 'Singh', 'Kumar', 'Gupta', 'Joshi', 'Gandhi', 'Prasad', 'Sinha']},
+        'US': {'first': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles'], 'last': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez']},
+        'GB': {'first': ['Oliver', 'George', 'Harry', 'Jack', 'Jacob', 'Charlie', 'Thomas', 'James', 'William', 'Muhammad'], 'last': ['Smith', 'Jones', 'Williams', 'Taylor', 'Brown', 'Davies', 'Evans', 'Thomas', 'Johnson', 'Roberts']},
+        'PK': {'first': ['Muhammad', 'Ali', 'Ahmed', 'Hassan', 'Usman', 'Omar', 'Zain', 'Hamza', 'Bilal', 'Raza'], 'last': ['Khan', 'Malik', 'Akhtar', 'Shah', 'Chaudhry', 'Butt', 'Qureshi', 'Sheikh', 'Abbasi', 'Javed']},
+        'ID': {'first': ['Ahmad', 'Budi', 'Citra', 'Dewi', 'Eko', 'Fitri', 'Gilang', 'Hana', 'Indra', 'Joko'], 'last': ['Siregar', 'Nasution', 'Harahap', 'Lubis', 'Batubara', 'Sinaga', 'Saragih', 'Ginting']},
+        'MY': {'first': ['Ahmad', 'Mohd', 'Abdullah', 'Ali', 'Hassan', 'Zainal', 'Kamarul', 'Azman', 'Razali', 'Idris'], 'last': ['Abdullah', 'Ali', 'Hassan', 'Ahmad', 'Mohd', 'Ismail', 'Othman', 'Rahman', 'Hussein', 'Yusof']},
+        'SG': {'first': ['Wei', 'Ming', 'Li', 'Xin', 'Yi', 'Jun', 'Hui', 'Ling', 'Yan', 'Hao'], 'last': ['Tan', 'Lim', 'Lee', 'Ng', 'Wong', 'Ong', 'Goh', 'Chua', 'Koh', 'Chew']},
+        'PH': {'first': ['Jose', 'Juan', 'Carlos', 'Ramon', 'Pedro', 'Andres', 'Emilio', 'Josefino', 'Ronaldo', 'Ferdinand'], 'last': ['Santos', 'Reyes', 'Cruz', 'Garcia', 'Martinez', 'Lopez', 'Gonzales', 'Flores', 'Perez', 'Ramos']},
+        'TH': {'first': ['Somchai', 'Somsak', 'Prasert', 'Kriangkrai', 'Pongsak', 'Nattaporn', 'Wichian', 'Somkiat', 'Suthep', 'Anuchit'], 'last': ['Somchai', 'Somsak', 'Prasert', 'Kriangkrai', 'Pongsak', 'Nattaporn', 'Wichian', 'Somkiat', 'Suthep', 'Anuchit']},
+        'VN': {'first': ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu', 'Dang', 'Bui', 'Do', 'Huynh'], 'last': ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu', 'Dang', 'Bui', 'Do', 'Huynh']},
+        'AE': {'first': ['Mohammed', 'Ahmed', 'Ali', 'Hassan', 'Omar', 'Khalid', 'Saeed', 'Abdulla', 'Rashid', 'Hamad'], 'last': ['Al Maktoum', 'Al Nahyan', 'Al Suwaidi', 'Al Tayer', 'Al Ghurair', 'Al Habtoor', 'Al Futtaim']},
+        'SA': {'first': ['Mohammed', 'Ahmed', 'Ali', 'Abdullah', 'Omar', 'Saud', 'Khalid', 'Sultan', 'Faisal', 'Nayef'], 'last': ['Al Saud', 'Al Thani', 'Al Otaibi', 'Al Harbi', 'Al Anzi', 'Al Shamrani', 'Al Mutairi']},
+        'TR': {'first': ['Mehmet', 'Ahmet', 'Ali', 'Mustafa', 'Hasan', 'Huseyin', 'Osman', 'Yusuf', 'Ibrahim', 'Ismail'], 'last': ['Yilmaz', 'Kaya', 'Demir', 'Celik', 'Aydin', 'Ozdemir', 'Arslan', 'Dogan', 'Kilic', 'Yildirim']},
+        'RU': {'first': ['Alexander', 'Dmitri', 'Ivan', 'Mikhail', 'Nikolai', 'Sergei', 'Vladimir', 'Yuri', 'Andrei', 'Pavel'], 'last': ['Ivanov', 'Petrov', 'Sidorov', 'Kuznetsov', 'Smirnov', 'Popov', 'Sokolov', 'Lebedev', 'Kozlov', 'Novikov']},
+        'BR': {'first': ['Joao', 'Jose', 'Maria', 'Antonio', 'Francisco', 'Carlos', 'Paulo', 'Pedro', 'Lucas', 'Gabriel'], 'last': ['Silva', 'Santos', 'Souza', 'Oliveira', 'Pereira', 'Costa', 'Rodrigues', 'Almeida', 'Nascimento', 'Lima']},
+        'JP': {'first': ['Haruto', 'Sota', 'Yuki', 'Riku', 'Hinata', 'Sakura', 'Hana', 'Yui', 'Mio', 'Rin'], 'last': ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato']},
+        'CN': {'first': ['Wei', 'Ming', 'Li', 'Xin', 'Yi', 'Jun', 'Hui', 'Ling', 'Yan', 'Hao'], 'last': ['Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Yang', 'Huang', 'Zhao', 'Wu', 'Zhou']},
+        'DE': {'first': ['Hans', 'Peter', 'Klaus', 'Wolfgang', 'Thomas', 'Andreas', 'Michael', 'Stefan', 'Markus', 'Daniel'], 'last': ['Muller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann']},
+        'FR': {'first': ['Jean', 'Pierre', 'Michel', 'Philippe', 'Alain', 'Bernard', 'Eric', 'Nicolas', 'David', 'Christophe'], 'last': ['Martin', 'Bernard', 'Dubois', 'Thomas', 'Robert', 'Richard', 'Petit', 'Durand', 'Leroy', 'Moreau']},
+        'IT': {'first': ['Marco', 'Giuseppe', 'Antonio', 'Giovanni', 'Francesco', 'Andrea', 'Luca', 'Mario', 'Paolo', 'Roberto'], 'last': ['Rossi', 'Russo', 'Ferrari', 'Esposito', 'Bianchi', 'Romano', 'Colombo', 'Ricci', 'Marino', 'Greco']},
+        'ES': {'first': ['Antonio', 'Jose', 'Manuel', 'Francisco', 'Juan', 'David', 'Javier', 'Carlos', 'Daniel', 'Luis'], 'last': ['Garcia', 'Rodriguez', 'Gonzalez', 'Fernandez', 'Lopez', 'Martinez', 'Sanchez', 'Perez', 'Gomez', 'Martin']},
+        'AU': {'first': ['Jack', 'Oliver', 'William', 'James', 'Thomas', 'Liam', 'Noah', 'Ethan', 'Lucas', 'Mason'], 'last': ['Smith', 'Jones', 'Williams', 'Brown', 'Wilson', 'Taylor', 'Johnson', 'White', 'Martin', 'Anderson']},
+        'ZA': {'first': ['Nelson', 'Jacob', 'Cyril', 'Thabo', 'Kofi', 'Mandela', 'Desmond', 'Winnie', 'Graça', 'Miriam'], 'last': ['Mbeki', 'Zuma', 'Ramaphosa', 'Tambo', 'Machel', 'Tutu', 'Sisulu', 'Motlanthe', 'Msimang', 'Madikizela']},
+        'EG': {'first': ['Mohammed', 'Ahmed', 'Ali', 'Hassan', 'Omar', 'Mahmoud', 'Tarek', 'Khaled', 'Amr', 'Youssef'], 'last': ['Mohammed', 'Ahmed', 'Ali', 'Hassan', 'Mahmoud', 'Tarek', 'Khaled', 'Amr', 'Youssef', 'Ibrahim']},
+        'NG': {'first': ['Oluwaseun', 'Chukwudi', 'Adebayo', 'Olayinka', 'Emeka', 'Chidi', 'Adeola', 'Babatunde', 'Olumide', 'Segun'], 'last': ['Adeyemi', 'Ogunlade', 'Bamidele', 'Okonkwo', 'Eze', 'Nwosu', 'Okafor', 'Igwe', 'Umeh', 'Obi']},
+        'XX': {'first': ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Hayden', 'Harper'], 'last': ['Chen', 'Singh', 'Garcia', 'Wang', 'Perez', 'Nguyen', 'Patel', 'Smith', 'Jones', 'Williams']}
     }
     
     @classmethod
     def get_random_name(cls, country_code):
         country_data = cls.NAMES_DATABASE.get(country_code, cls.NAMES_DATABASE['XX'])
-        first_name = random.choice(country_data['first'])
-        last_name = random.choice(country_data['last'])
-        return first_name, last_name
+        return random.choice(country_data['first']), random.choice(country_data['last'])
     
     @classmethod
     def get_full_name(cls, country_code):
@@ -330,8 +228,6 @@ class NameGenerator:
 
 # ==================== PROXY MANAGER ====================
 class ProxyManager:
-    """Manage proxy - Connects with Cliproxy and auto-switches based on country"""
-    
     def __init__(self):
         self.proxy_pool = []
         self.current_proxy = None
@@ -343,12 +239,13 @@ class ProxyManager:
         self.use_default_ip = True
         self.connected_ip_url = None
         self.ip_connected = False
-        self.base_username = 'ridolislam-region'
-        self.password = 'Ridol123'
-        self.host = 'sg.cliproxy.io'
-        self.port = '3010'
         self.user_id = None
-        self.session_id = None  # For sticky IP sessions
+        self.session_id = None
+        # User's own credentials (will be set during connection)
+        self.user_username = None
+        self.user_password = None
+        self.user_host = None
+        self.user_port = None
         
     def _get_country_from_phone(self, phone_number):
         phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
@@ -357,32 +254,29 @@ class ProxyManager:
                 return COUNTRY_CODES[code]
         return 'XX'
     
-    def connect_ip(self, ip_url):
-        """Connect to a specific IP URL and extract user ID"""
+    def connect_cliproxy(self, username, password, host, port, country_code):
+        """Connect to Cliproxy with user's own credentials"""
         try:
-            print(f"{Color.CYAN}[*] Connecting to IP: {ip_url}{Color.RESET}")
+            print(f"{Color.CYAN}[*] Connecting to Cliproxy with your credentials...{Color.RESET}")
             
-            # Extract user ID from URL - supports both region-XX and region-XX-st-... formats
-            match = re.search(r'ridolislam-region-([A-Z]+)(?:-st-[^-]+)?(?:-sid-[^-]+)?(?:-t-\d+)?:', ip_url)
-            if match:
-                self.user_id = match.group(1)
-                print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
-            else:
-                match2 = re.search(r'socks5://([^:]+):', ip_url)
-                if match2:
-                    self.user_id = match2.group(1)
-                    print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
-                else:
-                    self.user_id = 'Connected'
+            # Build proxy URL with user's credentials
+            proxy_url = f"socks5://{username}:{password}@{host}:{port}"
             
-            # Extract session ID if present (for sticky IP)
-            session_match = re.search(r'sid-([^:]+)', ip_url)
-            if session_match:
-                self.session_id = session_match.group(1)
-                print(f"{Color.CYAN}[+] Session ID: {self.session_id}{Color.RESET}")
+            # Store user credentials for auto country switching
+            self.user_username = username
+            self.user_password = password
+            self.user_host = host
+            self.user_port = port
+            
+            print(f"{Color.CYAN}[*] Generated Proxy URL for {country_code}{Color.RESET}")
+            print(f"{Color.DIM}   {proxy_url}{Color.RESET}")
+            
+            # Extract user ID
+            self.user_id = username
+            print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
             
             # Test the connection
-            test_proxies = {'http': ip_url, 'https': ip_url}
+            test_proxies = {'http': proxy_url, 'https': proxy_url}
             response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=15)
             
             if response.status_code == 200:
@@ -392,67 +286,54 @@ class ProxyManager:
                 print(f"{Color.CYAN}[+] Country: {data.get('countryCode', 'Unknown')}{Color.RESET}")
                 print(f"{Color.CYAN}[+] Region: {data.get('regionName', 'Unknown')}{Color.RESET}")
                 print(f"{Color.CYAN}[+] ISP: {data.get('isp', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] User ID: {self.user_id}{Color.RESET}")
+                print(f"{Color.CYAN}[+] User: {self.user_id}{Color.RESET}")
                 
-                self.connected_ip_url = ip_url
+                self.connected_ip_url = proxy_url
                 self.ip_connected = True
                 return True
             else:
-                print(f"{Color.RED}[-] Failed to connect to IP. Status: {response.status_code}{Color.RESET}")
+                print(f"{Color.RED}[-] Failed to connect. Status: {response.status_code}{Color.RESET}")
                 if response.status_code == 403:
-                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check your username format.{Color.RESET}")
-                    print(f"{Color.YELLOW}[!] Valid format: ridolislam-region-XX (e.g., ridolislam-region-BD){Color.RESET}")
-                    print(f"{Color.YELLOW}[!] Or sticky IP: ridolislam-region-XX-st-StateName-sid-SessionID-t-Duration{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check your credentials.{Color.RESET}")
                 return False
                 
         except Exception as e:
             print(f"{Color.RED}[-] Connection failed: {e}{Color.RESET}")
             return False
     
+    def get_proxy_for_country(self, country_code):
+        """Generate proxy URL for a specific country using user's credentials"""
+        if not self.ip_connected or not self.user_username:
+            print(f"{Color.YELLOW}[!] No IP connected. Please connect first.{Color.RESET}")
+            return None
+        
+        # Build URL with user's credentials and country
+        proxy_url = f"socks5://{self.user_username}:{self.user_password}@{self.user_host}:{self.user_port}"
+        return proxy_url
+    
     def disconnect_ip(self):
         self.connected_ip_url = None
         self.ip_connected = False
         self.user_id = None
-        self.session_id = None
+        self.user_username = None
+        self.user_password = None
+        self.user_host = None
+        self.user_port = None
         print(f"{Color.YELLOW}[!] IP Disconnected{Color.RESET}")
         return True
-    
-    def get_proxy_for_country(self, country_code):
-        """Generate proxy URL for a specific country"""
-        if not self.ip_connected or not self.connected_ip_url:
-            print(f"{Color.YELLOW}[!] No IP connected. Please connect first.{Color.RESET}")
-            return None
-        
-        # Extract base pattern and replace country code
-        # Handles both simple and sticky IP formats
-        base_url = self.connected_ip_url
-        
-        # If sticky IP format, preserve the session and state info
-        if '-st-' in base_url:
-            # Format: ridolislam-region-XX-st-StateName-sid-SessionID-t-Duration
-            new_url = re.sub(r'ridolislam-region-[A-Z]+', f'ridolislam-region-{country_code}', base_url)
-        else:
-            # Simple format: ridolislam-region-XX
-            new_url = re.sub(r'ridolislam-region-[A-Z]+', f'ridolislam-region-{country_code}', base_url)
-        
-        return new_url
     
     def refresh_proxy_pool(self):
         print(f"{Color.CYAN}[*] Refreshing proxy pool...{Color.RESET}")
         all_proxies = []
-        
         if self.connected_ip_url and self.ip_connected:
             all_proxies.append({'proxy': self.connected_ip_url, 'country': 'XX', 'type': 'socks5'})
             print(f"{Color.GREEN}[+] Added Connected IP to pool{Color.RESET}")
-        
         self.proxy_pool = all_proxies
         self.last_refresh = time.time()
-        
         if len(self.proxy_pool) == 0:
             print(f"{Color.YELLOW}[!] No proxies found. Please connect an IP first.{Color.RESET}")
         else:
             print(f"{Color.GREEN}[+] Total proxies: {len(self.proxy_pool)}{Color.RESET}")
-        
         return len(self.proxy_pool)
     
     def get_proxy_for_number(self, phone_number):
@@ -462,7 +343,7 @@ class ProxyManager:
         if self.connected_ip_url and self.ip_connected:
             proxy_url = self.get_proxy_for_country(country_code)
             if proxy_url:
-                print(f"{Color.GREEN}[+] Generated proxy for {country_code}: {proxy_url}{Color.RESET}")
+                print(f"{Color.GREEN}[+] Using your proxy for {country_code}{Color.RESET}")
                 self.current_proxy = proxy_url
                 self.current_country = country_code
                 self.proxy_history.append({
@@ -488,8 +369,7 @@ class ProxyManager:
             'using_default_ip': self.current_proxy is None,
             'ip_connected': self.ip_connected,
             'connected_ip': self.connected_ip_url,
-            'user_id': self.user_id,
-            'session_id': self.session_id
+            'user_id': self.user_id
         }
 
 # ==================== SOUND FUNCTIONS ====================
@@ -574,7 +454,7 @@ class TitleAnimation:
 {Color.CYAN}╠════════════════════════════════════════════════════════════╣{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}FACEBOOK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO CREATE{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}PROXY ROTATION{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO NAME{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}CLIPROXY{Color.RESET}    {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}YOUR PROXY{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}VOICE FEEDBACK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO COUNTRY{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╚════════════════════════════════════════════════════════════╝{Color.RESET}
 """
@@ -765,7 +645,7 @@ class BrowserPilotManager:
             if proxy:
                 os.environ['http_proxy'] = proxy
                 os.environ['https_proxy'] = proxy
-                print(f"{Color.CYAN}[*] Browser using proxy: {proxy}{Color.RESET}")
+                print(f"{Color.CYAN}[*] Browser using your proxy{Color.RESET}")
             else:
                 os.environ.pop('http_proxy', None)
                 os.environ.pop('https_proxy', None)
@@ -971,7 +851,7 @@ class FacebookAutomationEngine:
         print(f"\n{Color.CYAN}[+] Processing: {phone_number}{Color.RESET}")
         proxy, country_code = self.proxy_manager.get_proxy_for_number(phone_number)
         if proxy:
-            print(f"{Color.GREEN}[+] Proxy: {proxy}{Color.RESET}")
+            print(f"{Color.GREEN}[+] Using your proxy for {country_code}{Color.RESET}")
         else:
             print(f"{Color.YELLOW}[!] Using default IP{Color.RESET}")
         if not self.browser_manager.start_browser(headless=False, proxy=proxy):
@@ -1224,101 +1104,81 @@ class MainMenu:
         return provider if provider else 'None'
     
     def connect_cliproxy(self):
-        """Connect Cliproxy - Official documentation format"""
+        """Connect Cliproxy - User provides their own credentials"""
         print(f'\n  {Color.CYAN}--- Cliproxy Connection ---{Color.RESET}')
-        print(f'  {Color.DIM}Cliproxy Official Documentation Format:{Color.RESET}')
-        print(f'  {Color.DIM}Format 1 (Rotating IP): region-XX (e.g., region-BD, region-US){Color.RESET}')
-        print(f'  {Color.DIM}Format 2 (Sticky IP): region-XX-st-StateName-sid-SessionID-t-Duration{Color.RESET}')
-        print(f'  {Color.DIM}Example: socks5://ridolislam-region-US:Ridol123@sg.cliproxy.io:3010{Color.RESET}')
+        print(f'  {Color.DIM}Enter your Cliproxy credentials (from your own account){Color.RESET}')
+        print(f'  {Color.DIM}Format: socks5://username:password@host:port{Color.RESET}')
+        print(f'  {Color.DIM}Example: socks5://your-username:your-password@sg.cliproxy.io:3010{Color.RESET}\n')
         
-        print(f'\n  {Color.CYAN}Select Connection Type:{Color.RESET}')
-        print(f'  {Color.NEON_GREEN}[1]{Color.RESET} Rotating IP (Default)')
-        print(f'  {Color.NEON_GREEN}[2]{Color.RESET} Sticky IP (Fixed session)')
+        print(f'  {Color.CYAN}Select Country for initial connection:{Color.RESET}')
+        print(f'  {Color.DIM}1. 🇧🇩 Bangladesh (BD)    2. 🇮🇳 India (IN)    3. 🇵🇰 Pakistan (PK){Color.RESET}')
+        print(f'  {Color.DIM}4. 🇺🇸 USA (US)           5. 🇬🇧 UK (GB)       6. 🇸🇬 Singapore (SG){Color.RESET}')
+        print(f'  {Color.DIM}7. 🇦🇪 UAE (AE)           8. 🇸🇦 Saudi Arabia (SA)  9. 🇹🇷 Turkey (TR){Color.RESET}')
+        print(f'  {Color.DIM}10. 🇩🇪 Germany (DE)      11. 🇫🇷 France (FR)  12. 🇮🇹 Italy (IT){Color.RESET}')
+        print(f'  {Color.DIM}13. 🇪🇸 Spain (ES)        14. 🇳🇱 Netherlands (NL)  15. 🇦🇺 Australia (AU){Color.RESET}')
+        print(f'  {Color.DIM}16. 🇧🇷 Brazil (BR)       17. 🇷🇺 Russia (RU)  18. 🇯🇵 Japan (JP){Color.RESET}')
+        print(f'  {Color.DIM}19. 🇰🇷 South Korea (KR)  20. 🇨🇳 China (CN)   21. 🇲🇾 Malaysia (MY){Color.RESET}')
+        print(f'  {Color.DIM}22. 🇮🇩 Indonesia (ID)    23. 🇵🇭 Philippines (PH)  24. 🇹🇭 Thailand (TH){Color.RESET}')
+        print(f'  {Color.DIM}25. 🇻🇳 Vietnam (VN)      26. 🇪🇬 Egypt (EG)   27. 🇳🇬 Nigeria (NG){Color.RESET}')
+        print(f'  {Color.DIM}28. 🇿🇦 South Africa (ZA) 29. 🇲🇽 Mexico (MX)  30. 🇦🇷 Argentina (AR){Color.RESET}')
+        print(f'  {Color.DIM}31. 🔧 Manual Entry{Color.RESET}')
         
-        conn_type = input(f'\n  {Color.CYAN}Enter choice (1-2, default 1): {Color.RESET}').strip()
+        country_choice = input(f'\n  {Color.CYAN}Enter country number (1-31): {Color.RESET}').strip()
         
-        if conn_type == '2':
-            # Sticky IP
-            print(f'\n  {Color.CYAN}Sticky IP Configuration:{Color.RESET}')
-            region = input(f'  {Color.CYAN}Country Code (e.g., BD, US, IN): {Color.RESET}').strip().upper()
-            state = input(f'  {Color.CYAN}State (e.g., California, Dhaka): {Color.RESET}').strip()
-            session_id = input(f'  {Color.CYAN}Session ID (e.g., abc123): {Color.RESET}').strip()
-            duration = input(f'  {Color.CYAN}Duration in minutes (e.g., 15): {Color.RESET}').strip()
-            
-            if not region:
+        country_map = {
+            '1': 'BD', '2': 'IN', '3': 'PK', '4': 'US', '5': 'GB',
+            '6': 'SG', '7': 'AE', '8': 'SA', '9': 'TR', '10': 'DE',
+            '11': 'FR', '12': 'IT', '13': 'ES', '14': 'NL', '15': 'AU',
+            '16': 'BR', '17': 'RU', '18': 'JP', '19': 'KR', '20': 'CN',
+            '21': 'MY', '22': 'ID', '23': 'PH', '24': 'TH', '25': 'VN',
+            '26': 'EG', '27': 'NG', '28': 'ZA', '29': 'MX', '30': 'AR'
+        }
+        
+        if country_choice == '31':
+            country_code = input(f'  {Color.CYAN}Enter country code (e.g., BD, US, IN): {Color.RESET}').strip().upper()
+            if not country_code:
                 print(f'  {Color.RED}[-] Country code required!{Color.RESET}')
                 press_enter()
                 return
-            
-            # Build sticky IP URL
-            proxy_url = f"socks5://ridolislam-region-{region}-st-{state}-sid-{session_id}-t-{duration}:Ridol123@sg.cliproxy.io:3010"
+        elif country_choice in country_map:
+            country_code = country_map[country_choice]
         else:
-            # Rotating IP (Default)
-            print(f'\n  {Color.CYAN}Select Country:{Color.RESET}')
-            print(f'  {Color.DIM}1. 🇧🇩 Bangladesh (BD)    2. 🇮🇳 India (IN)    3. 🇵🇰 Pakistan (PK){Color.RESET}')
-            print(f'  {Color.DIM}4. 🇺🇸 USA (US)           5. 🇬🇧 UK (GB)       6. 🇸🇬 Singapore (SG){Color.RESET}')
-            print(f'  {Color.DIM}7. 🇦🇪 UAE (AE)           8. 🇸🇦 Saudi Arabia (SA)  9. 🇹🇷 Turkey (TR){Color.RESET}')
-            print(f'  {Color.DIM}10. 🇩🇪 Germany (DE)      11. 🇫🇷 France (FR)  12. 🇮🇹 Italy (IT){Color.RESET}')
-            print(f'  {Color.DIM}13. 🇪🇸 Spain (ES)        14. 🇳🇱 Netherlands (NL)  15. 🇦🇺 Australia (AU){Color.RESET}')
-            print(f'  {Color.DIM}16. 🇧🇷 Brazil (BR)       17. 🇷🇺 Russia (RU)  18. 🇯🇵 Japan (JP){Color.RESET}')
-            print(f'  {Color.DIM}19. 🇰🇷 South Korea (KR)  20. 🇨🇳 China (CN)   21. 🇲🇾 Malaysia (MY){Color.RESET}')
-            print(f'  {Color.DIM}22. 🇮🇩 Indonesia (ID)    23. 🇵🇭 Philippines (PH)  24. 🇹🇭 Thailand (TH){Color.RESET}')
-            print(f'  {Color.DIM}25. 🇻🇳 Vietnam (VN)      26. 🇪🇬 Egypt (EG)   27. 🇳🇬 Nigeria (NG){Color.RESET}')
-            print(f'  {Color.DIM}28. 🇿🇦 South Africa (ZA) 29. 🇲🇽 Mexico (MX)  30. 🇦🇷 Argentina (AR){Color.RESET}')
-            print(f'  {Color.DIM}31. 🔧 Manual Entry{Color.RESET}')
-            
-            country_choice = input(f'\n  {Color.CYAN}Enter country number (1-31): {Color.RESET}').strip()
-            
-            country_map = {
-                '1': 'BD', '2': 'IN', '3': 'PK', '4': 'US', '5': 'GB',
-                '6': 'SG', '7': 'AE', '8': 'SA', '9': 'TR', '10': 'DE',
-                '11': 'FR', '12': 'IT', '13': 'ES', '14': 'NL', '15': 'AU',
-                '16': 'BR', '17': 'RU', '18': 'JP', '19': 'KR', '20': 'CN',
-                '21': 'MY', '22': 'ID', '23': 'PH', '24': 'TH', '25': 'VN',
-                '26': 'EG', '27': 'NG', '28': 'ZA', '29': 'MX', '30': 'AR'
-            }
-            
-            if country_choice == '31':
-                region = input(f'  {Color.CYAN}Enter country code (e.g., BD, US, IN): {Color.RESET}').strip().upper()
-                if not region:
-                    print(f'  {Color.RED}[-] Country code required!{Color.RESET}')
-                    press_enter()
-                    return
-            elif country_choice in country_map:
-                region = country_map[country_choice]
-            else:
-                print(f'  {Color.RED}[-] Invalid choice!{Color.RESET}')
-                press_enter()
-                return
-            
-            # Build rotating IP URL
-            proxy_url = f"socks5://ridolislam-region-{region}:Ridol123@sg.cliproxy.io:3010"
+            print(f'  {Color.RED}[-] Invalid choice!{Color.RESET}')
+            press_enter()
+            return
         
-        print(f'\n  {Color.GREEN}[+] Generated Proxy URL{Color.RESET}')
-        print(f'  {Color.DIM}   {proxy_url}{Color.RESET}')
+        print(f'\n  {Color.CYAN}Enter your Cliproxy credentials:{Color.RESET}')
+        print(f'  {Color.DIM}Get these from your Cliproxy dashboard{Color.RESET}')
         
-        print(f'\n  {Color.CYAN}[*] Connecting...{Color.RESET}')
+        username = input(f'  {Color.CYAN}Username: {Color.RESET}').strip()
+        password = input(f'  {Color.CYAN}Password: {Color.RESET}').strip()
+        host = input(f'  {Color.CYAN}Host (e.g., sg.cliproxy.io): {Color.RESET}').strip()
+        port = input(f'  {Color.CYAN}Port (e.g., 3010): {Color.RESET}').strip()
         
-        success = self.proxy_manager.connect_ip(proxy_url)
+        if not all([username, password, host, port]):
+            print(f'  {Color.RED}[-] All fields are required!{Color.RESET}')
+            press_enter()
+            return
+        
+        # Connect with user's credentials
+        success = self.proxy_manager.connect_cliproxy(username, password, host, port, country_code)
         
         if success:
             print(f'  {Color.GREEN}[+] Cliproxy Connected Successfully!{Color.RESET}')
             print(f'  {Color.CYAN}[+] Auto country switching enabled!{Color.RESET}')
-            print(f'  {Color.CYAN}[+] User ID: {self.proxy_manager.user_id}{Color.RESET}')
+            print(f'  {Color.CYAN}[+] Your proxy will be used for all countries{Color.RESET}')
             self.audio.speak_ip_connected()
             
             config = load_json(CONFIG_FILE)
-            config['proxy_provider'] = 'Cliproxy'
-            config['proxy_url'] = proxy_url
-            config['proxy_user_id'] = self.proxy_manager.user_id
+            config['proxy_provider'] = 'Cliproxy (Your Account)'
+            config['proxy_username'] = username
+            config['proxy_country'] = country_code
             save_json(CONFIG_FILE, config)
             
-            self.proxy_manager.connected_ip_url = proxy_url
             self.proxy_manager.ip_connected = True
         else:
             print(f'  {Color.RED}[-] Failed to connect. Please check your credentials.{Color.RESET}')
             print(f'  {Color.YELLOW}[!] Make sure your Cliproxy account is active{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Valid format: ridolislam-region-XX (e.g., ridolislam-region-BD){Color.RESET}')
         
         press_enter()
     
@@ -1328,12 +1188,10 @@ class MainMenu:
         print(f'\n  {Color.CYAN}--- Connected IP Status ---{Color.RESET}')
         if proxy_stats.get('ip_connected'):
             print(f'  {Color.GREEN}[+] IP Connected: Yes{Color.RESET}')
-            print(f'  {Color.CYAN}Provider: {config.get("proxy_provider", "Unknown")}{Color.RESET}')
+            print(f'  {Color.CYAN}Provider: {config.get("proxy_provider", "Your Proxy")}{Color.RESET}')
             print(f'  {Color.CYAN}User ID: {proxy_stats.get("user_id", "Unknown")}{Color.RESET}')
-            if proxy_stats.get('session_id'):
-                print(f'  {Color.CYAN}Session ID: {proxy_stats.get("session_id")}{Color.RESET}')
             print(f'  {Color.CYAN}Connected IP: {proxy_stats.get("connected_ip", "None")}{Color.RESET}')
-            print(f'  {Color.CYAN}Auto Country: Enabled (will switch based on phone number){Color.RESET}')
+            print(f'  {Color.CYAN}Auto Country: Enabled (your proxy used for all){Color.RESET}')
             try:
                 proxy_url = proxy_stats.get('connected_ip')
                 if proxy_url:
@@ -1350,7 +1208,7 @@ class MainMenu:
                 print(f'  {Color.YELLOW}[!] Could not fetch IP details: {e}{Color.RESET}')
         else:
             print(f'  {Color.RED}[-] No IP Connected{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Please connect a proxy first{Color.RESET}')
+            print(f'  {Color.YELLOW}[!] Please connect your proxy first{Color.RESET}')
         press_enter()
     
     def disconnect_ip(self):
@@ -1360,8 +1218,7 @@ class MainMenu:
             self.audio.speak_ip_disconnected()
             config = load_json(CONFIG_FILE)
             config['proxy_provider'] = 'None'
-            config['proxy_url'] = ''
-            config['proxy_user_id'] = ''
+            config['proxy_username'] = ''
             save_json(CONFIG_FILE, config)
         else:
             print(f'  {Color.YELLOW}[!] No IP to disconnect{Color.RESET}')
@@ -1372,11 +1229,11 @@ class MainMenu:
         print(f'\n  {Color.CYAN}--- Testing Current IP ---{Color.RESET}')
         if not proxy_stats.get('ip_connected'):
             print(f'  {Color.RED}[-] No IP Connected!{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Please connect a proxy first{Color.RESET}')
+            print(f'  {Color.YELLOW}[!] Please connect your proxy first{Color.RESET}')
             press_enter()
             return
         proxy_url = proxy_stats.get('connected_ip')
-        print(f'  {Color.CYAN}[*] Testing: {proxy_url}{Color.RESET}')
+        print(f'  {Color.CYAN}[*] Testing your proxy...{Color.RESET}')
         try:
             proxies = {'http': proxy_url, 'https': proxy_url}
             start_time = time.time()
@@ -1384,7 +1241,7 @@ class MainMenu:
             response_time = (time.time() - start_time) * 1000
             if response.status_code == 200:
                 data = response.json()
-                print(f'  {Color.GREEN}[+] IP is Working!{Color.RESET}')
+                print(f'  {Color.GREEN}[+] Your Proxy is Working!{Color.RESET}')
                 print(f'  {Color.CYAN}Response Time: {response_time:.0f}ms{Color.RESET}')
                 print(f'  {Color.CYAN}IP Address: {data.get("query", "Unknown")}{Color.RESET}')
                 print(f'  {Color.CYAN}Country: {data.get("country", "Unknown")} ({data.get("countryCode", "XX")}){Color.RESET}')
@@ -1393,9 +1250,9 @@ class MainMenu:
                 print(f'  {Color.CYAN}ISP: {data.get("isp", "Unknown")}{Color.RESET}')
                 self.audio.speak('IP test successful')
             else:
-                print(f'  {Color.RED}[-] IP test failed. Status: {response.status_code}{Color.RESET}')
+                print(f'  {Color.RED}[-] Proxy test failed. Status: {response.status_code}{Color.RESET}')
         except requests.exceptions.Timeout:
-            print(f'  {Color.RED}[-] Connection timeout! IP may be slow or down.{Color.RESET}')
+            print(f'  {Color.RED}[-] Connection timeout! Your proxy may be slow or down.{Color.RESET}')
         except Exception as e:
             print(f'  {Color.RED}[-] Test error: {e}{Color.RESET}')
         press_enter()
@@ -1409,13 +1266,13 @@ class MainMenu:
             user_id = proxy_stats.get('user_id', 'None')
             
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}IP MANAGEMENT - CLIPROXY{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}IP MANAGEMENT - YOUR PROXY{Color.RESET}{Color.CYAN}                       ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Status: {ip_color}{ip_status}{Color.RESET}{Color.CYAN}                                     ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  User ID: {Color.WHITE}{user_id}{Color.RESET}{Color.CYAN}                                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Auto Country: {Color.WHITE}Enabled (based on phone number){Color.RESET}{Color.CYAN}           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Your ID: {Color.WHITE}{user_id}{Color.RESET}{Color.CYAN}                                         ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Auto Country: {Color.WHITE}Enabled (your proxy used for all){Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect Cliproxy                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect Your Proxy                 {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} View Connected IP                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Disconnect IP                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Test Current IP                    {Color.CYAN}║{Color.RESET}
@@ -1680,8 +1537,8 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Browser: {Color.DIM}{"● Ready" if self.browser_manager.browser_available else "○ Not installed"}{Color.RESET}{Color.CYAN}    ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  IP Connected: {Color.DIM}{"Yes" if proxy_stats.get("ip_connected") else "No"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  User ID: {Color.DIM}{proxy_stats.get("user_id", "None")}{Color.RESET}{Color.CYAN}                     ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Auto Country: {Color.DIM}Enabled (based on phone number){Color.RESET}{Color.CYAN}           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Your ID: {Color.DIM}{proxy_stats.get("user_id", "None")}{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Auto Country: {Color.DIM}Enabled (your proxy used for all){Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Folder Status: {Color.DIM}{"✓ Exists" if folder_exists else "✗ Not found"}{Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         
@@ -1699,8 +1556,8 @@ class MainMenu:
             press_enter()
             return
         if not proxy_stats.get('ip_connected'):
-            print(f'\n{Color.YELLOW}[!] No IP connected! Please connect Cliproxy first.{Color.RESET}')
-            print(f'  {Color.DIM}Go to IP Management -> Connect Cliproxy{Color.RESET}')
+            print(f'\n{Color.YELLOW}[!] No IP connected! Please connect your proxy first.{Color.RESET}')
+            print(f'  {Color.DIM}Go to IP Management -> Connect Your Proxy{Color.RESET}')
             press_enter()
             return
         
@@ -1736,7 +1593,7 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Not installed"}{Color.RESET}{Color.CYAN} ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Pool: {Color.WHITE}{proxy_stats["total"]} proxies{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} IP Connected: {Color.WHITE}{'Yes' if proxy_stats.get('ip_connected') else 'No'}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} User ID: {Color.WHITE}{proxy_stats.get('user_id', 'None')}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Your ID: {Color.WHITE}{proxy_stats.get('user_id', 'None')}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Auto Country: {Color.WHITE}Enabled{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
@@ -1859,21 +1716,22 @@ class MainMenu:
     def menu_help(self):
         self.show_header()
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - CLIPROXY SETUP{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - YOUR PROXY SETUP{Color.RESET}{Color.CYAN}                          ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Setup Cliproxy{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Setup Your Proxy{Color.RESET}{Color.CYAN}                      ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  1. Go to IP Management (Option 2)                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  2. Select "Connect Cliproxy" (Option 1)             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  3. Choose connection type:                          {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     - Rotating IP: region-XX (e.g., region-BD)       {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     - Sticky IP: region-XX-st-StateName-sid-...      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  4. Bot will auto-detect country from phone number   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  5. Start the bot (Option 5)                        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  2. Select "Connect Your Proxy" (Option 1)           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  3. Enter your Cliproxy credentials:                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     - Username (from your Cliproxy account)          {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     - Password (from your Cliproxy account)          {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     - Host (e.g., sg.cliproxy.io)                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     - Port (e.g., 3010)                              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  4. Select country for initial connection            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  5. Bot will use your proxy for all countries        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Rotating IP: Changes IP per request              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Sticky IP: Same IP for duration                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - Auto country switching based on phone number     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Use your own Cliproxy account                     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Auto country detection from phone number         {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Auto name generation by country                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - OTP retry with voice feedback                    {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Stop bot with '0' key                            {Color.CYAN}║{Color.RESET}
