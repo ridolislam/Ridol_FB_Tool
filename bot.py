@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v6.0 - Proxy Rotation & Auto Name Generation
+Ridol FB Tool v6.5 - Proxy Rotation & Auto Name Generation
 Author: Ridol Islam
 License: MIT
 """
@@ -30,7 +30,7 @@ SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
 CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
 LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
-APP_VERSION = 'v6.0'
+APP_VERSION = 'v6.5'
 
 # ==================== PROXY CONFIG ====================
 PROXY_SOURCES = {
@@ -257,6 +257,7 @@ class ProxyManager:
         self.api_key = PROXY_API_KEY
         self.last_refresh = 0
         self.refresh_interval = 300  # 5 minutes
+        self.use_default_ip = True  # Always use default IP as fallback
         
     def _get_country_from_ip(self, ip):
         """Get country from IP using free API"""
@@ -392,7 +393,9 @@ class ProxyManager:
         if not self.proxy_pool:
             self.refresh_proxy_pool()
             if not self.proxy_pool:
-                print(f"{Color.YELLOW}[!] No proxies available. Using direct connection.{Color.RESET}")
+                print(f"{Color.YELLOW}[!] No proxies available. Using default IP.{Color.RESET}")
+                self.current_proxy = None
+                self.current_country = 'XX'
                 return None, country_code
         
         # Find proxy matching country
@@ -402,9 +405,11 @@ class ProxyManager:
             selected = random.choice(matching_proxies)
             print(f"{Color.GREEN}[+] Using proxy from {selected['country']} (matching number){Color.RESET}")
         else:
-            # If no match, pick random proxy
-            selected = random.choice(self.proxy_pool)
-            print(f"{Color.YELLOW}[!] No proxy for {country_code}, using random proxy from {selected['country']}{Color.RESET}")
+            # If no match, use default IP
+            print(f"{Color.YELLOW}[!] No proxy for {country_code}, using default IP{Color.RESET}")
+            self.current_proxy = None
+            self.current_country = 'XX'
+            return None, country_code
         
         self.current_proxy = selected['proxy']
         self.current_country = selected['country']
@@ -456,7 +461,8 @@ class ProxyManager:
             'current': self.current_proxy,
             'country': self.current_country,
             'history_count': len(self.proxy_history),
-            'last_refresh': self.last_refresh
+            'last_refresh': self.last_refresh,
+            'using_default_ip': self.current_proxy is None
         }
 
 # ==================== SOUND FUNCTIONS ====================
@@ -754,6 +760,11 @@ class AudioEngine:
     def speak_bot_complete(self): self.speak('All tasks completed', 'high')
     def speak_goodbye(self): self.speak('Goodbye, stay secure', 'high')
     def speak_account_created(self): self.speak('Account created')
+    def speak_folder_found(self): self.speak('Folder found', 'high')
+    def speak_folder_not_found(self): self.speak('Your folder not exists', 'high')
+    def speak_content_found(self): self.speak('Content found', 'high')
+    def speak_content_not_found(self): self.speak('Content not found', 'high')
+    def speak_stopping(self): self.speak('Stopping operation', 'high')
     
     def get_status(self):
         bg_status = 'Playing' if self.bg_playing else 'Stopped'
@@ -1088,9 +1099,9 @@ class FacebookAutomationEngine:
         if proxy:
             print(f"{Color.GREEN}[+] Proxy: {proxy} (Country: {self.proxy_manager.current_country}){Color.RESET}")
         else:
-            print(f"{Color.YELLOW}[!] No proxy available, using direct connection{Color.RESET}")
+            print(f"{Color.YELLOW}[!] No proxy available, using default IP{Color.RESET}")
         
-        # Start browser with proxy
+        # Start browser with proxy (or without if None)
         if not self.browser_manager.start_browser(headless=False, proxy=proxy):
             print(f"{Color.RED}  [-] Failed to start browser!{Color.RESET}")
             self.stats['failed'] += 1
@@ -1207,6 +1218,8 @@ class FacebookAutomationEngine:
         print(f"\n{Color.YELLOW}[!] Stopping automation...{Color.RESET}")
         self.is_running = False
         self.browser_manager.close_browser()
+        if self.audio:
+            self.audio.speak_stopping()
 
 # ==================== FACEBOOK BOT ====================
 class FacebookBot:
@@ -1239,6 +1252,7 @@ class FacebookBot:
         print(f'{Color.CYAN}IP Rotation: {"Enabled" if FB_CONFIG["ROTATE_IP"] else "Disabled"}{Color.RESET}')
         print(f'{Color.CYAN}Device Spoofing: {"Enabled" if FB_CONFIG["ROTATE_DEVICE"] else "Disabled"}{Color.RESET}')
         print(f'{Color.YELLOW}[!] Press Ctrl+C to stop the bot anytime{Color.RESET}')
+        print(f'{Color.YELLOW}[!] Press 0 and Enter to stop and go to main menu{Color.RESET}')
         print("-" * 60)
         
         self.automation_engine = FacebookAutomationEngine()
@@ -1319,6 +1333,8 @@ class MainMenu:
         self.config = load_json(CONFIG_FILE)
         self.data_dir = self.config.get('data_dir', '/storage/emulated/0/Download/Ridol FB Tool')
         self.browser_ready = self.config.get('browser_ready', False)
+        self.bot_running = False
+        self.bot_thread = None
         
         # Load proxy API key from config
         api_key = self.config.get('proxy_api_key', '')
@@ -1365,6 +1381,23 @@ class MainMenu:
         TitleAnimation.compact_banner()
         time.sleep(0.5)
     
+    def check_stop_input(self):
+        """Check for stop input during bot operation"""
+        while self.bot_running:
+            try:
+                if sys.stdin.isatty():
+                    inp = sys.stdin.read(1)
+                    if inp == '0':
+                        print(f"\n\n{Color.YELLOW}[!] Stop command received! Stopping bot...{Color.RESET}")
+                        self.bot_running = False
+                        if self.bot and self.bot.automation_engine:
+                            self.bot.automation_engine.stop()
+                        self.audio.speak_stopping()
+                        break
+            except:
+                pass
+            time.sleep(0.5)
+    
     def menu_main(self):
         self.welcome_screen()
         while True:
@@ -1407,6 +1440,7 @@ class MainMenu:
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Total: {Color.WHITE}{proxy_stats['total']}{Color.RESET}  Current: {Color.WHITE}{proxy_stats.get('current', 'None')}{Color.RESET}  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Country: {Color.WHITE}{proxy_stats.get('country', 'None')}{Color.RESET}  History: {Color.WHITE}{proxy_stats['history_count']}{Color.RESET}        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Using Default IP: {Color.WHITE}{'Yes' if proxy_stats.get('using_default_ip') else 'No'}{Color.RESET}{Color.CYAN}        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Refresh Proxy Pool               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Set API Key (9proxy/webshare)   {Color.CYAN}║{Color.RESET}
@@ -1422,7 +1456,7 @@ class MainMenu:
                 if count > 0:
                     print(f'  {Color.GREEN}[+] Proxy pool refreshed! {count} proxies available{Color.RESET}')
                 else:
-                    print(f'  {Color.RED}[-] No proxies found. Please check API key.{Color.RESET}')
+                    print(f'  {Color.YELLOW}[!] No proxies found. Will use default IP.{Color.RESET}')
                 press_enter()
             elif choice == '2':
                 api_key = input(f'  {Color.CYAN}Enter 9proxy/webshare API key: {Color.RESET}').strip()
@@ -1565,19 +1599,58 @@ class MainMenu:
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}DATA FOLDER{Color.RESET}{Color.CYAN}                                   ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Current Path: {Color.DIM}{self.data_dir}{Color.RESET}          {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Set New Path                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Create Required Files          {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} View File Contents             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Select Folder (Check/Connect)    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} View Folder Contents             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Set New Path                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Create Required Files           {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
-                print(f'\n  {Color.CYAN}Current Data Directory:{Color.RESET}')
-                print(f'  {Color.DIM}{self.data_dir}{Color.RESET}')
+                # Select/Connect folder - check if exists
+                folder_path = self.data_dir
+                if os.path.exists(folder_path):
+                    print(f'\n  {Color.GREEN}[+] Folder found: {folder_path}{Color.RESET}')
+                    self.audio.speak_folder_found()
+                    # Check for numbers.txt
+                    numbers_file = os.path.join(folder_path, 'numbers.txt')
+                    if os.path.exists(numbers_file):
+                        count = sum(1 for _ in open(numbers_file) if _.strip() and not _.startswith('#'))
+                        print(f'  {Color.CYAN}[*] numbers.txt contains {count} numbers{Color.RESET}')
+                    else:
+                        print(f'  {Color.YELLOW}[!] numbers.txt not found{Color.RESET}')
+                else:
+                    print(f'\n  {Color.RED}[-] Folder not found: {folder_path}{Color.RESET}')
+                    self.audio.speak_folder_not_found()
                 press_enter()
             elif choice == '2':
+                # View folder contents - show files and count
+                folder_path = self.data_dir
+                if os.path.exists(folder_path):
+                    print(f'\n  {Color.GREEN}[+] Folder contents: {folder_path}{Color.RESET}')
+                    self.audio.speak_content_found()
+                    files = os.listdir(folder_path)
+                    txt_files = [f for f in files if f.endswith('.txt')]
+                    
+                    if txt_files:
+                        print(f'  {Color.CYAN}[*] Found {len(txt_files)} text files:{Color.RESET}')
+                        for txt in txt_files:
+                            filepath = os.path.join(folder_path, txt)
+                            try:
+                                with open(filepath, 'r') as f:
+                                    lines = [l.strip() for l in f if l.strip() and not l.startswith('#')]
+                                    print(f'    {Color.WHITE}{txt}{Color.RESET}: {len(lines)} entries')
+                            except:
+                                print(f'    {Color.WHITE}{txt}{Color.RESET}: (error reading)')
+                    else:
+                        print(f'  {Color.YELLOW}[!] No .txt files found{Color.RESET}')
+                        self.audio.speak_content_not_found()
+                else:
+                    print(f'\n  {Color.RED}[-] Folder not found: {folder_path}{Color.RESET}')
+                    self.audio.speak_folder_not_found()
+                press_enter()
+            elif choice == '3':
                 new_path = input(f'  {Color.CYAN}Enter new data directory path: {Color.RESET}').strip()
                 if new_path:
                     self.data_dir = new_path
@@ -1585,7 +1658,7 @@ class MainMenu:
                     save_json(CONFIG_FILE, self.config)
                     print(f'  {Color.GREEN}[+] Data directory updated{Color.RESET}')
                 press_enter()
-            elif choice == '3':
+            elif choice == '4':
                 os.makedirs(self.data_dir, exist_ok=True)
                 for fname in ['numbers.txt', 'names.txt', 'proxies.txt']:
                     fpath = os.path.join(self.data_dir, fname)
@@ -1594,24 +1667,15 @@ class MainMenu:
                             f.write(f'# {fname} - Add your data here\n')
                 print(f'  {Color.GREEN}[+] Required files created in {self.data_dir}{Color.RESET}')
                 press_enter()
-            elif choice == '4':
-                files = ['numbers.txt', 'names.txt', 'proxies.txt']
-                for fname in files:
-                    fpath = os.path.join(self.data_dir, fname)
-                    if os.path.exists(fpath):
-                        print(f'\n  {Color.CYAN}--- {fname} ---{Color.RESET}')
-                        with open(fpath, 'r') as f:
-                            lines = f.readlines()[:10]
-                            for line in lines:
-                                print(f'    {line.strip()}')
-                        if len(open(fpath).readlines()) > 10:
-                            print(f'    {Color.DIM}... and more{Color.RESET}')
-                press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
     
     def menu_start_bot(self):
         self.show_header()
+        
+        # Check if folder exists
+        folder_path = self.data_dir
+        folder_exists = os.path.exists(folder_path)
         
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT - PROXY + AUTO NAME{Color.RESET}{Color.CYAN}                     ║{Color.RESET}
@@ -1623,8 +1687,14 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  Auto Name: {Color.DIM}{"ON (Country based)"}{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  OTP Retry: {Color.DIM}{FB_CONFIG["MAX_OTP_RETRIES"]} times{Color.RESET}{Color.CYAN}                   ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  IP Rotation: {Color.DIM}{"ON" if FB_CONFIG["ROTATE_IP"] else "OFF"}{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Device Rotation: {Color.DIM}{"ON" if FB_CONFIG["ROTATE_DEVICE"] else "OFF"}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Folder Status: {Color.DIM}{"✓ Exists" if folder_exists else "✗ Not found"}{Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
+        
+        if not folder_exists:
+            print(f'\n{Color.RED}[-] Data folder not found! Please set correct folder path in Data Folder menu.{Color.RESET}')
+            self.audio.speak_folder_not_found()
+            press_enter()
+            return
         
         if not self.license.get_license_key():
             print(f'\n{Color.RED}[-] No license key set! Please set license first.{Color.RESET}')
@@ -1637,15 +1707,6 @@ class MainMenu:
             press_enter()
             return
         
-        # Check proxy pool
-        if self.proxy_manager.get_proxy_stats()["total"] == 0:
-            print(f'\n{Color.YELLOW}[!] No proxies in pool. Refreshing...{Color.RESET}')
-            self.proxy_manager.refresh_proxy_pool()
-            if self.proxy_manager.get_proxy_stats()["total"] == 0:
-                print(f'\n{Color.RED}[-] No proxies available! Please set API key or add proxies manually.{Color.RESET}')
-                press_enter()
-                return
-        
         workers = input(f'\n {Color.CYAN}Number of workers [1-5, default 1]: {Color.RESET}').strip()
         try:
             workers = int(workers) if workers else 1
@@ -1653,12 +1714,24 @@ class MainMenu:
         except:
             workers = 1
         
+        print(f'\n{Color.YELLOW}[!] Press 0 and Enter to stop the bot and return to main menu{Color.RESET}')
         print(f'\n{Color.YELLOW}[!] Press Ctrl+C to stop the bot anytime{Color.RESET}')
-        press_enter()
+        
+        # Start stop listener thread
+        self.bot_running = True
+        stop_thread = threading.Thread(target=self.check_stop_input, daemon=True)
+        stop_thread.start()
         
         self.bot = FacebookBot(self.data_dir, self.license.get_license_key(), self.audio)
         self.audio.speak_bot_starting()
         self.bot.run_bot(workers)
+        
+        self.bot_running = False
+        
+        # Wait for stop thread to finish
+        time.sleep(1)
+        
+        print(f'\n{Color.GREEN}[+] Returned to main menu{Color.RESET}')
         press_enter()
     
     def menu_status(self):
@@ -1670,8 +1743,9 @@ class MainMenu:
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Not installed"}{Color.RESET}{Color.CYAN} ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Pool: {Color.WHITE}{proxy_stats["total"]} proxies{Color.RESET}{Color.CYAN}              ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Current Proxy: {Color.WHITE}{proxy_stats.get("current", "None")}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Country: {Color.WHITE}{proxy_stats.get("country", "None")}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Current Proxy: {Color.WHITE}{proxy_stats.get("current", "Default IP")}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Country: {Color.WHITE}{proxy_stats.get("country", "XX")}{Color.RESET}{Color.CYAN}            ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Using Default IP: {Color.WHITE}{'Yes' if proxy_stats.get('using_default_ip') else 'No'}{Color.RESET}{Color.CYAN}      ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Auto Name: {Color.WHITE}{"Enabled (Country based)"}{Color.RESET}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
@@ -1817,16 +1891,21 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  - Country detection from phone number            {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Auto-generates local names per country         {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Matches proxy country with number country      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - No Shizuku required!                           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Uses default IP if proxy fails                 {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Uses termux-browser-pilot                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Real Firefox/Chromium browser                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Human-like typing & clicks                    {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - OTP Retry: 3 times                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - No ADB or device management required           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Voice feedback for folder operations           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Stop bot with '0' key                          {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         press_enter()
     
     def menu_exit(self):
+        if self.bot_running:
+            self.bot_running = False
+            if self.bot and self.bot.automation_engine:
+                self.bot.automation_engine.stop()
         self.audio.stop_background_sound()
         Animation.ending_animation()
         threading.Thread(target=self.audio.speak_goodbye, daemon=True).start()
