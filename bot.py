@@ -330,7 +330,7 @@ class NameGenerator:
 
 # ==================== PROXY MANAGER ====================
 class ProxyManager:
-    """Manage proxy - Connects with Cliproxy All region and auto-switches based on country"""
+    """Manage proxy - Connects with Cliproxy and auto-switches based on country"""
     
     def __init__(self):
         self.proxy_pool = []
@@ -348,6 +348,7 @@ class ProxyManager:
         self.host = 'sg.cliproxy.io'
         self.port = '3010'
         self.user_id = None
+        self.session_id = None  # For sticky IP sessions
         
     def _get_country_from_phone(self, phone_number):
         phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
@@ -361,7 +362,8 @@ class ProxyManager:
         try:
             print(f"{Color.CYAN}[*] Connecting to IP: {ip_url}{Color.RESET}")
             
-            match = re.search(r'ridolislam-region-([A-Z]+):', ip_url)
+            # Extract user ID from URL - supports both region-XX and region-XX-st-... formats
+            match = re.search(r'ridolislam-region-([A-Z]+)(?:-st-[^-]+)?(?:-sid-[^-]+)?(?:-t-\d+)?:', ip_url)
             if match:
                 self.user_id = match.group(1)
                 print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
@@ -373,6 +375,13 @@ class ProxyManager:
                 else:
                     self.user_id = 'Connected'
             
+            # Extract session ID if present (for sticky IP)
+            session_match = re.search(r'sid-([^:]+)', ip_url)
+            if session_match:
+                self.session_id = session_match.group(1)
+                print(f"{Color.CYAN}[+] Session ID: {self.session_id}{Color.RESET}")
+            
+            # Test the connection
             test_proxies = {'http': ip_url, 'https': ip_url}
             response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=15)
             
@@ -390,6 +399,10 @@ class ProxyManager:
                 return True
             else:
                 print(f"{Color.RED}[-] Failed to connect to IP. Status: {response.status_code}{Color.RESET}")
+                if response.status_code == 403:
+                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check your username format.{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] Valid format: ridolislam-region-XX (e.g., ridolislam-region-BD){Color.RESET}")
+                    print(f"{Color.YELLOW}[!] Or sticky IP: ridolislam-region-XX-st-StateName-sid-SessionID-t-Duration{Color.RESET}")
                 return False
                 
         except Exception as e:
@@ -400,15 +413,28 @@ class ProxyManager:
         self.connected_ip_url = None
         self.ip_connected = False
         self.user_id = None
+        self.session_id = None
         print(f"{Color.YELLOW}[!] IP Disconnected{Color.RESET}")
         return True
     
     def get_proxy_for_country(self, country_code):
+        """Generate proxy URL for a specific country"""
         if not self.ip_connected or not self.connected_ip_url:
             print(f"{Color.YELLOW}[!] No IP connected. Please connect first.{Color.RESET}")
             return None
         
-        new_url = re.sub(r'ridolislam-region-[A-Z]+:', f'ridolislam-region-{country_code}:', self.connected_ip_url)
+        # Extract base pattern and replace country code
+        # Handles both simple and sticky IP formats
+        base_url = self.connected_ip_url
+        
+        # If sticky IP format, preserve the session and state info
+        if '-st-' in base_url:
+            # Format: ridolislam-region-XX-st-StateName-sid-SessionID-t-Duration
+            new_url = re.sub(r'ridolislam-region-[A-Z]+', f'ridolislam-region-{country_code}', base_url)
+        else:
+            # Simple format: ridolislam-region-XX
+            new_url = re.sub(r'ridolislam-region-[A-Z]+', f'ridolislam-region-{country_code}', base_url)
+        
         return new_url
     
     def refresh_proxy_pool(self):
@@ -462,7 +488,8 @@ class ProxyManager:
             'using_default_ip': self.current_proxy is None,
             'ip_connected': self.ip_connected,
             'connected_ip': self.connected_ip_url,
-            'user_id': self.user_id
+            'user_id': self.user_id,
+            'session_id': self.session_id
         }
 
 # ==================== SOUND FUNCTIONS ====================
@@ -1149,7 +1176,6 @@ class MainMenu:
         user_id = proxy_stats.get('user_id', 'None')
         user_display = f"User: {user_id}" if user_id else "User: None"
         
-        # Check server status
         server_online = check_server_status()
         server_status = "ONLINE" if server_online else "OFFLINE"
         server_color = Color.GREEN if server_online else Color.RED
@@ -1197,30 +1223,81 @@ class MainMenu:
         provider = config.get('proxy_provider', 'None')
         return provider if provider else 'None'
     
-    def connect_cliproxy_all(self):
-        print(f'\n  {Color.CYAN}--- Cliproxy Connection (All Region) ---{Color.RESET}')
-        print(f'  {Color.DIM}Enter your Cliproxy URL with "All" as region{Color.RESET}')
-        print(f'  {Color.DIM}Example: socks5://ridolislam-region-All:Ridol123@sg.cliproxy.io:3010{Color.RESET}')
+    def connect_cliproxy(self):
+        """Connect Cliproxy - Official documentation format"""
+        print(f'\n  {Color.CYAN}--- Cliproxy Connection ---{Color.RESET}')
+        print(f'  {Color.DIM}Cliproxy Official Documentation Format:{Color.RESET}')
+        print(f'  {Color.DIM}Format 1 (Rotating IP): region-XX (e.g., region-BD, region-US){Color.RESET}')
+        print(f'  {Color.DIM}Format 2 (Sticky IP): region-XX-st-StateName-sid-SessionID-t-Duration{Color.RESET}')
+        print(f'  {Color.DIM}Example: socks5://ridolislam-region-US:Ridol123@sg.cliproxy.io:3010{Color.RESET}')
         
-        proxy_url = input(f'\n  {Color.CYAN}Enter SOCKS5 URL: {Color.RESET}').strip()
+        print(f'\n  {Color.CYAN}Select Connection Type:{Color.RESET}')
+        print(f'  {Color.NEON_GREEN}[1]{Color.RESET} Rotating IP (Default)')
+        print(f'  {Color.NEON_GREEN}[2]{Color.RESET} Sticky IP (Fixed session)')
         
-        if not proxy_url:
-            print(f'  {Color.RED}[-] URL cannot be empty!{Color.RESET}')
-            press_enter()
-            return
+        conn_type = input(f'\n  {Color.CYAN}Enter choice (1-2, default 1): {Color.RESET}').strip()
         
-        if not proxy_url.startswith('socks5://'):
-            print(f'  {Color.YELLOW}[!] URL should start with socks5://{Color.RESET}')
-            proxy_url = f"socks5://{proxy_url}"
-        
-        if 'region-All' not in proxy_url:
-            print(f'  {Color.YELLOW}[!] URL should contain "region-All" for auto country switching{Color.RESET}')
-            confirm = input(f'  {Color.CYAN}Continue anyway? (y/n): {Color.RESET}').strip().lower()
-            if confirm != 'y':
+        if conn_type == '2':
+            # Sticky IP
+            print(f'\n  {Color.CYAN}Sticky IP Configuration:{Color.RESET}')
+            region = input(f'  {Color.CYAN}Country Code (e.g., BD, US, IN): {Color.RESET}').strip().upper()
+            state = input(f'  {Color.CYAN}State (e.g., California, Dhaka): {Color.RESET}').strip()
+            session_id = input(f'  {Color.CYAN}Session ID (e.g., abc123): {Color.RESET}').strip()
+            duration = input(f'  {Color.CYAN}Duration in minutes (e.g., 15): {Color.RESET}').strip()
+            
+            if not region:
+                print(f'  {Color.RED}[-] Country code required!{Color.RESET}')
                 press_enter()
                 return
+            
+            # Build sticky IP URL
+            proxy_url = f"socks5://ridolislam-region-{region}-st-{state}-sid-{session_id}-t-{duration}:Ridol123@sg.cliproxy.io:3010"
+        else:
+            # Rotating IP (Default)
+            print(f'\n  {Color.CYAN}Select Country:{Color.RESET}')
+            print(f'  {Color.DIM}1. 🇧🇩 Bangladesh (BD)    2. 🇮🇳 India (IN)    3. 🇵🇰 Pakistan (PK){Color.RESET}')
+            print(f'  {Color.DIM}4. 🇺🇸 USA (US)           5. 🇬🇧 UK (GB)       6. 🇸🇬 Singapore (SG){Color.RESET}')
+            print(f'  {Color.DIM}7. 🇦🇪 UAE (AE)           8. 🇸🇦 Saudi Arabia (SA)  9. 🇹🇷 Turkey (TR){Color.RESET}')
+            print(f'  {Color.DIM}10. 🇩🇪 Germany (DE)      11. 🇫🇷 France (FR)  12. 🇮🇹 Italy (IT){Color.RESET}')
+            print(f'  {Color.DIM}13. 🇪🇸 Spain (ES)        14. 🇳🇱 Netherlands (NL)  15. 🇦🇺 Australia (AU){Color.RESET}')
+            print(f'  {Color.DIM}16. 🇧🇷 Brazil (BR)       17. 🇷🇺 Russia (RU)  18. 🇯🇵 Japan (JP){Color.RESET}')
+            print(f'  {Color.DIM}19. 🇰🇷 South Korea (KR)  20. 🇨🇳 China (CN)   21. 🇲🇾 Malaysia (MY){Color.RESET}')
+            print(f'  {Color.DIM}22. 🇮🇩 Indonesia (ID)    23. 🇵🇭 Philippines (PH)  24. 🇹🇭 Thailand (TH){Color.RESET}')
+            print(f'  {Color.DIM}25. 🇻🇳 Vietnam (VN)      26. 🇪🇬 Egypt (EG)   27. 🇳🇬 Nigeria (NG){Color.RESET}')
+            print(f'  {Color.DIM}28. 🇿🇦 South Africa (ZA) 29. 🇲🇽 Mexico (MX)  30. 🇦🇷 Argentina (AR){Color.RESET}')
+            print(f'  {Color.DIM}31. 🔧 Manual Entry{Color.RESET}')
+            
+            country_choice = input(f'\n  {Color.CYAN}Enter country number (1-31): {Color.RESET}').strip()
+            
+            country_map = {
+                '1': 'BD', '2': 'IN', '3': 'PK', '4': 'US', '5': 'GB',
+                '6': 'SG', '7': 'AE', '8': 'SA', '9': 'TR', '10': 'DE',
+                '11': 'FR', '12': 'IT', '13': 'ES', '14': 'NL', '15': 'AU',
+                '16': 'BR', '17': 'RU', '18': 'JP', '19': 'KR', '20': 'CN',
+                '21': 'MY', '22': 'ID', '23': 'PH', '24': 'TH', '25': 'VN',
+                '26': 'EG', '27': 'NG', '28': 'ZA', '29': 'MX', '30': 'AR'
+            }
+            
+            if country_choice == '31':
+                region = input(f'  {Color.CYAN}Enter country code (e.g., BD, US, IN): {Color.RESET}').strip().upper()
+                if not region:
+                    print(f'  {Color.RED}[-] Country code required!{Color.RESET}')
+                    press_enter()
+                    return
+            elif country_choice in country_map:
+                region = country_map[country_choice]
+            else:
+                print(f'  {Color.RED}[-] Invalid choice!{Color.RESET}')
+                press_enter()
+                return
+            
+            # Build rotating IP URL
+            proxy_url = f"socks5://ridolislam-region-{region}:Ridol123@sg.cliproxy.io:3010"
         
-        print(f'\n  {Color.CYAN}[*] Connecting to: {proxy_url}{Color.RESET}')
+        print(f'\n  {Color.GREEN}[+] Generated Proxy URL{Color.RESET}')
+        print(f'  {Color.DIM}   {proxy_url}{Color.RESET}')
+        
+        print(f'\n  {Color.CYAN}[*] Connecting...{Color.RESET}')
         
         success = self.proxy_manager.connect_ip(proxy_url)
         
@@ -1231,7 +1308,7 @@ class MainMenu:
             self.audio.speak_ip_connected()
             
             config = load_json(CONFIG_FILE)
-            config['proxy_provider'] = 'Cliproxy (All Region)'
+            config['proxy_provider'] = 'Cliproxy'
             config['proxy_url'] = proxy_url
             config['proxy_user_id'] = self.proxy_manager.user_id
             save_json(CONFIG_FILE, config)
@@ -1239,7 +1316,9 @@ class MainMenu:
             self.proxy_manager.connected_ip_url = proxy_url
             self.proxy_manager.ip_connected = True
         else:
-            print(f'  {Color.RED}[-] Failed to connect. Please check your URL.{Color.RESET}')
+            print(f'  {Color.RED}[-] Failed to connect. Please check your credentials.{Color.RESET}')
+            print(f'  {Color.YELLOW}[!] Make sure your Cliproxy account is active{Color.RESET}')
+            print(f'  {Color.YELLOW}[!] Valid format: ridolislam-region-XX (e.g., ridolislam-region-BD){Color.RESET}')
         
         press_enter()
     
@@ -1251,6 +1330,8 @@ class MainMenu:
             print(f'  {Color.GREEN}[+] IP Connected: Yes{Color.RESET}')
             print(f'  {Color.CYAN}Provider: {config.get("proxy_provider", "Unknown")}{Color.RESET}')
             print(f'  {Color.CYAN}User ID: {proxy_stats.get("user_id", "Unknown")}{Color.RESET}')
+            if proxy_stats.get('session_id'):
+                print(f'  {Color.CYAN}Session ID: {proxy_stats.get("session_id")}{Color.RESET}')
             print(f'  {Color.CYAN}Connected IP: {proxy_stats.get("connected_ip", "None")}{Color.RESET}')
             print(f'  {Color.CYAN}Auto Country: Enabled (will switch based on phone number){Color.RESET}')
             try:
@@ -1328,13 +1409,13 @@ class MainMenu:
             user_id = proxy_stats.get('user_id', 'None')
             
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}IP MANAGEMENT - CLIPROXY ALL REGION{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}IP MANAGEMENT - CLIPROXY{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Status: {ip_color}{ip_status}{Color.RESET}{Color.CYAN}                                     ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  User ID: {Color.WHITE}{user_id}{Color.RESET}{Color.CYAN}                                         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Auto Country: {Color.WHITE}Enabled (based on phone number){Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect Cliproxy (All Region)        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect Cliproxy                    {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} View Connected IP                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Disconnect IP                      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Test Current IP                    {Color.CYAN}║{Color.RESET}
@@ -1343,7 +1424,7 @@ class MainMenu:
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
             if choice == '1':
-                self.connect_cliproxy_all()
+                self.connect_cliproxy()
             elif choice == '2':
                 self.view_connected_ip()
             elif choice == '3':
@@ -1619,7 +1700,7 @@ class MainMenu:
             return
         if not proxy_stats.get('ip_connected'):
             print(f'\n{Color.YELLOW}[!] No IP connected! Please connect Cliproxy first.{Color.RESET}')
-            print(f'  {Color.DIM}Go to IP Management -> Connect Cliproxy (All Region){Color.RESET}')
+            print(f'  {Color.DIM}Go to IP Management -> Connect Cliproxy{Color.RESET}')
             press_enter()
             return
         
@@ -1778,18 +1859,20 @@ class MainMenu:
     def menu_help(self):
         self.show_header()
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - CLIPROXY ALL REGION{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - CLIPROXY SETUP{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Setup{Color.RESET}{Color.CYAN}                                    ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Setup Cliproxy{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  1. Go to IP Management (Option 2)                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  2. Select "Connect Cliproxy (All Region)"           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  3. Enter your URL:                                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     socks5://ridolislam-region-All:Ridol123@...     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  2. Select "Connect Cliproxy" (Option 1)             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  3. Choose connection type:                          {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     - Rotating IP: region-XX (e.g., region-BD)       {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}     - Sticky IP: region-XX-st-StateName-sid-...      {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  4. Bot will auto-detect country from phone number   {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  5. Start the bot (Option 5)                        {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - One URL for all countries                         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Rotating IP: Changes IP per request              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Sticky IP: Same IP for duration                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Auto country switching based on phone number     {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Auto name generation by country                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - OTP retry with voice feedback                    {Color.CYAN}║{Color.RESET}
