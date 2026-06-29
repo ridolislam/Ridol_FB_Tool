@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v8.6 - OTP Sender Automation (with Password)
+Ridol FB Tool v8.7 - OTP Sender Automation
 Author: Ridol Islam
 License: MIT
 """
@@ -30,7 +30,7 @@ CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
 # ==================== SERVER CONFIG ====================
 LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
-APP_VERSION = 'v8.6'
+APP_VERSION = 'v8.7'
 
 # ==================== GOOGLE DRIVE CONFIG ====================
 GOOGLE_DRIVE_FILE_ID = "1jBDWRKJ0ry9lZUMc8IaVI8zDKvtVzVma"
@@ -130,14 +130,12 @@ class DataGenerator:
     
     @classmethod
     def get_random_name(cls, country_code):
-        """Get random first and last name for a country"""
         first_list = cls.FIRST_NAMES.get(country_code, cls.FIRST_NAMES['XX'])
         last_list = cls.LAST_NAMES.get(country_code, cls.LAST_NAMES['XX'])
         return random.choice(first_list), random.choice(last_list)
     
     @classmethod
     def get_random_dob(cls):
-        """Generate random date of birth (1992-2005)"""
         day = random.randint(1, 28)
         month = random.randint(1, 12)
         year = random.randint(1992, 2005)
@@ -145,12 +143,10 @@ class DataGenerator:
     
     @classmethod
     def get_random_gender(cls):
-        """Return random gender"""
         return random.choice(['Male', 'Female'])
     
     @classmethod
     def get_random_password(cls):
-        """Generate random password (8-12 characters)"""
         length = random.randint(8, 12)
         chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
         return ''.join(random.choices(chars, k=length))
@@ -171,7 +167,6 @@ class ProxyManager:
         self.proxy_history = []
     
     def _get_country_from_phone(self, phone_number):
-        """Get country code from phone number"""
         phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
         country_codes = {
             '62': 'ID', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
@@ -185,7 +180,6 @@ class ProxyManager:
         return 'XX'
     
     def get_proxy_from_server(self, license_key, phone_number):
-        """Get SOCKS5 proxy from server (deducts 1 credit)"""
         country_code = self._get_country_from_phone(phone_number)
         print(f"{Color.CYAN}[*] Requesting proxy for country: {country_code}{Color.RESET}")
         
@@ -356,6 +350,7 @@ class BrowserPilotManager:
         self.browser_started = False
     
     def _check_browser_pilot(self):
+        """Check if termux-browser-pilot is installed"""
         try:
             import termux_browser_pilot
             return True
@@ -363,13 +358,49 @@ class BrowserPilotManager:
             return False
     
     def _install_browser_pilot(self):
+        """Install termux-browser-pilot properly"""
         print(f"{Color.CYAN}[*] Installing termux-browser-pilot...{Color.RESET}")
         try:
-            subprocess.run([sys.executable, '-m', 'pip', 'install', 'termux-browser-pilot'], 
-                         capture_output=True, timeout=60)
-            print(f"{Color.GREEN}[+] Installed successfully{Color.RESET}")
-            return True
-        except:
+            # প্রথমে pip আপডেট করি
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'], 
+                         capture_output=True, timeout=30)
+            
+            # তারপর browser-pilot ইনস্টল
+            result = subprocess.run(
+                [sys.executable, '-m', 'pip', 'install', 'termux-browser-pilot'], 
+                capture_output=True, 
+                timeout=120,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"{Color.GREEN}[+] termux-browser-pilot installed successfully{Color.RESET}")
+                # ইনস্টলের পর ইম্পোর্ট চেক
+                try:
+                    import termux_browser_pilot
+                    self.browser_available = True
+                    return True
+                except ImportError:
+                    print(f"{Color.YELLOW}[!] Installed but import failed, trying alternative...{Color.RESET}")
+                    # পাইপ ইনস্টল করা প্যাকেজের পাথ চেক করা
+                    result = subprocess.run(
+                        [sys.executable, '-c', 'import termux_browser_pilot; print(termux_browser_pilot.__file__)'],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        print(f"{Color.GREEN}[+] Found at: {result.stdout.strip()}{Color.RESET}")
+                        self.browser_available = True
+                        return True
+                    return False
+            else:
+                print(f"{Color.RED}[-] Installation failed: {result.stderr}{Color.RESET}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print(f"{Color.RED}[-] Installation timed out!{Color.RESET}")
+            return False
+        except Exception as e:
+            print(f"{Color.RED}[-] Installation error: {e}{Color.RESET}")
             return False
     
     def get_random_user_agent(self):
@@ -384,13 +415,9 @@ class BrowserPilotManager:
     
     def start_browser(self, headless=False, proxy=None):
         if not self.browser_available:
-            if not self._install_browser_pilot():
-                return False
-            try:
-                import termux_browser_pilot
-                self.browser_available = True
-            except:
-                return False
+            print(f"{Color.YELLOW}[!] Browser Pilot not installed. Please install first.{Color.RESET}")
+            return False
+        
         try:
             from termux_browser_pilot import Browser
             
@@ -444,7 +471,6 @@ class BrowserPilotManager:
             return False
     
     def select_dropdown(self, selector, value):
-        """Select dropdown option by value"""
         if not self.browser_started:
             return False
         try:
@@ -490,7 +516,6 @@ class LicenseManager:
         return self.user_id
     
     def verify(self, key):
-        """Verify license with server"""
         if self._verified and self._license_data:
             return True, self._license_data
         
@@ -555,11 +580,9 @@ class FacebookOTPSender:
         self.license_key = None
     
     def _get_proxy(self, phone_number):
-        """Get SOCKS5 proxy from server (deducts 1 credit)"""
         return self.proxy_manager.get_proxy_from_server(self.license_key, phone_number)
     
     def _fill_registration_form(self, phone_number, country_code):
-        """Fill Facebook registration form with random data"""
         try:
             first_name, last_name = self.data_generator.get_random_name(country_code)
             day, month, year = self.data_generator.get_random_dob()
@@ -572,40 +595,31 @@ class FacebookOTPSender:
             print(f"{Color.CYAN}  [*] Phone: {phone_number}{Color.RESET}")
             print(f"{Color.CYAN}  [*] Password: {password}{Color.RESET}")
             
-            # Fill First Name
             self.browser_manager.type_text('input[name="firstname"]', first_name)
             time.sleep(0.3)
             
-            # Fill Last Name
             self.browser_manager.type_text('input[name="lastname"]', last_name)
             time.sleep(0.3)
             
-            # Select Day
             self.browser_manager.select_dropdown('select[name="birthday_day"]', str(day))
             time.sleep(0.2)
             
-            # Select Month
             self.browser_manager.select_dropdown('select[name="birthday_month"]', str(month))
             time.sleep(0.2)
             
-            # Select Year
             self.browser_manager.select_dropdown('select[name="birthday_year"]', str(year))
             time.sleep(0.2)
             
-            # Select Gender
             gender_value = '2' if gender == 'Female' else '1'
             self.browser_manager.click(f'input[name="sex"][value="{gender_value}"]')
             time.sleep(0.3)
             
-            # Fill Phone Number
             self.browser_manager.type_text('input[name="reg_email__"]', phone_number)
             time.sleep(0.5)
             
-            # Fill Password
             self.browser_manager.type_text('input[name="reg_passwd__"]', password)
             time.sleep(0.5)
             
-            # Click Submit
             print(f"{Color.CYAN}  [*] Clicking Submit...{Color.RESET}")
             self.browser_manager.click('button[name="websubmit"]')
             time.sleep(2)
@@ -616,7 +630,6 @@ class FacebookOTPSender:
             return False
     
     def _process_number(self, phone_number):
-        """Process a single phone number"""
         print(f"\n{Color.CYAN}[+] Processing: {phone_number}{Color.RESET}")
         
         proxy, country_code, credits = self._get_proxy(phone_number)
@@ -665,7 +678,6 @@ class FacebookOTPSender:
             print(f"{Color.DIM}  [*] Browser closed{Color.RESET}")
     
     def start_batch(self, numbers):
-        """Start batch processing"""
         if not numbers:
             print(f"{Color.RED}[-] No numbers found{Color.RESET}")
             return
@@ -859,6 +871,7 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{"Active" if self.license.is_verified() else "Not set"}{Color.RESET}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Credits: {Color.DIM}{self.license.get_credits() if self.license.is_verified() else 0}{Color.RESET}{Color.CYAN}                    ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Folder: {Color.DIM}{"✓ Exists" if folder_exists else "✗ Not found"}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Browser: {Color.DIM}{"✓ Installed" if self.browser_manager.browser_available else "✗ Not installed"}{Color.RESET}{Color.CYAN} ║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         
         if not folder_exists:
@@ -875,6 +888,7 @@ class MainMenu:
             return
         if not self.browser_manager.browser_available:
             print(f'\n{Color.RED}[-] Browser Pilot not installed!{Color.RESET}')
+            print(f'{Color.YELLOW}[!] Go to Setup -> 1. Install Browser Pilot{Color.RESET}')
             press_enter()
             return
         
