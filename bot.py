@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool v7.0 - Proxy Rotation & Auto Name Generation
+Ridol FB Tool v7.0 - License & Credit Based Proxy System
 Author: Ridol Islam
 License: MIT
 """
@@ -32,9 +32,8 @@ LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v7.0'
 
-# ==================== PROXY CONFIG ====================
-PROXY_API_KEY = os.environ.get('PROXY_API_KEY', '')
-PROXY_COUNTRY_MAP = {}
+# ==================== SERVER CONFIG ====================
+SERVER_URL = os.environ.get('SERVER_URL', 'https://your-render-server.onrender.com')
 
 # ==================== GOOGLE DRIVE CONFIG ====================
 GOOGLE_DRIVE_FILE_ID = "1jBDWRKJ0ry9lZUMc8IaVI8zDKvtVzVma"
@@ -136,6 +135,7 @@ class Color:
 # ==================== SERVER API FUNCTIONS ====================
 
 def server_request(endpoint, method='GET', data=None):
+    """Make request to license server"""
     url = f"{LICENSE_SERVER}/{endpoint}"
     headers = {'Content-Type': 'application/json'}
     try:
@@ -153,7 +153,8 @@ def server_request(endpoint, method='GET', data=None):
     except:
         return None
 
-def verify_license(key, device_serial):
+def verify_license_old(key, device_serial):
+    """Old license verification (backward compatibility)"""
     try:
         result = server_request("verify.php", 'POST', {
             'license_key': key,
@@ -165,7 +166,8 @@ def verify_license(key, device_serial):
     except:
         return {'valid': False, 'message': 'Server error'}
 
-def register_device(device_serial, license_key):
+def register_device_old(device_serial, license_key):
+    """Old device registration (backward compatibility)"""
     try:
         result = server_request("register.php", 'POST', {
             'device_serial': device_serial,
@@ -226,6 +228,110 @@ class NameGenerator:
         first, last = cls.get_random_name(country_code)
         return f"{first} {last}"
 
+# ==================== LICENSE MANAGER ====================
+class LicenseManager:
+    def __init__(self):
+        self.config = load_json(CONFIG_FILE)
+        self.server_url = SERVER_URL
+        self.license_key = self.config.get('license_key', '')
+        self.credits = 0
+        self.max_browsers = 1
+        self.used_credits = 0
+        self.is_valid = False
+        self.expires_at = None
+        
+    def verify(self, license_key):
+        """Verify license with server"""
+        try:
+            url = f"{self.server_url}/api/verify"
+            response = requests.post(url, json={'license_key': license_key}, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('valid'):
+                    self.license_key = license_key
+                    self.credits = data.get('credits', 0)
+                    self.max_browsers = data.get('max_browsers', 1)
+                    self.used_credits = data.get('used_credits', 0)
+                    self.expires_at = data.get('expires_at')
+                    self.is_valid = True
+                    self.config['license_key'] = license_key
+                    save_json(CONFIG_FILE, self.config)
+                    return True, data
+                else:
+                    self.is_valid = False
+                    return False, data
+            else:
+                self.is_valid = False
+                return False, {'error': 'Server error'}
+                
+        except Exception as e:
+            self.is_valid = False
+            return False, {'error': str(e)}
+    
+    def get_ip(self, country='Rand'):
+        """Get IP from server (deducts 1 credit)"""
+        if not self.is_valid:
+            return None, 'License not valid'
+        
+        try:
+            url = f"{self.server_url}/api/get_ip"
+            response = requests.post(url, json={
+                'license_key': self.license_key,
+                'country': country
+            }, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    self.credits = data.get('remaining_credits', 0)
+                    return data.get('ip'), None
+                else:
+                    return None, data.get('error', 'Failed to get IP')
+            else:
+                return None, f'Server error: {response.status_code}'
+                
+        except Exception as e:
+            return None, str(e)
+    
+    def get_status(self):
+        """Get current license status"""
+        return {
+            'valid': self.is_valid,
+            'credits': self.credits,
+            'max_browsers': self.max_browsers,
+            'used_credits': self.used_credits,
+            'license_key': self.license_key,
+            'expires_at': self.expires_at
+        }
+    
+    def check_status(self):
+        """Check license status from server"""
+        if not self.license_key:
+            return {'valid': False, 'error': 'No license key set'}
+        
+        try:
+            url = f"{self.server_url}/api/status"
+            response = requests.post(url, json={'license_key': self.license_key}, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('valid'):
+                    self.credits = data.get('credits', 0)
+                    self.max_browsers = data.get('max_browsers', 1)
+                    self.used_credits = data.get('used_credits', 0)
+                    self.expires_at = data.get('expires_at')
+                    self.is_valid = True
+                    return data
+                else:
+                    self.is_valid = False
+                    return data
+            else:
+                return {'valid': False, 'error': 'Server error'}
+                
+        except Exception as e:
+            return {'valid': False, 'error': str(e)}
+
 # ==================== PROXY MANAGER ====================
 class ProxyManager:
     def __init__(self):
@@ -233,18 +339,14 @@ class ProxyManager:
         self.current_proxy = None
         self.current_country = None
         self.proxy_history = []
-        self.api_key = PROXY_API_KEY
+        self.api_key = None
         self.last_refresh = 0
         self.refresh_interval = 300
         self.use_default_ip = True
         self.connected_ip_url = None
         self.ip_connected = False
         self.user_id = None
-        self.session_id = None
-        self.user_username = None
-        self.user_password = None
-        self.user_host = None
-        self.user_port = None
+        self.license_manager = LicenseManager()
         
     def _get_country_from_phone(self, phone_number):
         phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
@@ -253,128 +355,48 @@ class ProxyManager:
                 return COUNTRY_CODES[code]
         return 'XX'
     
-    def connect_proxy_url(self, proxy_url):
-        """Connect using SOCKS5 URL format: socks5://user:pass@host:port"""
-        try:
-            print(f"{Color.CYAN}[*] Connecting to Proxy...{Color.RESET}")
-            
-            # Parse the URL
-            parsed = self._parse_proxy_url(proxy_url)
-            if not parsed:
-                return False
-            
-            host = parsed['host']
-            port = parsed['port']
-            username = parsed['username']
-            password = parsed['password']
-            
-            print(f"{Color.CYAN}[*] Host: {host}{Color.RESET}")
-            print(f"{Color.CYAN}[*] Port: {port}{Color.RESET}")
-            print(f"{Color.CYAN}[*] Username: {username}{Color.RESET}")
-            
-            # Store credentials
-            self.user_username = username
-            self.user_password = password
-            self.user_host = host
-            self.user_port = port
-            
-            # Full URL for requests
-            full_url = f"socks5://{username}:{password}@{host}:{port}"
-            
-            print(f"{Color.CYAN}[*] Generated Proxy URL{Color.RESET}")
-            print(f"{Color.DIM}   {full_url}{Color.RESET}")
-            
-            self.user_id = username
-            print(f"{Color.GREEN}[+] User ID: {self.user_id}{Color.RESET}")
-            
-            # Test the connection
-            test_proxies = {'http': full_url, 'https': full_url}
-            response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"{Color.GREEN}[+] IP Connected Successfully!{Color.RESET}")
-                print(f"{Color.CYAN}[+] IP: {data.get('query', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] Country: {data.get('countryCode', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] Region: {data.get('regionName', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] ISP: {data.get('isp', 'Unknown')}{Color.RESET}")
-                print(f"{Color.CYAN}[+] User: {self.user_id}{Color.RESET}")
-                
-                self.connected_ip_url = full_url
-                self.ip_connected = True
-                return True
-            else:
-                print(f"{Color.RED}[-] Failed to connect. Status: {response.status_code}{Color.RESET}")
-                if response.status_code == 403:
-                    print(f"{Color.YELLOW}[!] 403 Forbidden - Please check your credentials.{Color.RESET}")
-                return False
-                
-        except Exception as e:
-            print(f"{Color.RED}[-] Connection failed: {e}{Color.RESET}")
+    def connect_via_license(self, country_code):
+        """Get IP using license credits"""
+        print(f"{Color.CYAN}[*] Getting IP for {country_code} using license...{Color.RESET}")
+        
+        ip, error = self.license_manager.get_ip(country_code)
+        
+        if error:
+            print(f"{Color.RED}[-] Error: {error}{Color.RESET}")
             return False
-    
-    def _parse_proxy_url(self, proxy_url):
-        """Parse SOCKS5 URL: socks5://user:pass@host:port"""
-        try:
-            # Remove protocol if present
-            url = proxy_url.replace('socks5://', '').replace('SOCKS5://', '')
+        
+        if ip:
+            proxy_url = f"socks5://{ip}:3010"
+            print(f"{Color.GREEN}[+] Got IP: {ip}{Color.RESET}")
+            print(f"{Color.CYAN}[+] Remaining credits: {self.license_manager.credits}{Color.RESET}")
             
-            # Parse: user:pass@host:port
-            if '@' in url:
-                auth, host_port = url.split('@', 1)
-                if ':' in auth:
-                    username, password = auth.split(':', 1)
+            # Test proxy
+            test_proxies = {'http': proxy_url, 'https': proxy_url}
+            try:
+                response = requests.get('http://ip-api.com/json', proxies=test_proxies, timeout=15)
+                if response.status_code == 200:
+                    data = response.json()
+                    print(f"{Color.GREEN}[+] Proxy works!{Color.RESET}")
+                    print(f"{Color.CYAN}[+] IP: {data.get('query')} | Country: {data.get('countryCode')}{Color.RESET}")
+                    
+                    self.connected_ip_url = proxy_url
+                    self.ip_connected = True
+                    self.current_country = country_code
+                    self.user_id = ip
+                    return True
                 else:
-                    username = auth
-                    password = ''
-            else:
-                username = ''
-                password = ''
-                host_port = url
-            
-            if ':' in host_port:
-                host, port = host_port.rsplit(':', 1)
-            else:
-                host = host_port
-                port = '3010'
-            
-            return {
-                'host': host,
-                'port': port,
-                'username': username,
-                'password': password
-            }
-            
-        except Exception as e:
-            print(f"{Color.RED}[-] Error parsing URL: {e}{Color.RESET}")
-            return None
-    
-    def get_proxy_for_country(self, country_code):
-        """Generate proxy URL for a specific country using user's credentials"""
-        if not self.ip_connected or not self.user_username:
-            print(f"{Color.YELLOW}[!] No IP connected. Please connect first.{Color.RESET}")
-            return None
+                    print(f"{Color.RED}[-] Proxy test failed: {response.status_code}{Color.RESET}")
+                    return False
+            except Exception as e:
+                print(f"{Color.RED}[-] Proxy test error: {e}{Color.RESET}")
+                return False
         
-        # Replace region in username with new country
-        username = self.user_username
-        # If username has region, replace it
-        if '-region-' in username:
-            username = re.sub(r'-region-[A-Z]+', f'-region-{country_code}', username)
-        else:
-            username = f"{username}-region-{country_code}"
-        
-        # Build URL with user's credentials and new username
-        proxy_url = f"socks5://{username}:{self.user_password}@{self.user_host}:{self.user_port}"
-        return proxy_url
+        return False
     
     def disconnect_ip(self):
         self.connected_ip_url = None
         self.ip_connected = False
         self.user_id = None
-        self.user_username = None
-        self.user_password = None
-        self.user_host = None
-        self.user_port = None
         print(f"{Color.YELLOW}[!] IP Disconnected{Color.RESET}")
         return True
     
@@ -396,22 +418,38 @@ class ProxyManager:
         country_code = self._get_country_from_phone(phone_number)
         print(f"{Color.CYAN}[+] Country detected: {country_code}{Color.RESET}")
         
-        if self.connected_ip_url and self.ip_connected:
-            proxy_url = self.get_proxy_for_country(country_code)
-            if proxy_url:
-                print(f"{Color.GREEN}[+] Generated proxy for {country_code}{Color.RESET}")
-                print(f"{Color.DIM}   {proxy_url}{Color.RESET}")
-                self.current_proxy = proxy_url
-                self.current_country = country_code
-                self.proxy_history.append({
-                    'phone': phone_number,
-                    'proxy': proxy_url,
-                    'country': country_code,
-                    'type': 'cliproxy'
-                })
-                return proxy_url, country_code
+        # Check if license is valid
+        if not self.license_manager.is_valid:
+            print(f"{Color.RED}[-] License not valid. Please enter valid license key.{Color.RESET}")
+            self.current_proxy = None
+            self.current_country = 'XX'
+            return None, country_code
         
-        print(f"{Color.YELLOW}[!] No IP connected. Using default IP.{Color.RESET}")
+        # Check credits
+        if self.license_manager.credits <= 0:
+            print(f"{Color.RED}[-] Insufficient credits. Please add more credits.{Color.RESET}")
+            self.current_proxy = None
+            self.current_country = 'XX'
+            return None, country_code
+        
+        # Get new IP for this country
+        if not self.connect_via_license(country_code):
+            print(f"{Color.YELLOW}[!] Failed to get IP for {country_code}. Using default.{Color.RESET}")
+            self.current_proxy = None
+            self.current_country = 'XX'
+            return None, country_code
+        
+        if self.connected_ip_url:
+            self.current_proxy = self.connected_ip_url
+            self.proxy_history.append({
+                'phone': phone_number,
+                'proxy': self.connected_ip_url,
+                'country': country_code,
+                'type': 'license_credit'
+            })
+            return self.connected_ip_url, country_code
+        
+        print(f"{Color.YELLOW}[!] No proxy available. Using default IP.{Color.RESET}")
         self.current_proxy = None
         self.current_country = 'XX'
         return None, country_code
@@ -426,7 +464,9 @@ class ProxyManager:
             'using_default_ip': self.current_proxy is None,
             'ip_connected': self.ip_connected,
             'connected_ip': self.connected_ip_url,
-            'user_id': self.user_id
+            'user_id': self.user_id,
+            'credits': self.license_manager.credits,
+            'license_valid': self.license_manager.is_valid
         }
 
 # ==================== SOUND FUNCTIONS ====================
@@ -507,12 +547,12 @@ class TitleAnimation:
 {Color.CYAN}║{Color.RESET}  {Color.GOLD}██║  ██║██║██████╔╝╚██████╔╝███████╗███████╗{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.GOLD}╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝╚══════╝{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}║{Color.RESET}           {Color.WHITE}{Color.BOLD}RIDOL FB TOOL v{APP_VERSION}{Color.RESET}               {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}      {Color.DIM}Proxy Rotation + Auto Name Gen{Color.RESET}          {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}      {Color.DIM}License & Credit Based Proxy System{Color.RESET}       {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╠════════════════════════════════════════════════════════════╣{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}FACEBOOK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO CREATE{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}PROXY ROTATION{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO NAME{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}URL CONNECT{Color.RESET}  {Color.CYAN}║{Color.RESET}
-{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}VOICE FEEDBACK{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO COUNTRY{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}CREDIT SYSTEM{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO NAME{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}OTP RETRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}VOICE FEEDBACK{Color.RESET}  {Color.CYAN}║{Color.RESET}
+{Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}AUTO COUNTRY{Color.RESET}  {Color.DIM}|{Color.RESET}  {Color.NEON_GREEN}[✓]{Color.RESET} {Color.WHITE}LICENSE SYSTEM{Color.RESET}  {Color.CYAN}║{Color.RESET}
 {Color.CYAN}╚════════════════════════════════════════════════════════════╝{Color.RESET}
 """
         print(banner)
@@ -702,7 +742,7 @@ class BrowserPilotManager:
             if proxy:
                 os.environ['http_proxy'] = proxy
                 os.environ['https_proxy'] = proxy
-                print(f"{Color.CYAN}[*] Browser using your proxy{Color.RESET}")
+                print(f"{Color.CYAN}[*] Browser using proxy{Color.RESET}")
             else:
                 os.environ.pop('http_proxy', None)
                 os.environ.pop('https_proxy', None)
@@ -774,8 +814,8 @@ class BrowserPilotManager:
         except:
             pass
 
-# ==================== LICENSE MANAGER ====================
-class LicenseManager:
+# ==================== OLD LICENSE MANAGER (Backward Compatibility) ====================
+class OldLicenseManager:
     def __init__(self):
         self.config = load_json(CONFIG_FILE)
     
@@ -791,7 +831,7 @@ class LicenseManager:
     
     def verify(self, key):
         print(f'  {Color.YELLOW}[*] Verifying license...{Color.RESET}')
-        result = verify_license(key, self.get_device_serial())
+        result = verify_license_old(key, self.get_device_serial())
         if result and result.get('valid'):
             print(f'  {Color.GREEN}[+] License Active! Expires: {result.get("expires_at", "N/A")}{Color.RESET}')
             self.set_license_key(key)
@@ -803,7 +843,7 @@ class LicenseManager:
     
     def register_device(self, device_serial):
         print(f'  {Color.CYAN}[*] Registering device...{Color.RESET}')
-        result = register_device(device_serial, self.get_license_key())
+        result = register_device_old(device_serial, self.get_license_key())
         if result and result.get('success'):
             self.set_device_serial(device_serial)
             print(f'  {Color.GREEN}[+] Device registered successfully{Color.RESET}')
@@ -908,9 +948,10 @@ class FacebookAutomationEngine:
         print(f"\n{Color.CYAN}[+] Processing: {phone_number}{Color.RESET}")
         proxy, country_code = self.proxy_manager.get_proxy_for_number(phone_number)
         if proxy:
-            print(f"{Color.GREEN}[+] Using your proxy for {country_code}{Color.RESET}")
+            print(f"{Color.GREEN}[+] Using proxy: {proxy}{Color.RESET}")
         else:
             print(f"{Color.YELLOW}[!] Using default IP{Color.RESET}")
+        
         if not self.browser_manager.start_browser(headless=False, proxy=proxy):
             print(f"{Color.RED}  [-] Failed to start browser!{Color.RESET}")
             self.stats['failed'] += 1
@@ -957,20 +998,42 @@ class FacebookAutomationEngine:
         print(f"\n{Color.GREEN}[+] Starting batch processing{Color.RESET}")
         print(f"{Color.CYAN}[+] Total numbers: {len(numbers)}{Color.RESET}")
         print("-" * 60)
+        
+        # Check license and credits before starting
+        if not self.proxy_manager.license_manager.is_valid:
+            print(f"{Color.RED}[-] License not valid. Please enter a valid license key.{Color.RESET}")
+            return
+        
+        if self.proxy_manager.license_manager.credits <= 0:
+            print(f"{Color.RED}[-] Insufficient credits. Please add more credits.{Color.RESET}")
+            return
+        
+        print(f"{Color.CYAN}[+] Available credits: {self.proxy_manager.license_manager.credits}{Color.RESET}")
+        print(f"{Color.CYAN}[+] Estimated operations: {min(len(numbers), self.proxy_manager.license_manager.credits)}{Color.RESET}")
+        
         self.proxy_manager.refresh_proxy_pool()
         self.is_running = True
+        
         for idx, phone in enumerate(numbers, 1):
             if not self.is_running:
                 break
+            
+            # Check credits before each operation
+            if self.proxy_manager.license_manager.credits <= 0:
+                print(f"{Color.RED}[-] No credits left! Stopping...{Color.RESET}")
+                break
+            
             print(f"\n{Color.GOLD}{'='*50}{Color.RESET}")
             print(f"{Color.GOLD}Processing {idx}/{len(numbers)}{Color.RESET}")
             print(f"{Color.GOLD}{'='*50}{Color.RESET}")
+            
             try:
                 self._process_single_number(phone)
                 self.stats['processed'] += 1
             except Exception as e:
                 print(f"{Color.RED}[-] Error: {e}{Color.RESET}")
                 self.stats['failed'] += 1
+            
             if idx < len(numbers) and self.is_running:
                 delay = random.randint(FB_CONFIG['BATCH_DELAY_MIN'], FB_CONFIG['BATCH_DELAY_MAX'])
                 print(f"\n{Color.DIM}[*] Waiting {delay}s before next number...{Color.RESET}")
@@ -980,6 +1043,7 @@ class FacebookAutomationEngine:
                     if remaining % 10 == 0:
                         print(f"    {remaining}s remaining...")
                     time.sleep(1)
+        
         print("\n" + "="*60)
         print(f"{Color.GREEN}BATCH PROCESSING COMPLETE{Color.RESET}")
         print("="*60)
@@ -987,6 +1051,7 @@ class FacebookAutomationEngine:
         print(f"Success: {Color.GREEN}{self.stats['success']}{Color.RESET}")
         print(f"Failed: {Color.RED}{self.stats['failed']}{Color.RESET}")
         print(f"OTP Sent: {self.stats['otp_sent']}")
+        print(f"Remaining Credits: {self.proxy_manager.license_manager.credits}")
         print("="*60)
         if self.audio:
             self.audio.play_done()
@@ -1089,7 +1154,7 @@ class MainMenu:
     def __init__(self):
         self.browser_manager = BrowserPilotManager()
         self.proxy_manager = ProxyManager()
-        self.license = LicenseManager()
+        self.old_license = OldLicenseManager()
         self.audio = AudioEngine()
         self.bot = None
         self.config = load_json(CONFIG_FILE)
@@ -1097,33 +1162,38 @@ class MainMenu:
         self.browser_ready = self.config.get('browser_ready', False)
         self.bot_running = False
         
-        api_key = self.config.get('proxy_api_key', '')
-        if api_key:
-            PROXY_API_KEY = api_key
+        # Initialize license from config
+        license_key = self.config.get('license_key', '')
+        if license_key:
+            self.proxy_manager.license_manager.verify(license_key)
     
     def show_header(self):
         clear_screen()
         TitleAnimation.compact_banner()
         proxy_stats = self.proxy_manager.get_proxy_stats()
+        license_status = self.proxy_manager.license_manager.get_status()
+        
         proxy_status = f"● {proxy_stats['total']} proxies"
         proxy_color = Color.GREEN if proxy_stats['total'] > 0 else Color.RED
+        
         ip_status = "● CONNECTED" if proxy_stats.get('ip_connected') else "● DISCONNECTED"
         ip_color = Color.GREEN if proxy_stats.get('ip_connected') else Color.RED
         
-        user_id = proxy_stats.get('user_id', 'None')
-        user_display = f"User: {user_id}" if user_id else "User: None"
+        license_valid = license_status.get('valid', False)
+        lic_status = "● ACTIVE" if license_valid else "● INACTIVE"
+        lic_color = Color.GREEN if license_valid else Color.RED
+        
+        credits = license_status.get('credits', 0)
+        credits_color = Color.GREEN if credits > 100 else Color.YELLOW if credits > 10 else Color.RED
         
         server_online = check_server_status()
         server_status = "ONLINE" if server_online else "OFFLINE"
         server_color = Color.GREEN if server_online else Color.RED
         
         print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Empty"}{Color.RESET}')
-        print(f' {ip_color}{ip_status}{Color.RESET} IP Connect: {Color.WHITE}{"Connected" if proxy_stats.get("ip_connected") else "Disconnected"} | {user_display}{Color.RESET}')
-        browser_status = "● READY" if self.browser_manager.browser_available else "● NOT INSTALLED"
-        browser_color = Color.GREEN if self.browser_manager.browser_available else Color.RED
-        print(f' {browser_color}{browser_status}{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Run Setup"}{Color.RESET}')
-        lic_key = self.license.get_license_key()
-        print(f' {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if lic_key else "Not Set"}{Color.RESET}')
+        print(f' {ip_color}{ip_status}{Color.RESET} IP Connect: {Color.WHITE}{"Connected" if proxy_stats.get("ip_connected") else "Disconnected"}{Color.RESET}')
+        print(f' {lic_color}{lic_status}{Color.RESET} License: {Color.WHITE}{"Valid" if license_valid else "Invalid"}{Color.RESET}')
+        print(f' {credits_color}● Credits: {credits}{Color.RESET}')
         print(f' {Color.CYAN}◉{Color.RESET} Server: {server_color}{server_status}{Color.RESET}\n')
     
     def welcome_screen(self):
@@ -1155,239 +1225,121 @@ class MainMenu:
                 pass
             time.sleep(0.5)
     
-    def get_current_provider(self):
-        config = load_json(CONFIG_FILE)
-        provider = config.get('proxy_provider', 'None')
-        return provider if provider else 'None'
-    
-    def connect_proxy_url(self):
-        """Connect using SOCKS5 URL: socks5://user:pass@host:port"""
-        print(f'\n  {Color.CYAN}--- SOCKS5 Proxy Connection ---{Color.RESET}')
-        print(f'  {Color.DIM}Enter your SOCKS5 proxy URL in this format:{Color.RESET}')
-        print(f'  {Color.DIM}socks5://username:password@host:port{Color.RESET}')
-        print(f'  {Color.DIM}Example: socks5://ridolislam-region-US:Ridol123@sg.cliproxy.io:3010{Color.RESET}\n')
-        
-        proxy_url = input(f'  {Color.CYAN}Enter SOCKS5 URL: {Color.RESET}').strip()
-        
-        if not proxy_url:
-            print(f'  {Color.RED}[-] URL cannot be empty!{Color.RESET}')
-            press_enter()
-            return
-        
-        # Ensure socks5:// prefix
-        if not proxy_url.startswith('socks5://'):
-            print(f'  {Color.YELLOW}[!] Adding socks5:// prefix{Color.RESET}')
-            proxy_url = f"socks5://{proxy_url}"
-        
-        # Connect using the URL
-        success = self.proxy_manager.connect_proxy_url(proxy_url)
-        
-        if success:
-            print(f'  {Color.GREEN}[+] Proxy Connected Successfully!{Color.RESET}')
-            print(f'  {Color.CYAN}[+] Auto country switching enabled!{Color.RESET}')
-            print(f'  {Color.CYAN}[+] Your proxy will be used for all countries{Color.RESET}')
-            self.audio.speak_ip_connected()
-            
-            config = load_json(CONFIG_FILE)
-            config['proxy_provider'] = 'SOCKS5 URL'
-            config['proxy_url'] = proxy_url
-            save_json(CONFIG_FILE, config)
-            
-            self.proxy_manager.ip_connected = True
-        else:
-            print(f'  {Color.RED}[-] Failed to connect. Please check your URL format.{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Format: socks5://username:password@host:port{Color.RESET}')
-        
-        press_enter()
-    
-    def connect_cliproxy(self):
-        """Connect Cliproxy - User provides credentials, tool auto-adds region"""
-        print(f'\n  {Color.CYAN}--- Cliproxy Connection ---{Color.RESET}')
-        print(f'  {Color.DIM}Enter your Cliproxy credentials (from your own account){Color.RESET}')
-        print(f'  {Color.DIM}Your username will be auto-formatted with region if needed{Color.RESET}')
-        print(f'  {Color.DIM}Example: If you enter "ridolislam" and select US, it becomes "ridolislam-region-US"{Color.RESET}\n')
-        
-        print(f'  {Color.CYAN}Select Country for initial connection:{Color.RESET}')
-        print(f'  {Color.DIM}1. 🇧🇩 Bangladesh (BD)    2. 🇮🇳 India (IN)    3. 🇵🇰 Pakistan (PK){Color.RESET}')
-        print(f'  {Color.DIM}4. 🇺🇸 USA (US)           5. 🇬🇧 UK (GB)       6. 🇸🇬 Singapore (SG){Color.RESET}')
-        print(f'  {Color.DIM}7. 🇦🇪 UAE (AE)           8. 🇸🇦 Saudi Arabia (SA)  9. 🇹🇷 Turkey (TR){Color.RESET}')
-        print(f'  {Color.DIM}10. 🇩🇪 Germany (DE)      11. 🇫🇷 France (FR)  12. 🇮🇹 Italy (IT){Color.RESET}')
-        print(f'  {Color.DIM}13. 🇪🇸 Spain (ES)        14. 🇳🇱 Netherlands (NL)  15. 🇦🇺 Australia (AU){Color.RESET}')
-        print(f'  {Color.DIM}16. 🇧🇷 Brazil (BR)       17. 🇷🇺 Russia (RU)  18. 🇯🇵 Japan (JP){Color.RESET}')
-        print(f'  {Color.DIM}19. 🇰🇷 South Korea (KR)  20. 🇨🇳 China (CN)   21. 🇲🇾 Malaysia (MY){Color.RESET}')
-        print(f'  {Color.DIM}22. 🇮🇩 Indonesia (ID)    23. 🇵🇭 Philippines (PH)  24. 🇹🇭 Thailand (TH){Color.RESET}')
-        print(f'  {Color.DIM}25. 🇻🇳 Vietnam (VN)      26. 🇪🇬 Egypt (EG)   27. 🇳🇬 Nigeria (NG){Color.RESET}')
-        print(f'  {Color.DIM}28. 🇿🇦 South Africa (ZA) 29. 🇲🇽 Mexico (MX)  30. 🇦🇷 Argentina (AR){Color.RESET}')
-        print(f'  {Color.DIM}31. 🔧 Manual Entry{Color.RESET}')
-        
-        country_choice = input(f'\n  {Color.CYAN}Enter country number (1-31): {Color.RESET}').strip()
-        
-        country_map = {
-            '1': 'BD', '2': 'IN', '3': 'PK', '4': 'US', '5': 'GB',
-            '6': 'SG', '7': 'AE', '8': 'SA', '9': 'TR', '10': 'DE',
-            '11': 'FR', '12': 'IT', '13': 'ES', '14': 'NL', '15': 'AU',
-            '16': 'BR', '17': 'RU', '18': 'JP', '19': 'KR', '20': 'CN',
-            '21': 'MY', '22': 'ID', '23': 'PH', '24': 'TH', '25': 'VN',
-            '26': 'EG', '27': 'NG', '28': 'ZA', '29': 'MX', '30': 'AR'
-        }
-        
-        if country_choice == '31':
-            country_code = input(f'  {Color.CYAN}Enter country code (e.g., BD, US, IN): {Color.RESET}').strip().upper()
-            if not country_code:
-                print(f'  {Color.RED}[-] Country code required!{Color.RESET}')
-                press_enter()
-                return
-        elif country_choice in country_map:
-            country_code = country_map[country_choice]
-        else:
-            print(f'  {Color.RED}[-] Invalid choice!{Color.RESET}')
-            press_enter()
-            return
-        
-        print(f'\n  {Color.CYAN}Enter your Cliproxy credentials:{Color.RESET}')
-        print(f'  {Color.DIM}Get these from your Cliproxy dashboard{Color.RESET}')
-        
-        username = input(f'  {Color.CYAN}Username: {Color.RESET}').strip()
-        password = input(f'  {Color.CYAN}Password: {Color.RESET}').strip()
-        host = input(f'  {Color.CYAN}Host (e.g., sg.cliproxy.io): {Color.RESET}').strip()
-        port = input(f'  {Color.CYAN}Port (e.g., 3010): {Color.RESET}').strip()
-        
-        if not all([username, password, host, port]):
-            print(f'  {Color.RED}[-] All fields are required!{Color.RESET}')
-            press_enter()
-            return
-        
-        # Connect with user's credentials
-        success = self.proxy_manager.connect_cliproxy(username, password, host, port, country_code)
-        
-        if success:
-            print(f'  {Color.GREEN}[+] Cliproxy Connected Successfully!{Color.RESET}')
-            print(f'  {Color.CYAN}[+] Auto country switching enabled!{Color.RESET}')
-            print(f'  {Color.CYAN}[+] Your proxy will be used for all countries{Color.RESET}')
-            self.audio.speak_ip_connected()
-            
-            config = load_json(CONFIG_FILE)
-            config['proxy_provider'] = 'Cliproxy (Your Account)'
-            config['proxy_username'] = username
-            config['proxy_country'] = country_code
-            save_json(CONFIG_FILE, config)
-            
-            self.proxy_manager.ip_connected = True
-        else:
-            print(f'  {Color.RED}[-] Failed to connect. Please check your credentials.{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Make sure your Cliproxy account is active{Color.RESET}')
-        
-        press_enter()
-    
-    def view_connected_ip(self):
-        proxy_stats = self.proxy_manager.get_proxy_stats()
-        config = load_json(CONFIG_FILE)
-        print(f'\n  {Color.CYAN}--- Connected IP Status ---{Color.RESET}')
-        if proxy_stats.get('ip_connected'):
-            print(f'  {Color.GREEN}[+] IP Connected: Yes{Color.RESET}')
-            print(f'  {Color.CYAN}Provider: {config.get("proxy_provider", "Your Proxy")}{Color.RESET}')
-            print(f'  {Color.CYAN}User ID: {proxy_stats.get("user_id", "Unknown")}{Color.RESET}')
-            print(f'  {Color.CYAN}Connected IP: {proxy_stats.get("connected_ip", "None")}{Color.RESET}')
-            print(f'  {Color.CYAN}Auto Country: Enabled (your proxy used for all){Color.RESET}')
-            try:
-                proxy_url = proxy_stats.get('connected_ip')
-                if proxy_url:
-                    proxies = {'http': proxy_url, 'https': proxy_url}
-                    response = requests.get('http://ip-api.com/json', proxies=proxies, timeout=10)
-                    if response.status_code == 200:
-                        data = response.json()
-                        print(f'  {Color.CYAN}IP Address: {data.get("query", "Unknown")}{Color.RESET}')
-                        print(f'  {Color.CYAN}Country: {data.get("country", "Unknown")} ({data.get("countryCode", "XX")}){Color.RESET}')
-                        print(f'  {Color.CYAN}Region: {data.get("regionName", "Unknown")}{Color.RESET}')
-                        print(f'  {Color.CYAN}City: {data.get("city", "Unknown")}{Color.RESET}')
-                        print(f'  {Color.CYAN}ISP: {data.get("isp", "Unknown")}{Color.RESET}')
-            except Exception as e:
-                print(f'  {Color.YELLOW}[!] Could not fetch IP details: {e}{Color.RESET}')
-        else:
-            print(f'  {Color.RED}[-] No IP Connected{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Please connect your proxy first{Color.RESET}')
-        press_enter()
-    
-    def disconnect_ip(self):
-        print(f'\n  {Color.CYAN}[*] Disconnecting IP...{Color.RESET}')
-        if self.proxy_manager.disconnect_ip():
-            print(f'  {Color.GREEN}[+] IP Disconnected Successfully!{Color.RESET}')
-            self.audio.speak_ip_disconnected()
-            config = load_json(CONFIG_FILE)
-            config['proxy_provider'] = 'None'
-            config['proxy_username'] = ''
-            save_json(CONFIG_FILE, config)
-        else:
-            print(f'  {Color.YELLOW}[!] No IP to disconnect{Color.RESET}')
-        press_enter()
-    
-    def test_current_ip(self):
-        proxy_stats = self.proxy_manager.get_proxy_stats()
-        print(f'\n  {Color.CYAN}--- Testing Current IP ---{Color.RESET}')
-        if not proxy_stats.get('ip_connected'):
-            print(f'  {Color.RED}[-] No IP Connected!{Color.RESET}')
-            print(f'  {Color.YELLOW}[!] Please connect your proxy first{Color.RESET}')
-            press_enter()
-            return
-        proxy_url = proxy_stats.get('connected_ip')
-        print(f'  {Color.CYAN}[*] Testing your proxy...{Color.RESET}')
-        try:
-            proxies = {'http': proxy_url, 'https': proxy_url}
-            start_time = time.time()
-            response = requests.get('http://ip-api.com/json', proxies=proxies, timeout=15)
-            response_time = (time.time() - start_time) * 1000
-            if response.status_code == 200:
-                data = response.json()
-                print(f'  {Color.GREEN}[+] Your Proxy is Working!{Color.RESET}')
-                print(f'  {Color.CYAN}Response Time: {response_time:.0f}ms{Color.RESET}')
-                print(f'  {Color.CYAN}IP Address: {data.get("query", "Unknown")}{Color.RESET}')
-                print(f'  {Color.CYAN}Country: {data.get("country", "Unknown")} ({data.get("countryCode", "XX")}){Color.RESET}')
-                print(f'  {Color.CYAN}Region: {data.get("regionName", "Unknown")}{Color.RESET}')
-                print(f'  {Color.CYAN}City: {data.get("city", "Unknown")}{Color.RESET}')
-                print(f'  {Color.CYAN}ISP: {data.get("isp", "Unknown")}{Color.RESET}')
-                self.audio.speak('IP test successful')
-            else:
-                print(f'  {Color.RED}[-] Proxy test failed. Status: {response.status_code}{Color.RESET}')
-        except requests.exceptions.Timeout:
-            print(f'  {Color.RED}[-] Connection timeout! Your proxy may be slow or down.{Color.RESET}')
-        except Exception as e:
-            print(f'  {Color.RED}[-] Test error: {e}{Color.RESET}')
-        press_enter()
-    
-    def ip_management_menu(self):
+    def menu_license(self):
+        """License management menu"""
         while True:
             self.show_header()
-            proxy_stats = self.proxy_manager.get_proxy_stats()
-            ip_status = "Connected" if proxy_stats.get('ip_connected') else "Disconnected"
-            ip_color = Color.GREEN if proxy_stats.get('ip_connected') else Color.RED
-            user_id = proxy_stats.get('user_id', 'None')
+            status = self.proxy_manager.license_manager.get_status()
             
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}IP MANAGEMENT - YOUR PROXY{Color.RESET}{Color.CYAN}                       ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}LICENSE MANAGEMENT{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Status: {ip_color}{ip_status}{Color.RESET}{Color.CYAN}                                     ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Your ID: {Color.WHITE}{user_id}{Color.RESET}{Color.CYAN}                                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Auto Country: {Color.WHITE}Enabled (your proxy used for all){Color.RESET}{Color.CYAN}        ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Status: {Color.WHITE}{"● Active" if status['valid'] else "● Inactive"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  License: {Color.WHITE}{status['license_key'][:20] + '...' if status['license_key'] else 'None'}{Color.RESET}{Color.CYAN}  ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Credits: {Color.WHITE}{status['credits']}{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Used: {Color.WHITE}{status['used_credits']}{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Max Browsers: {Color.WHITE}{status['max_browsers']}{Color.RESET}{Color.CYAN}                      ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Expires: {Color.WHITE}{status.get('expires_at', 'N/A')[:10] if status.get('expires_at') else 'N/A'}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Connect SOCKS5 URL                {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Connect Cliproxy Credentials      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} View Connected IP                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Disconnect IP                      {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Test Current IP                    {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back to Main Menu                 {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Enter License Key               {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Check License Status            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Old License (Backward Compat)   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
+            
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
             self.audio.play_click()
+            
             if choice == '1':
-                self.connect_proxy_url()
+                key = input(f'  {Color.CYAN}Enter license key (RIDOL-XXXX-XXXX-XXXX-XXXX): {Color.RESET}').strip().upper()
+                if key:
+                    valid, data = self.proxy_manager.license_manager.verify(key)
+                    if valid:
+                        print(f'  {Color.GREEN}[+] License verified!{Color.RESET}')
+                        print(f'  {Color.CYAN}[+] Credits: {data.get("credits")}{Color.RESET}')
+                        print(f'  {Color.CYAN}[+] Max Browsers: {data.get("max_browsers")}{Color.RESET}')
+                        self.audio.speak_license_verified()
+                    else:
+                        print(f'  {Color.RED}[-] {data.get("error", "Invalid license")}{Color.RESET}')
+                press_enter()
+                
             elif choice == '2':
-                self.connect_cliproxy()
+                if self.proxy_manager.license_manager.license_key:
+                    status = self.proxy_manager.license_manager.check_status()
+                    if status.get('valid'):
+                        print(f'  {Color.GREEN}[+] License Active{Color.RESET}')
+                        print(f'  {Color.CYAN}Credits: {status.get("credits")}{Color.RESET}')
+                        print(f'  {Color.CYAN}Used: {status.get("used_credits")}{Color.RESET}')
+                        print(f'  {Color.CYAN}Max Browsers: {status.get("max_browsers")}{Color.RESET}')
+                        print(f'  {Color.CYAN}Expires: {status.get("expires_at", "N/A")[:10]}{Color.RESET}')
+                    else:
+                        print(f'  {Color.RED}[-] {status.get("error", "License invalid or expired")}{Color.RESET}')
+                else:
+                    print(f'  {Color.YELLOW}[!] No license key set{Color.RESET}')
+                press_enter()
+                
             elif choice == '3':
-                self.view_connected_ip()
+                # Old license system (backward compatibility)
+                self.menu_old_license()
+                
+            elif choice == '0':
+                break
+            else:
+                print(f'{Color.RED}Invalid!{Color.RESET}')
+                press_enter()
+    
+    def menu_old_license(self):
+        """Old license management (backward compatibility)"""
+        while True:
+            self.show_header()
+            
+            print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}OLD LICENSE SYSTEM (Backward Compat){Color.RESET}{Color.CYAN}        ║{Color.RESET}
+ {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Check Server Status              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
+            
+            choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
+            self.audio.play_click()
+            
+            if choice == '1':
+                key = self.old_license.get_license_key()
+                serial = self.old_license.get_device_serial()
+                print(f'\n  {Color.CYAN}License Key: {key if key else "None"}{Color.RESET}')
+                print(f'  {Color.CYAN}Device Serial: {serial if serial else "None"}{Color.RESET}')
+                press_enter()
+            elif choice == '2':
+                key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
+                if key:
+                    self.old_license.set_license_key(key)
+                    print(f'  {Color.GREEN}[+] License key saved{Color.RESET}')
+                press_enter()
+            elif choice == '3':
+                key = self.old_license.get_license_key()
+                if not key:
+                    key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
+                if key:
+                    valid, data = self.old_license.verify(key)
+                    if valid:
+                        self.audio.speak_license_verified()
+                press_enter()
             elif choice == '4':
-                self.disconnect_ip()
+                serial = input(f'  {Color.CYAN}Enter device serial: {Color.RESET}').strip()
+                if serial:
+                    self.old_license.register_device(serial)
+                press_enter()
             elif choice == '5':
-                self.test_current_ip()
+                server_online = check_server_status()
+                if server_online:
+                    print(f'\n  {Color.GREEN}[+] Server Online{Color.RESET}')
+                else:
+                    print(f'\n  {Color.RED}[-] Server Offline{Color.RESET}')
+                press_enter()
             elif choice == '0':
                 break
             else:
@@ -1399,17 +1351,16 @@ class MainMenu:
         while True:
             self.show_header()
             print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU - PROXY + AUTO NAME{Color.RESET}{Color.CYAN}                 ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}MAIN MENU - LICENSE & CREDIT SYSTEM{Color.RESET}{Color.CYAN}          ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Browser Pilot Setup             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} IP Management                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} License Management              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Data Folder                     {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Start Bot                        {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[6]{Color.RESET} Status                           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[7]{Color.RESET} Audio Settings                    {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[8]{Color.RESET} Demo                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[9]{Color.RESET} Help                              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} License Management              {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Data Folder                     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Start Bot                        {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Status                           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[6]{Color.RESET} Audio Settings                    {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[7]{Color.RESET} Demo                             {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[8]{Color.RESET} Help                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -1417,20 +1368,18 @@ class MainMenu:
             if choice == '1':
                 self.menu_browser()
             elif choice == '2':
-                self.ip_management_menu()
-            elif choice == '3':
                 self.menu_license()
-            elif choice == '4':
+            elif choice == '3':
                 self.menu_folder()
-            elif choice == '5':
+            elif choice == '4':
                 self.menu_start_bot()
-            elif choice == '6':
+            elif choice == '5':
                 self.menu_status()
-            elif choice == '7':
+            elif choice == '6':
                 self.menu_audio()
-            elif choice == '8':
+            elif choice == '7':
                 self.menu_demo()
-            elif choice == '9':
+            elif choice == '8':
                 self.menu_help()
             elif choice == '0':
                 self.menu_exit()
@@ -1479,60 +1428,6 @@ class MainMenu:
                     print(f'  {Color.DIM}[*] Screenshot saved: test_facebook.png{Color.RESET}')
                     time.sleep(2)
                     self.browser_manager.close_browser()
-                press_enter()
-            elif choice == '0':
-                break
-            else:
-                print(f'{Color.RED}Invalid!{Color.RESET}')
-                press_enter()
-    
-    def menu_license(self):
-        while True:
-            self.show_header()
-            print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}LICENSE MANAGEMENT{Color.RESET}{Color.CYAN}                           ║{Color.RESET}
- {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Check Server Status              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
-            choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
-            self.audio.play_click()
-            if choice == '1':
-                key = self.license.get_license_key()
-                serial = self.license.get_device_serial()
-                print(f'\n  {Color.CYAN}License Key: {key if key else "None"}{Color.RESET}')
-                print(f'  {Color.CYAN}Device Serial: {serial if serial else "None"}{Color.RESET}')
-                press_enter()
-            elif choice == '2':
-                key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
-                if key:
-                    self.license.set_license_key(key)
-                    print(f'  {Color.GREEN}[+] License key saved{Color.RESET}')
-                press_enter()
-            elif choice == '3':
-                key = self.license.get_license_key()
-                if not key:
-                    key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
-                if key:
-                    valid, data = self.license.verify(key)
-                    if valid:
-                        self.audio.speak_license_verified()
-                press_enter()
-            elif choice == '4':
-                serial = input(f'  {Color.CYAN}Enter device serial: {Color.RESET}').strip()
-                if serial:
-                    self.license.register_device(serial)
-                press_enter()
-            elif choice == '5':
-                server_online = check_server_status()
-                if server_online:
-                    print(f'\n  {Color.GREEN}[+] Server Online{Color.RESET}')
-                else:
-                    print(f'\n  {Color.RED}[-] Server Offline{Color.RESET}')
                 press_enter()
             elif choice == '0':
                 break
@@ -1628,17 +1523,15 @@ class MainMenu:
         self.show_header()
         folder_path = self.data_dir
         folder_exists = os.path.exists(folder_path)
-        proxy_stats = self.proxy_manager.get_proxy_stats()
+        license_status = self.proxy_manager.license_manager.get_status()
         
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}START BOT{Color.RESET}{Color.CYAN}                                        ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Numbers: {len(load_file_lines(os.path.join(self.data_dir, "numbers.txt")))}                        {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{self.license.get_license_key() or "Not set"}{Color.RESET}{Color.CYAN}             ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  License: {Color.DIM}{"Active" if license_status.get('valid') else "Inactive"}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  Credits: {Color.DIM}{license_status.get('credits', 0)}{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Browser: {Color.DIM}{"● Ready" if self.browser_manager.browser_available else "○ Not installed"}{Color.RESET}{Color.CYAN}    ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  IP Connected: {Color.DIM}{"Yes" if proxy_stats.get("ip_connected") else "No"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Your ID: {Color.DIM}{proxy_stats.get("user_id", "None")}{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  Auto Country: {Color.DIM}Enabled (your proxy used for all){Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Folder Status: {Color.DIM}{"✓ Exists" if folder_exists else "✗ Not found"}{Color.RESET}{Color.CYAN}        ║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
         
@@ -1647,17 +1540,21 @@ class MainMenu:
             self.audio.speak_folder_not_found()
             press_enter()
             return
-        if not self.license.get_license_key():
-            print(f'\n{Color.RED}[-] No license key set!{Color.RESET}')
+        
+        if not license_status.get('valid'):
+            print(f'\n{Color.RED}[-] License not valid! Please enter a valid license key.{Color.RESET}')
+            print(f'  {Color.DIM}Go to License Management -> Enter License Key{Color.RESET}')
             press_enter()
             return
+        
+        if license_status.get('credits', 0) <= 0:
+            print(f'\n{Color.RED}[-] Insufficient credits! Please add more credits.{Color.RESET}')
+            press_enter()
+            return
+        
         if not self.browser_manager.browser_available:
             print(f'\n{Color.RED}[-] Browser Pilot not installed!{Color.RESET}')
-            press_enter()
-            return
-        if not proxy_stats.get('ip_connected'):
-            print(f'\n{Color.YELLOW}[!] No IP connected! Please connect your proxy first.{Color.RESET}')
-            print(f'  {Color.DIM}Go to IP Management -> Connect SOCKS5 URL{Color.RESET}')
+            print(f'{Color.YELLOW}[!] Go to Main Menu -> 1. Browser Pilot Setup -> 1. Install Browser Pilot{Color.RESET}')
             press_enter()
             return
         
@@ -1667,13 +1564,19 @@ class MainMenu:
             workers = max(1, min(5, workers))
         except:
             workers = 1
+        
         print(f'\n{Color.YELLOW}[!] Press 0 and Enter to stop the bot{Color.RESET}')
+        print(f'{Color.CYAN}[+] Each operation will consume 1 credit{Color.RESET}')
+        print(f'{Color.CYAN}[+] Available credits: {license_status.get("credits", 0)}{Color.RESET}')
+        
         self.bot_running = True
         stop_thread = threading.Thread(target=self.check_stop_input, daemon=True)
         stop_thread.start()
-        self.bot = FacebookBot(self.data_dir, self.license.get_license_key(), self.audio)
+        
+        self.bot = FacebookBot(self.data_dir, self.old_license.get_license_key(), self.audio)
         self.audio.speak_bot_starting()
         self.bot.run_bot(workers)
+        
         self.bot_running = False
         time.sleep(1)
         print(f'\n{Color.GREEN}[+] Returned to main menu{Color.RESET}')
@@ -1682,6 +1585,7 @@ class MainMenu:
     def menu_status(self):
         self.show_header()
         proxy_stats = self.proxy_manager.get_proxy_stats()
+        license_status = self.proxy_manager.license_manager.get_status()
         
         server_online = check_server_status()
         server_status = "ONLINE" if server_online else "OFFLINE"
@@ -1693,9 +1597,9 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Browser Pilot: {Color.WHITE}{"Available" if self.browser_manager.browser_available else "Not installed"}{Color.RESET}{Color.CYAN} ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Proxy Pool: {Color.WHITE}{proxy_stats["total"]} proxies{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} IP Connected: {Color.WHITE}{'Yes' if proxy_stats.get('ip_connected') else 'No'}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Your ID: {Color.WHITE}{proxy_stats.get('user_id', 'None')}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Auto Country: {Color.WHITE}Enabled{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if self.license.get_license_key() else "None"}{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} License: {Color.WHITE}{"Active" if license_status.get('valid') else "Inactive"}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Credits: {Color.WHITE}{license_status.get('credits', 0)}{Color.RESET}{Color.CYAN}                          ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Used Credits: {Color.WHITE}{license_status.get('used_credits', 0)}{Color.RESET}{Color.CYAN}                    ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Data Dir: {Color.WHITE}{self.data_dir}{Color.RESET}{Color.CYAN}              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {self.audio.get_status()}{Color.CYAN}         ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.GREEN}●{Color.RESET} Automation: {Color.WHITE}{"Running" if self.bot and self.bot.running else "Idle"}{Color.RESET}{Color.CYAN}          ║{Color.RESET}
@@ -1816,19 +1720,18 @@ class MainMenu:
     def menu_help(self):
         self.show_header()
         print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - PROXY SETUP{Color.RESET}{Color.CYAN}                               ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}HELP - LICENSE & CREDIT SYSTEM{Color.RESET}{Color.CYAN}                  ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How to Setup Your Proxy{Color.RESET}{Color.CYAN}                      ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  1. Go to IP Management (Option 2)                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  2. Select "Connect SOCKS5 URL" (Option 1)           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  3. Enter URL in format:                             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     socks5://username:password@host:port             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}     Example: socks5://user:pass@proxy.com:1080       {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  4. Or use Cliproxy Credentials (Option 2)           {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  5. Bot will auto-detect country and switch proxy   {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  [?] {Color.WHITE}How It Works{Color.RESET}{Color.CYAN}                                ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  1. Get a license key from admin                     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  2. Enter license key in License Management         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  3. License has credits (e.g., 1000)                {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  4. Each IP request consumes 1 credit               {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  5. Bot gets IP from server using Cliproxy API     {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  6. No separate proxy setup needed                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  [#] {Color.WHITE}Features{Color.RESET}{Color.CYAN}                         ║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  - SOCKS5 URL format support                         {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  - Credit based system (pay per use)               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Auto country detection from phone number         {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - Auto name generation by country                  {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  - OTP retry with voice feedback                    {Color.CYAN}║{Color.RESET}
