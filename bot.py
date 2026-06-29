@@ -33,7 +33,7 @@ APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v7.0'
 
 # ==================== SERVER CONFIG ====================
-SERVER_URL = os.environ.get('SERVER_URL', 'https://your-render-server.onrender.com')
+SERVER_URL = 'https://ridol-fb-tool.onrender.com'
 
 # ==================== GOOGLE DRIVE CONFIG ====================
 GOOGLE_DRIVE_FILE_ID = "1jBDWRKJ0ry9lZUMc8IaVI8zDKvtVzVma"
@@ -136,7 +136,7 @@ class Color:
 
 def server_request(endpoint, method='GET', data=None):
     """Make request to license server"""
-    url = f"{LICENSE_SERVER}/{endpoint}"
+    url = f"{SERVER_URL}/{endpoint}"
     headers = {'Content-Type': 'application/json'}
     try:
         if method == 'GET':
@@ -153,35 +153,9 @@ def server_request(endpoint, method='GET', data=None):
     except:
         return None
 
-def verify_license_old(key, device_serial):
-    """Old license verification (backward compatibility)"""
-    try:
-        result = server_request("verify.php", 'POST', {
-            'license_key': key,
-            'device_serial': device_serial
-        })
-        if result:
-            return result
-        return {'valid': False, 'message': 'Server error'}
-    except:
-        return {'valid': False, 'message': 'Server error'}
-
-def register_device_old(device_serial, license_key):
-    """Old device registration (backward compatibility)"""
-    try:
-        result = server_request("register.php", 'POST', {
-            'device_serial': device_serial,
-            'license_key': license_key
-        })
-        if result:
-            return result
-        return {'success': False, 'message': 'Server error'}
-    except:
-        return {'success': False, 'message': 'Server error'}
-
 def check_server_status():
     try:
-        response = requests.get(f"{LICENSE_SERVER}/", timeout=5)
+        response = requests.get(f"{SERVER_URL}/", timeout=5)
         return response.status_code == 200
     except:
         return False
@@ -239,6 +213,7 @@ class LicenseManager:
         self.used_credits = 0
         self.is_valid = False
         self.expires_at = None
+        self.user_id = None
         
     def verify(self, license_key):
         """Verify license with server"""
@@ -254,6 +229,7 @@ class LicenseManager:
                     self.max_browsers = data.get('max_browsers', 1)
                     self.used_credits = data.get('used_credits', 0)
                     self.expires_at = data.get('expires_at')
+                    self.user_id = data.get('user_id', '')
                     self.is_valid = True
                     self.config['license_key'] = license_key
                     save_json(CONFIG_FILE, self.config)
@@ -302,7 +278,8 @@ class LicenseManager:
             'max_browsers': self.max_browsers,
             'used_credits': self.used_credits,
             'license_key': self.license_key,
-            'expires_at': self.expires_at
+            'expires_at': self.expires_at,
+            'user_id': self.user_id
         }
     
     def check_status(self):
@@ -321,6 +298,7 @@ class LicenseManager:
                     self.max_browsers = data.get('max_browsers', 1)
                     self.used_credits = data.get('used_credits', 0)
                     self.expires_at = data.get('expires_at')
+                    self.user_id = data.get('user_id', '')
                     self.is_valid = True
                     return data
                 else:
@@ -357,7 +335,7 @@ class ProxyManager:
     
     def connect_via_license(self, country_code):
         """Get IP using license credits"""
-        print(f"{Color.CYAN}[*] Getting IP for {country_code} using license...{Color.RESET}")
+        print(f"{Color.CYAN}[*] Requesting IP for {country_code} using license...{Color.RESET}")
         
         ip, error = self.license_manager.get_ip(country_code)
         
@@ -814,45 +792,6 @@ class BrowserPilotManager:
         except:
             pass
 
-# ==================== OLD LICENSE MANAGER (Backward Compatibility) ====================
-class OldLicenseManager:
-    def __init__(self):
-        self.config = load_json(CONFIG_FILE)
-    
-    def save(self): save_json(CONFIG_FILE, self.config)
-    def get_license_key(self): return self.config.get('license_key', '')
-    def set_license_key(self, key): self.config['license_key'] = key; self.save()
-    def get_device_serial(self): return self.config.get('device_serial', '')
-    def set_device_serial(self, s): self.config['device_serial'] = s; self.save()
-    def get_browser_ready(self): return self.config.get('browser_ready', False)
-    def set_browser_ready(self, status): self.config['browser_ready'] = status; self.save()
-    def get_proxy_api_key(self): return self.config.get('proxy_api_key', '')
-    def set_proxy_api_key(self, key): self.config['proxy_api_key'] = key; self.save()
-    
-    def verify(self, key):
-        print(f'  {Color.YELLOW}[*] Verifying license...{Color.RESET}')
-        result = verify_license_old(key, self.get_device_serial())
-        if result and result.get('valid'):
-            print(f'  {Color.GREEN}[+] License Active! Expires: {result.get("expires_at", "N/A")}{Color.RESET}')
-            self.set_license_key(key)
-            return True, result
-        else:
-            msg = result.get("message", "Invalid license") if result else "Server error"
-            print(f'  {Color.RED}[-] {msg}{Color.RESET}')
-            return False, result
-    
-    def register_device(self, device_serial):
-        print(f'  {Color.CYAN}[*] Registering device...{Color.RESET}')
-        result = register_device_old(device_serial, self.get_license_key())
-        if result and result.get('success'):
-            self.set_device_serial(device_serial)
-            print(f'  {Color.GREEN}[+] Device registered successfully{Color.RESET}')
-            return True
-        else:
-            msg = result.get("message", "Registration failed") if result else "Server error"
-            print(f'  {Color.RED}[-] {msg}{Color.RESET}')
-            return False
-
 # ==================== UTILITY FUNCTIONS ====================
 def load_json(path):
     try:
@@ -1154,7 +1093,6 @@ class MainMenu:
     def __init__(self):
         self.browser_manager = BrowserPilotManager()
         self.proxy_manager = ProxyManager()
-        self.old_license = OldLicenseManager()
         self.audio = AudioEngine()
         self.bot = None
         self.config = load_json(CONFIG_FILE)
@@ -1173,25 +1111,36 @@ class MainMenu:
         proxy_stats = self.proxy_manager.get_proxy_stats()
         license_status = self.proxy_manager.license_manager.get_status()
         
-        proxy_status = f"● {proxy_stats['total']} proxies"
-        proxy_color = Color.GREEN if proxy_stats['total'] > 0 else Color.RED
+        # Proxy status
+        proxy_count = proxy_stats.get('total', 0)
+        proxy_status = f"● {proxy_count} proxies"
+        proxy_color = Color.GREEN if proxy_count > 0 else Color.RED
         
-        ip_status = "● CONNECTED" if proxy_stats.get('ip_connected') else "● DISCONNECTED"
-        ip_color = Color.GREEN if proxy_stats.get('ip_connected') else Color.RED
+        # IP Connect status
+        ip_connected = proxy_stats.get('ip_connected', False)
+        ip_status = "● CONNECTED" if ip_connected else "● DISCONNECTED"
+        ip_color = Color.GREEN if ip_connected else Color.RED
         
+        # License status
         license_valid = license_status.get('valid', False)
         lic_status = "● ACTIVE" if license_valid else "● INACTIVE"
         lic_color = Color.GREEN if license_valid else Color.RED
         
+        # Credits
         credits = license_status.get('credits', 0)
         credits_color = Color.GREEN if credits > 100 else Color.YELLOW if credits > 10 else Color.RED
         
+        # Server status
         server_online = check_server_status()
         server_status = "ONLINE" if server_online else "OFFLINE"
         server_color = Color.GREEN if server_online else Color.RED
         
-        print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_stats["total"] > 0 else "Empty"}{Color.RESET}')
-        print(f' {ip_color}{ip_status}{Color.RESET} IP Connect: {Color.WHITE}{"Connected" if proxy_stats.get("ip_connected") else "Disconnected"}{Color.RESET}')
+        # User ID
+        user_id = license_status.get('user_id', '')
+        user_display = f"User: {user_id}" if user_id else "User: None"
+        
+        print(f' {proxy_color}{proxy_status}{Color.RESET} Proxy Pool: {Color.WHITE}{"Ready" if proxy_count > 0 else "Empty"}{Color.RESET}')
+        print(f' {ip_color}{ip_status}{Color.RESET} IP Connect: {Color.WHITE}{"Connected" if ip_connected else "Disconnected"} | {user_display}{Color.RESET}')
         print(f' {lic_color}{lic_status}{Color.RESET} License: {Color.WHITE}{"Valid" if license_valid else "Invalid"}{Color.RESET}')
         print(f' {credits_color}● Credits: {credits}{Color.RESET}')
         print(f' {Color.CYAN}◉{Color.RESET} Server: {server_color}{server_status}{Color.RESET}\n')
@@ -1239,11 +1188,11 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  Credits: {Color.WHITE}{status['credits']}{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Used: {Color.WHITE}{status['used_credits']}{Color.RESET}{Color.CYAN}                              ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Max Browsers: {Color.WHITE}{status['max_browsers']}{Color.RESET}{Color.CYAN}                      ║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  User ID: {Color.WHITE}{status.get('user_id', 'None')}{Color.RESET}{Color.CYAN}                        ║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  Expires: {Color.WHITE}{status.get('expires_at', 'N/A')[:10] if status.get('expires_at') else 'N/A'}{Color.RESET}{Color.CYAN}           ║{Color.RESET}
  {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} Enter License Key               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Check License Status            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Old License (Backward Compat)   {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             
@@ -1271,6 +1220,7 @@ class MainMenu:
                         print(f'  {Color.CYAN}Credits: {status.get("credits")}{Color.RESET}')
                         print(f'  {Color.CYAN}Used: {status.get("used_credits")}{Color.RESET}')
                         print(f'  {Color.CYAN}Max Browsers: {status.get("max_browsers")}{Color.RESET}')
+                        print(f'  {Color.CYAN}User ID: {status.get("user_id", "None")}{Color.RESET}')
                         print(f'  {Color.CYAN}Expires: {status.get("expires_at", "N/A")[:10]}{Color.RESET}')
                     else:
                         print(f'  {Color.RED}[-] {status.get("error", "License invalid or expired")}{Color.RESET}')
@@ -1278,68 +1228,6 @@ class MainMenu:
                     print(f'  {Color.YELLOW}[!] No license key set{Color.RESET}')
                 press_enter()
                 
-            elif choice == '3':
-                # Old license system (backward compatibility)
-                self.menu_old_license()
-                
-            elif choice == '0':
-                break
-            else:
-                print(f'{Color.RED}Invalid!{Color.RESET}')
-                press_enter()
-    
-    def menu_old_license(self):
-        """Old license management (backward compatibility)"""
-        while True:
-            self.show_header()
-            
-            print(f''' {Color.CYAN}╔════════════════════════════════════════════════════╗{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.WHITE}{Color.BOLD}OLD LICENSE SYSTEM (Backward Compat){Color.RESET}{Color.CYAN}        ║{Color.RESET}
- {Color.CYAN}╠════════════════════════════════════════════════════╣{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[1]{Color.RESET} View Current License             {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[2]{Color.RESET} Enter New License Key            {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Verify License                   {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Register Device                  {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Check Server Status              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
- {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
-            
-            choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
-            self.audio.play_click()
-            
-            if choice == '1':
-                key = self.old_license.get_license_key()
-                serial = self.old_license.get_device_serial()
-                print(f'\n  {Color.CYAN}License Key: {key if key else "None"}{Color.RESET}')
-                print(f'  {Color.CYAN}Device Serial: {serial if serial else "None"}{Color.RESET}')
-                press_enter()
-            elif choice == '2':
-                key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
-                if key:
-                    self.old_license.set_license_key(key)
-                    print(f'  {Color.GREEN}[+] License key saved{Color.RESET}')
-                press_enter()
-            elif choice == '3':
-                key = self.old_license.get_license_key()
-                if not key:
-                    key = input(f'  {Color.CYAN}Enter license key: {Color.RESET}').strip()
-                if key:
-                    valid, data = self.old_license.verify(key)
-                    if valid:
-                        self.audio.speak_license_verified()
-                press_enter()
-            elif choice == '4':
-                serial = input(f'  {Color.CYAN}Enter device serial: {Color.RESET}').strip()
-                if serial:
-                    self.old_license.register_device(serial)
-                press_enter()
-            elif choice == '5':
-                server_online = check_server_status()
-                if server_online:
-                    print(f'\n  {Color.GREEN}[+] Server Online{Color.RESET}')
-                else:
-                    print(f'\n  {Color.RED}[-] Server Offline{Color.RESET}')
-                press_enter()
             elif choice == '0':
                 break
             else:
@@ -1573,7 +1461,7 @@ class MainMenu:
         stop_thread = threading.Thread(target=self.check_stop_input, daemon=True)
         stop_thread.start()
         
-        self.bot = FacebookBot(self.data_dir, self.old_license.get_license_key(), self.audio)
+        self.bot = FacebookBot(self.data_dir, '', self.audio)
         self.audio.speak_bot_starting()
         self.bot.run_bot(workers)
         
