@@ -176,6 +176,7 @@ class CoreManager:
         self.browser_ready = self.check_browser_ready()
         self.undetected_available = self.check_undetected_chromedriver()
         self.browser_active = False
+        self.all_ready = False
 
     def check_browser_ready(self):
         """Check if ChromeDriver exists"""
@@ -188,11 +189,66 @@ class CoreManager:
             return True
         except ImportError:
             return False
+    
+    def check_all_dependencies(self):
+        """Check all dependencies and return status"""
+        status = {
+            'chromium': False,
+            'chromedriver': False,
+            'selenium': False,
+            'undetected': False,
+            'requests': False,
+            'espeak': False
+        }
+        
+        # Check Chromium
+        chromium_paths = [
+            '/data/data/com.termux/files/usr/bin/chromium',
+            '/data/data/com.termux/files/usr/bin/chromium-browser',
+            '/usr/bin/chromium'
+        ]
+        for p in chromium_paths:
+            if os.path.exists(p):
+                status['chromium'] = True
+                break
+        
+        # Check ChromeDriver
+        status['chromedriver'] = self.check_browser_ready()
+        
+        # Check Python packages
+        try:
+            import selenium
+            status['selenium'] = True
+        except:
+            pass
+        
+        status['undetected'] = self.check_undetected_chromedriver()
+        
+        try:
+            import requests
+            status['requests'] = True
+        except:
+            pass
+        
+        # Check espeak
+        espeak_paths = [
+            '/data/data/com.termux/files/usr/bin/espeak',
+            '/usr/bin/espeak'
+        ]
+        for p in espeak_paths:
+            if os.path.exists(p):
+                status['espeak'] = True
+                break
+        
+        return status
 
     def install_undetected_chromedriver(self):
-        """Install undetected-chromedriver package"""
+        """Install undetected-chromedriver package with multiple methods"""
         print(f"{Color.CYAN}[*] Installing undetected-chromedriver...{Color.RESET}")
+        
+        # Method 1: Try normal pip install
         try:
+            print(f"{Color.DIM}    Trying pip install...{Color.RESET}")
             subprocess.run(
                 "pip install undetected-chromedriver --upgrade",
                 shell=True, 
@@ -200,16 +256,104 @@ class CoreManager:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            # Verify installation
             self.undetected_available = self.check_undetected_chromedriver()
             if self.undetected_available:
                 print(f"{Color.GREEN}[✓] undetected-chromedriver installed!{Color.RESET}")
                 return True
-            else:
-                print(f"{Color.YELLOW}[!] undetected-chromedriver installation failed{Color.RESET}")
-                return False
         except:
-            return False
+            pass
+        
+        # Method 2: Try specific version (3.5.4)
+        try:
+            print(f"{Color.DIM}    Trying version 3.5.4...{Color.RESET}")
+            subprocess.run(
+                "pip install undetected-chromedriver==3.5.4",
+                shell=True, 
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            self.undetected_available = self.check_undetected_chromedriver()
+            if self.undetected_available:
+                print(f"{Color.GREEN}[✓] undetected-chromedriver 3.5.4 installed!{Color.RESET}")
+                return True
+        except:
+            pass
+        
+        # Method 3: Try GitHub direct
+        try:
+            print(f"{Color.DIM}    Trying GitHub installation...{Color.RESET}")
+            subprocess.run(
+                "pip install git+https://github.com/ultrafunkamsterdam/undetected-chromedriver.git",
+                shell=True, 
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            self.undetected_available = self.check_undetected_chromedriver()
+            if self.undetected_available:
+                print(f"{Color.GREEN}[✓] undetected-chromedriver installed from GitHub!{Color.RESET}")
+                return True
+        except:
+            pass
+        
+        # Method 4: Try with Python 3.11 if available
+        try:
+            print(f"{Color.DIM}    Trying Python 3.11...{Color.RESET}")
+            result = subprocess.run("which python3.11", shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                subprocess.run(
+                    "python3.11 -m pip install undetected-chromedriver",
+                    shell=True, 
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                self.undetected_available = self.check_undetected_chromedriver()
+                if self.undetected_available:
+                    print(f"{Color.GREEN}[✓] undetected-chromedriver installed with Python 3.11!{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] Please run: python3.11 bot.py{Color.RESET}")
+                    return True
+        except:
+            pass
+        
+        # Method 5: Manual download and install
+        try:
+            print(f"{Color.DIM}    Trying manual download...{Color.RESET}")
+            os.chdir(SCRIPT_DIR)
+            subprocess.run("wget -q https://github.com/ultrafunkamsterdam/undetected-chromedriver/archive/refs/heads/master.zip", shell=True, check=False)
+            subprocess.run("unzip -q -o master.zip", shell=True, check=False)
+            if os.path.exists("undetected-chromedriver-master"):
+                os.chdir("undetected-chromedriver-master")
+                subprocess.run("pip install .", shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                os.chdir(SCRIPT_DIR)
+                subprocess.run("rm -rf undetected-chromedriver-master master.zip", shell=True, check=False)
+                self.undetected_available = self.check_undetected_chromedriver()
+                if self.undetected_available:
+                    print(f"{Color.GREEN}[✓] undetected-chromedriver installed manually!{Color.RESET}")
+                    return True
+        except Exception as e:
+            pass
+        
+        # Method 6: Try with --break-system-packages (for newer pip)
+        try:
+            print(f"{Color.DIM}    Trying with --break-system-packages...{Color.RESET}")
+            subprocess.run(
+                "pip install undetected-chromedriver --break-system-packages",
+                shell=True, 
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            self.undetected_available = self.check_undetected_chromedriver()
+            if self.undetected_available:
+                print(f"{Color.GREEN}[✓] undetected-chromedriver installed with --break-system-packages!{Color.RESET}")
+                return True
+        except:
+            pass
+        
+        print(f"{Color.RED}[✗] undetected-chromedriver installation failed!{Color.RESET}")
+        return False
 
     def load_config(self):
         try:
@@ -268,7 +412,6 @@ class StealthBrowser:
 
     def start(self):
         try:
-            # Check if undetected-chromedriver is available
             if core.undetected_available:
                 print(f"{Color.CYAN}[*] Using undetected-chromedriver{Color.RESET}")
                 return self._start_undetected()
@@ -281,30 +424,32 @@ class StealthBrowser:
             return False
 
     def _start_undetected(self):
-        """Start with undetected-chromedriver"""
         try:
             import undetected_chromedriver as uc
             
             options = uc.ChromeOptions()
             
-            # Anti-detection options
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
             ]
             options.add_argument(f'user-agent={random.choice(ua_list)}')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
             options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
             
             if self.proxy:
                 options.add_argument(f'--proxy-server={self.proxy}')
             
+            chromedriver_path = ChromeDriverManager.get_chromedriver_path()
+            
             self.driver = uc.Chrome(
                 options=options,
-                driver_executable_path=ChromeDriverManager.get_chromedriver_path(),
+                driver_executable_path=chromedriver_path,
                 version_main=124
             )
             
@@ -312,11 +457,9 @@ class StealthBrowser:
             
         except Exception as e:
             print(f"{Color.RED}[-] undetected-chromedriver error: {e}{Color.RESET}")
-            # Fallback to standard selenium
             return self._start_standard()
 
     def _start_standard(self):
-        """Start with standard selenium"""
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.service import Service
@@ -329,7 +472,6 @@ class StealthBrowser:
             
             options = Options()
             
-            # Find chromium binary
             chromium_paths = [
                 '/data/data/com.termux/files/usr/bin/chromium',
                 '/data/data/com.termux/files/usr/bin/chromium-browser',
@@ -343,13 +485,15 @@ class StealthBrowser:
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
             ]
             options.add_argument(f'user-agent={random.choice(ua_list)}')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
             options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
@@ -368,7 +512,6 @@ class StealthBrowser:
             service = Service(chromedriver_path)
             self.driver = webdriver.Chrome(service=service, options=options)
             
-            # Stealth JavaScript
             self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
                 "source": """
                     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -471,6 +614,18 @@ class SaaSApp:
         core = self.core
         self.audio = AudioEngine()
         self.core.verify_license()
+        self.check_and_update_status()
+
+    def check_and_update_status(self):
+        """Check all dependencies and update status"""
+        self.core.browser_ready = self.core.check_browser_ready()
+        self.core.undetected_available = self.core.check_undetected_chromedriver()
+        
+        # Check if all dependencies are ready
+        if self.core.browser_ready:
+            self.core.all_ready = True
+        else:
+            self.core.all_ready = False
 
     def draw_ui(self):
         os.system('clear')
@@ -485,7 +640,7 @@ class SaaSApp:
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────────────┐{Color.RESET}")
         
-        # Browser Status - More Detailed
+        # Browser Status
         if self.core.browser_active:
             br_status = f"{Color.GREEN}● Active{Color.RESET}"
         elif self.core.browser_ready:
@@ -495,7 +650,6 @@ class SaaSApp:
         
         lic_status = f"{Color.GREEN}● Active{Color.RESET}" if self.core.is_valid else f"{Color.RED}● Inactive{Color.RESET}"
         
-        # Undetected Status
         if self.core.undetected_available:
             ud_status = f"{Color.GREEN}● Installed{Color.RESET}"
         else:
@@ -512,14 +666,16 @@ class SaaSApp:
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Undetected{Color.RESET}: {ud_status}")
         print(f"  {Color.CYAN}└──────────────────────────────────────────────────┘{Color.RESET}")
         
-        # Browser Status Explanation
+        # Status Explanation
         print(f"  {Color.DIM}┌──────────────────────────────────────────────────┐{Color.RESET}")
         if self.core.browser_active:
             print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ Browser is ACTIVE and ready to use{Color.RESET}      {Color.DIM}│{Color.RESET}")
+        elif self.core.browser_ready and self.core.undetected_available:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ All systems READY - Everything is active!{Color.RESET}  {Color.DIM}│{Color.RESET}")
         elif self.core.browser_ready:
-            print(f"  {Color.DIM}│{Color.RESET}  {Color.YELLOW}⏳ Browser is READY (waiting to start){Color.RESET}   {Color.DIM}│{Color.RESET}")
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.YELLOW}⏳ Browser READY - Undetected mode OFF{Color.RESET}     {Color.DIM}│{Color.RESET}")
         else:
-            print(f"  {Color.DIM}│{Color.RESET}  {Color.RED}❌ Browser NOT READY - Run Option 4{Color.RESET}       {Color.DIM}│{Color.RESET}")
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.RED}❌ Dependencies MISSING - Run Option 4{Color.RESET}      {Color.DIM}│{Color.RESET}")
         
         if self.core.undetected_available:
             print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}🔒 Undetected Mode: ON{Color.RESET}                      {Color.DIM}│{Color.RESET}")
@@ -535,7 +691,6 @@ class SaaSApp:
         
         if not self.core.browser_ready:
             print(f"\n{Color.RED}[!] Browser not ready! Run Option 4 first.{Color.RESET}")
-            print(f"{Color.YELLOW}[!] ChromeDriver not found in project folder or system{Color.RESET}")
             time.sleep(3)
             return
         
@@ -557,7 +712,6 @@ class SaaSApp:
         print(f"\n{Color.GREEN}[+] Batch Started: {len(items)} items{Color.RESET}")
         self.audio.speak("Starting batch process")
         
-        # Set browser active
         self.core.browser_active = True
 
         for idx, item in enumerate(items, 1):
@@ -598,79 +752,111 @@ class SaaSApp:
         input("\nBatch Complete. Press Enter...")
 
     def install_dependencies(self):
-        """Complete Termux setup with ChromeDriver and undetected-chromedriver"""
+        """Smart dependency installer - checks first, installs only missing"""
         print(f"\n{Color.GOLD}╔══════════════════════════════════════════╗{Color.RESET}")
-        print(f"{Color.GOLD}║     INSTALLING ALL DEPENDENCIES          ║{Color.RESET}")
-        print(f"{Color.GOLD}║   ChromeDriver + undetected-chromedriver ║{Color.RESET}")
+        print(f"{Color.GOLD}║     SMART DEPENDENCY INSTALLER           ║{Color.RESET}")
+        print(f"{Color.GOLD}║   Checking and installing missing only   ║{Color.RESET}")
         print(f"{Color.GOLD}╚══════════════════════════════════════════╝{Color.RESET}\n")
         
+        # Check current status
+        print(f"{Color.CYAN}[*] Checking current dependencies...{Color.RESET}")
+        status = self.core.check_all_dependencies()
+        
+        # Show current status
+        print(f"\n{Color.CYAN}📊 Current Status:{Color.RESET}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Chromium     : {'Installed' if status['chromium'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} ChromeDriver  : {'Installed' if status['chromedriver'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Selenium     : {'Installed' if status['selenium'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Undetected   : {'Installed' if status['undetected'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Requests     : {'Installed' if status['requests'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Espeak       : {'Installed' if status['espeak'] else 'Missing'}")
+        
+        # Check if all installed
+        all_installed = all(status.values())
+        
+        if all_installed:
+            print(f"\n{Color.GREEN}✅ All dependencies are already installed!{Color.RESET}")
+            print(f"{Color.GREEN}🎯 System is READY to use!{Color.RESET}")
+            self.core.browser_ready = True
+            self.core.undetected_available = True
+            self.core.all_ready = True
+            self.audio.speak("All dependencies are already installed")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Install missing dependencies
+        print(f"\n{Color.YELLOW}[!] Some dependencies are missing. Installing...{Color.RESET}\n")
+        
         # Step 1: Update packages
-        print(f"{Color.CYAN}[1/7] Updating Termux packages...{Color.RESET}")
-        subprocess.run("pkg update -y", shell=True, check=False)
-        subprocess.run("pkg upgrade -y", shell=True, check=False)
+        if not status['chromium'] or not status['espeak']:
+            print(f"{Color.CYAN}[1/4] Installing system packages...{Color.RESET}")
+            subprocess.run("pkg update -y", shell=True, check=False)
+            subprocess.run("pkg upgrade -y", shell=True, check=False)
+            
+            if not status['chromium']:
+                print(f"{Color.DIM}    Installing Chromium...{Color.RESET}")
+                subprocess.run("pkg install chromium -y", shell=True, check=False)
+            
+            if not status['espeak']:
+                print(f"{Color.DIM}    Installing espeak...{Color.RESET}")
+                subprocess.run("pkg install espeak -y", shell=True, check=False)
+            
+            # Install Python if needed
+            subprocess.run("pkg install python python-pip -y", shell=True, check=False)
+            subprocess.run("pkg install python3.11 -y", shell=True, check=False)
+            subprocess.run("python3.11 -m ensurepip", shell=True, check=False)
         
-        # Step 2: Install Chromium
-        print(f"{Color.CYAN}[2/7] Installing Chromium...{Color.RESET}")
-        subprocess.run("pkg install chromium -y", shell=True, check=False)
-        
-        # Step 3: Install Python and pip
-        print(f"{Color.CYAN}[3/7] Installing Python...{Color.RESET}")
-        subprocess.run("pkg install python python-pip -y", shell=True, check=False)
-        
-        # Step 4: Install espeak
-        print(f"{Color.CYAN}[4/7] Installing espeak...{Color.RESET}")
-        subprocess.run("pkg install espeak -y", shell=True, check=False)
-        
-        # Step 5: Check and Download ChromeDriver
-        print(f"{Color.CYAN}[5/7] Checking ChromeDriver...{Color.RESET}")
-        chromedriver_path = ChromeDriverManager.get_chromedriver_path()
-        if chromedriver_path:
-            print(f"{Color.GREEN}[✓] ChromeDriver found: {chromedriver_path}{Color.RESET}")
-        else:
-            print(f"{Color.YELLOW}[!] ChromeDriver not found. Downloading...{Color.RESET}")
+        # Step 2: Install ChromeDriver
+        if not status['chromedriver']:
+            print(f"{Color.CYAN}[2/4] Installing ChromeDriver...{Color.RESET}")
             if ChromeDriverManager.download_chromedriver():
-                print(f"{Color.GREEN}[✓] ChromeDriver downloaded successfully!{Color.RESET}")
+                print(f"{Color.GREEN}[✓] ChromeDriver installed!{Color.RESET}")
             else:
-                print(f"{Color.RED}[✗] ChromeDriver download failed!{Color.RESET}")
+                print(f"{Color.RED}[✗] ChromeDriver installation failed!{Color.RESET}")
         
-        # Step 6: Install undetected-chromedriver
-        print(f"{Color.CYAN}[6/7] Installing undetected-chromedriver...{Color.RESET}")
-        self.core.install_undetected_chromedriver()
+        # Step 3: Install Python packages
+        if not status['selenium'] or not status['requests']:
+            print(f"{Color.CYAN}[3/4] Installing Python packages...{Color.RESET}")
+            subprocess.run("pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
+            subprocess.run("python3.11 -m pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
         
-        # Step 7: Install other Python packages
-        print(f"{Color.CYAN}[7/7] Installing other Python packages...{Color.RESET}")
-        subprocess.run("pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
+        # Step 4: Install undetected-chromedriver
+        if not status['undetected']:
+            print(f"{Color.CYAN}[4/4] Installing undetected-chromedriver...{Color.RESET}")
+            self.core.install_undetected_chromedriver()
         
         # Create directories
         os.makedirs(os.path.join(SCRIPT_DIR, 'data'), exist_ok=True)
         os.makedirs(os.path.join(SCRIPT_DIR, 'logs'), exist_ok=True)
         
-        # Verify installation
+        # Final verification
         print(f"\n{Color.CYAN}[*] Verifying installation...{Color.RESET}")
         
         self.core.browser_ready = self.core.check_browser_ready()
         self.core.undetected_available = self.core.check_undetected_chromedriver()
         
-        print(f"\n{Color.GREEN}╔══════════════════════════════════════════╗{Color.RESET}")
-        print(f"{Color.GREEN}║     ✅ SETUP COMPLETED SUCCESSFULLY      ║{Color.RESET}")
-        
-        if self.core.browser_ready:
-            print(f"{Color.GREEN}║     ✅ Browser: READY                   ║{Color.RESET}")
+        if self.core.browser_ready and self.core.undetected_available:
+            self.core.all_ready = True
+            print(f"\n{Color.GREEN}╔══════════════════════════════════════════╗{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ ALL SYSTEMS READY!                ║{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ Browser: READY                    ║{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ Undetected Mode: ON              ║{Color.RESET}")
+            print(f"{Color.GREEN}║     🚀 Everything is ACTIVE!            ║{Color.RESET}")
+            print(f"{Color.GREEN}╚══════════════════════════════════════════╝{Color.RESET}")
         else:
-            print(f"{Color.RED}║     ❌ Browser: NOT READY               ║{Color.RESET}")
+            print(f"\n{Color.YELLOW}╔══════════════════════════════════════════╗{Color.RESET}")
+            print(f"{Color.YELLOW}║     ⚠️  PARTIAL INSTALLATION              ║{Color.RESET}")
+            if not self.core.browser_ready:
+                print(f"{Color.RED}║     ❌ Browser: NOT READY                ║{Color.RESET}")
+            if not self.core.undetected_available:
+                print(f"{Color.YELLOW}║     ⚠️  Undetected Mode: OFF            ║{Color.RESET}")
+                print(f"{Color.YELLOW}║     Try: python3.11 bot.py            ║{Color.RESET}")
+            print(f"{Color.YELLOW}╚══════════════════════════════════════════╝{Color.RESET}")
         
-        if self.core.undetected_available:
-            print(f"{Color.GREEN}║     ✅ Undetected Mode: ON             ║{Color.RESET}")
-        else:
-            print(f"{Color.YELLOW}║     ⚠️  Undetected Mode: OFF           ║{Color.RESET}")
-        
-        print(f"{Color.GREEN}╚══════════════════════════════════════════╝{Color.RESET}\n")
-        
-        self.audio.speak("Setup completed successfully")
+        self.audio.speak("Setup completed")
         input("\nPress Enter to continue...")
 
     def create_sample_numbers_file(self):
-        """Create a sample numbers.txt file"""
         sample_path = os.path.join(SCRIPT_DIR, 'numbers.txt')
         if not os.path.exists(sample_path):
             with open(sample_path, 'w') as f:
@@ -684,10 +870,17 @@ class SaaSApp:
     def main_loop(self):
         self.audio.speak("Welcome to Ridol FB tool")
         
-        # Create sample numbers.txt if not exists
         self.create_sample_numbers_file()
         
+        python_version = sys.version_info
+        if python_version.major == 3 and python_version.minor >= 13:
+            if not self.core.undetected_available:
+                print(f"{Color.YELLOW}[!] You are using Python {python_version.major}.{python_version.minor}{Color.RESET}")
+                print(f"{Color.YELLOW}[!] For undetected-chromedriver, use: python3.11 bot.py{Color.RESET}")
+                time.sleep(2)
+        
         while True:
+            self.check_and_update_status()
             self.draw_ui()
             print(f"\n  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}   MAIN MENU - PROXY + AUTO LOGIC       {Color.CYAN}│{Color.RESET}")
@@ -695,7 +888,7 @@ class SaaSApp:
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Start Bot Automation               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Data Folder Setup                  {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} License Management                 {Color.CYAN}│{Color.RESET}")
-            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} One-Click Dependencies (Termux)    {Color.CYAN}│{Color.RESET}")
+            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Smart Dependency Installer         {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Create Sample numbers.txt           {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
