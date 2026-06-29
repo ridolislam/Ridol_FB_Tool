@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool - License Server v7.0
-Render.com Deployment Ready
-Complete License & Credit Management System
+Ridol FB Tool - License Server v8.0
+Render.com - Complete Auto-Setup
 """
 
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import requests
-import logging
 import os
 import re
 import json
 import random
 import string
 import sqlite3
+import logging
+import sys
 from datetime import datetime, timedelta
 import time
 
@@ -25,83 +25,114 @@ CORS(app)
 CLIPROXY_API_URL = "https://api.cliproxy.io/white/api"
 PORT = int(os.environ.get('PORT', 10000))
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
-DB_PATH = 'licenses.db'
+DB_PATH = os.path.join(os.path.dirname(__file__), 'licenses.db')
 
-# ==================== DATABASE INITIALIZATION ====================
+print(f"📂 Database path: {DB_PATH}")
 
-def init_db():
-    """Initialize database with all required tables"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Licenses table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS licenses (
-            license_key TEXT PRIMARY KEY,
-            credits INTEGER DEFAULT 100,
-            max_browsers INTEGER DEFAULT 1,
-            created_at TEXT,
-            expires_at TEXT,
-            is_active INTEGER DEFAULT 1,
-            used_credits INTEGER DEFAULT 0,
-            last_used TEXT,
-            user_id TEXT,
-            total_operations INTEGER DEFAULT 0
-        )
-    ''')
-    
-    # Check if columns exist, add if missing
-    try:
-        c.execute('SELECT total_operations FROM licenses LIMIT 1')
-    except sqlite3.OperationalError:
-        c.execute('ALTER TABLE licenses ADD COLUMN total_operations INTEGER DEFAULT 0')
-    
-    # Usage logs table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS usage_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            license_key TEXT,
-            action TEXT,
-            ip_used TEXT,
-            country TEXT,
-            timestamp TEXT,
-            user_id TEXT,
-            status TEXT,
-            response_time INTEGER
-        )
-    ''')
-    
-    # Proxies cache table (for storing fetched proxies)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS proxy_cache (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            proxy_ip TEXT,
-            proxy_port INTEGER,
-            country TEXT,
-            fetched_at TEXT,
-            is_active INTEGER DEFAULT 1,
-            used_count INTEGER DEFAULT 0,
-            last_used TEXT
-        )
-    ''')
-    
-    # Create index for faster queries
-    c.execute('CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_logs_license ON usage_logs(license_key)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_logs_time ON usage_logs(timestamp)')
-    
-    conn.commit()
-    conn.close()
-    print("✅ Database initialized successfully!")
-    print("   - licenses table ready")
-    print("   - usage_logs table ready")
-    print("   - proxy_cache table ready")
+# ==================== DATABASE FUNCTIONS ====================
 
 def get_db():
     """Get database connection with row factory"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        print(f"❌ Database connection error: {e}")
+        return None
+
+def init_db():
+    """Initialize database with all required tables - FORCE CREATE"""
+    print("🔄 Initializing database...")
+    
+    try:
+        # Force create new database file
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        # Drop existing tables if any (clean slate)
+        c.execute("DROP TABLE IF EXISTS licenses")
+        c.execute("DROP TABLE IF EXISTS usage_logs")
+        c.execute("DROP TABLE IF EXISTS proxy_cache")
+        
+        # Create licenses table
+        c.execute('''
+            CREATE TABLE licenses (
+                license_key TEXT PRIMARY KEY,
+                credits INTEGER DEFAULT 100,
+                max_browsers INTEGER DEFAULT 1,
+                created_at TEXT,
+                expires_at TEXT,
+                is_active INTEGER DEFAULT 1,
+                used_credits INTEGER DEFAULT 0,
+                last_used TEXT,
+                user_id TEXT,
+                total_operations INTEGER DEFAULT 0
+            )
+        ''')
+        print("✅ licenses table created")
+        
+        # Create usage_logs table
+        c.execute('''
+            CREATE TABLE usage_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                license_key TEXT,
+                action TEXT,
+                ip_used TEXT,
+                country TEXT,
+                timestamp TEXT,
+                user_id TEXT,
+                status TEXT,
+                response_time INTEGER
+            )
+        ''')
+        print("✅ usage_logs table created")
+        
+        # Create proxy_cache table
+        c.execute('''
+            CREATE TABLE proxy_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                proxy_ip TEXT,
+                proxy_port INTEGER,
+                country TEXT,
+                fetched_at TEXT,
+                is_active INTEGER DEFAULT 1,
+                used_count INTEGER DEFAULT 0,
+                last_used TEXT
+            )
+        ''')
+        print("✅ proxy_cache table created")
+        
+        # Create indexes
+        c.execute('CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_logs_license ON usage_logs(license_key)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_logs_time ON usage_logs(timestamp)')
+        print("✅ indexes created")
+        
+        # Insert a test license for immediate use
+        test_key = "RIDOL-TEST-0000-AAAA-BBBB"
+        expires_at = (datetime.now() + timedelta(days=365)).isoformat()
+        
+        c.execute('''
+            INSERT OR IGNORE INTO licenses (license_key, credits, max_browsers, created_at, expires_at, is_active, user_id)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        ''', (test_key, 1000, 5, datetime.now().isoformat(), expires_at, 'TestUser'))
+        print(f"✅ Test license created: {test_key}")
+        
+        conn.commit()
+        conn.close()
+        
+        print("✅ Database initialized successfully!")
+        print(f"📁 Database file: {DB_PATH}")
+        print(f"📊 Size: {os.path.getsize(DB_PATH)} bytes")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 # ==================== LICENSE FUNCTIONS ====================
 
@@ -126,152 +157,71 @@ def validate_license(license_key):
         return None
     
     conn = get_db()
-    c = conn.cursor()
-    
-    c.execute('''
-        SELECT * FROM licenses 
-        WHERE license_key = ? AND is_active = 1
-    ''', (license_key,))
-    
-    result = c.fetchone()
-    conn.close()
-    
-    if not result:
+    if not conn:
         return None
     
-    # Check expiry
-    if result['expires_at']:
-        try:
-            expires = datetime.fromisoformat(result['expires_at'])
-            if expires < datetime.now():
-                return None
-        except:
-            pass
-    
-    return dict(result)
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT * FROM licenses 
+            WHERE license_key = ? AND is_active = 1
+        ''', (license_key,))
+        
+        result = c.fetchone()
+        conn.close()
+        
+        if not result:
+            return None
+        
+        # Check expiry
+        if result['expires_at']:
+            try:
+                expires = datetime.fromisoformat(result['expires_at'])
+                if expires < datetime.now():
+                    return None
+            except:
+                pass
+        
+        return dict(result)
+    except Exception as e:
+        print(f"❌ validate_license error: {e}")
+        return None
 
 def deduct_credit(license_key):
     """Deduct 1 credit for each operation"""
     conn = get_db()
-    c = conn.cursor()
-    
-    c.execute('SELECT credits, used_credits, total_operations FROM licenses WHERE license_key = ?', (license_key,))
-    result = c.fetchone()
-    
-    if not result:
-        conn.close()
+    if not conn:
         return False, 0
     
-    if result['credits'] <= 0:
-        conn.close()
-        return False, result['credits']
-    
-    new_credits = result['credits'] - 1
-    new_used = result['used_credits'] + 1
-    new_total = result['total_operations'] + 1
-    
-    c.execute('''
-        UPDATE licenses 
-        SET credits = ?, used_credits = ?, total_operations = ?, last_used = ?
-        WHERE license_key = ?
-    ''', (new_credits, new_used, new_total, datetime.now().isoformat(), license_key))
-    
-    conn.commit()
-    conn.close()
-    return True, new_credits
-
-def add_credits_to_license(license_key, amount):
-    """Add credits to existing license"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    c.execute('UPDATE licenses SET credits = credits + ? WHERE license_key = ? AND is_active = 1', 
-             (amount, license_key))
-    
-    if c.rowcount == 0:
-        conn.close()
-        return False
-    
-    conn.commit()
-    conn.close()
-    return True
-
-# ==================== PROXY FUNCTIONS ====================
-
-def fetch_proxy_from_cliproxy(country='Rand', num=1):
-    """Fetch proxy from Cliproxy API"""
     try:
-        api_url = f"{CLIPROXY_API_URL}?region={country}&num={num}&time=10&format=n&type=txt"
-        response = requests.get(api_url, timeout=15)
+        c = conn.cursor()
+        c.execute('SELECT credits, used_credits, total_operations FROM licenses WHERE license_key = ?', (license_key,))
+        result = c.fetchone()
         
-        if response.status_code != 200:
-            return None, f"Cliproxy API error: {response.status_code}"
+        if not result:
+            conn.close()
+            return False, 0
         
-        ip = response.text.strip()
+        if result['credits'] <= 0:
+            conn.close()
+            return False, result['credits']
         
-        # Validate IP
-        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-        if not re.match(ip_pattern, ip):
-            return None, f"Invalid IP format: {ip}"
+        new_credits = result['credits'] - 1
+        new_used = result['used_credits'] + 1
+        new_total = result['total_operations'] + 1
         
-        return ip, None
+        c.execute('''
+            UPDATE licenses 
+            SET credits = ?, used_credits = ?, total_operations = ?, last_used = ?
+            WHERE license_key = ?
+        ''', (new_credits, new_used, new_total, datetime.now().isoformat(), license_key))
         
-    except requests.Timeout:
-        return None, "Cliproxy API timeout"
+        conn.commit()
+        conn.close()
+        return True, new_credits
     except Exception as e:
-        return None, f"Cliproxy error: {str(e)}"
-
-def get_proxy_from_cache(country):
-    """Get working proxy from cache"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Get least used active proxy for this country
-    c.execute('''
-        SELECT proxy_ip, proxy_port FROM proxy_cache 
-        WHERE country = ? AND is_active = 1
-        ORDER BY used_count ASC, fetched_at DESC
-        LIMIT 1
-    ''', (country,))
-    
-    result = c.fetchone()
-    conn.close()
-    
-    if result:
-        return result['proxy_ip'], result['proxy_port']
-    return None, None
-
-def save_proxy_to_cache(ip, port, country):
-    """Save proxy to cache"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Check if exists
-    c.execute('SELECT id FROM proxy_cache WHERE proxy_ip = ? AND proxy_port = ?', (ip, port))
-    existing = c.fetchone()
-    
-    if existing:
-        c.execute('''
-            UPDATE proxy_cache 
-            SET fetched_at = ?, is_active = 1
-            WHERE id = ?
-        ''', (datetime.now().isoformat(), existing['id']))
-    else:
-        c.execute('''
-            INSERT INTO proxy_cache (proxy_ip, proxy_port, country, fetched_at, is_active)
-            VALUES (?, ?, ?, ?, 1)
-        ''', (ip, port, country, datetime.now().isoformat()))
-    
-    conn.commit()
-    conn.close()
-
-def mark_proxy_failed(ip, port):
-    """Mark proxy as failed"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('UPDATE proxy_cache SET is_active = 0 WHERE proxy_ip = ? AND proxy_port = ?', (ip, port))
-    conn.commit()
-    conn.close()
+        print(f"❌ deduct_credit error: {e}")
+        return False, 0
 
 # ==================== ADMIN HTML TEMPLATE ====================
 
@@ -279,7 +229,7 @@ ADMIN_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ridol FB Tool - Admin Panel v7.0</title>
+    <title>Ridol FB Tool - Admin Panel v8.0</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -335,7 +285,7 @@ ADMIN_TEMPLATE = '''
             align-items: center;
         }
         .form-group label { min-width: 120px; color: #8899aa; font-size: 14px; }
-        .form-group input, .form-group select {
+        .form-group input {
             flex: 1;
             min-width: 200px;
             padding: 10px 15px;
@@ -366,8 +316,6 @@ ADMIN_TEMPLATE = '''
         .btn-danger:hover { background: #ff5252; }
         .btn-info { background: #2979ff; }
         .btn-info:hover { background: #448aff; }
-        .btn-secondary { background: #2a3a5c; }
-        .btn-secondary:hover { background: #3a4a6c; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -409,7 +357,6 @@ ADMIN_TEMPLATE = '''
         .alert-error { background: #ff174420; border: 1px solid #ff174440; color: #ff1744; }
         .alert-info { background: #2979ff20; border: 1px solid #2979ff40; color: #2979ff; }
         .hidden { display: none; }
-        .flex { display: flex; gap: 10px; flex-wrap: wrap; }
         .copy-btn {
             background: #2a3a5c;
             border: none;
@@ -428,16 +375,14 @@ ADMIN_TEMPLATE = '''
             table { font-size: 11px; }
             th, td { padding: 8px 10px; }
         }
-        .refresh-btn {
-            padding: 5px 15px;
-            background: #2a3a5c;
-            border: none;
-            border-radius: 6px;
-            color: #e0e0e0;
-            cursor: pointer;
-            font-size: 12px;
+        .db-status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            background: #00c85320;
+            border: 1px solid #00c85340;
+            color: #00c853;
         }
-        .refresh-btn:hover { background: #3a4a6c; }
     </style>
 </head>
 <body>
@@ -448,13 +393,14 @@ ADMIN_TEMPLATE = '''
             <div id="loginAlert" class="alert hidden"></div>
             <input type="password" id="adminPass" placeholder="Enter Admin Password" onkeydown="if(event.key==='Enter') adminLogin()">
             <button class="btn btn-primary" onclick="adminLogin()">Login</button>
+            <p style="text-align:center;margin-top:15px;color:#8899aa;font-size:12px;">Default: admin123</p>
         </div>
 
         <!-- Dashboard -->
         <div id="dashboardScreen" class="hidden">
             <div class="header">
                 <div>
-                    <h1>⚡ Ridol FB Tool Admin v7.0</h1>
+                    <h1>⚡ Ridol FB Tool Admin v8.0</h1>
                     <div class="subtitle">License & Credit Management System</div>
                 </div>
                 <div style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
@@ -463,6 +409,9 @@ ADMIN_TEMPLATE = '''
                     <button class="btn btn-danger" onclick="adminLogout()" style="padding:6px 15px; font-size:12px;">Logout</button>
                 </div>
             </div>
+
+            <!-- Database Status -->
+            <div id="dbStatus" class="db-status">✅ Database Connected</div>
 
             <!-- Stats -->
             <div class="stats-grid">
@@ -512,7 +461,7 @@ ADMIN_TEMPLATE = '''
 
             <!-- License List -->
             <div class="panel">
-                <h2>📋 License List <button class="refresh-btn" onclick="loadLicenses()">🔄 Refresh</button></h2>
+                <h2>📋 License List <button class="btn btn-secondary" onclick="loadLicenses()" style="padding:4px 12px;font-size:12px;background:#2a3a5c;">🔄 Refresh</button></h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
@@ -537,7 +486,7 @@ ADMIN_TEMPLATE = '''
 
             <!-- Usage Logs -->
             <div class="panel">
-                <h2>📊 Usage Logs <button class="refresh-btn" onclick="loadLogs()">🔄 Refresh</button></h2>
+                <h2>📊 Usage Logs <button class="btn btn-secondary" onclick="loadLogs()" style="padding:4px 12px;font-size:12px;background:#2a3a5c;">🔄 Refresh</button></h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
@@ -806,12 +755,14 @@ ADMIN_TEMPLATE = '''
 @app.route('/', methods=['GET'])
 def home():
     """Health check"""
+    db_exists = os.path.exists(DB_PATH)
     return jsonify({
         'status': 'online',
         'service': 'Ridol FB Tool License Server',
-        'version': '7.0',
+        'version': '8.0',
         'timestamp': datetime.now().isoformat(),
-        'database': 'connected' if os.path.exists(DB_PATH) else 'initializing'
+        'database': 'connected' if db_exists else 'not_initialized',
+        'database_file': DB_PATH
     })
 
 @app.route('/admin', methods=['GET'])
@@ -819,15 +770,10 @@ def admin_panel():
     """Admin panel HTML"""
     return render_template_string(ADMIN_TEMPLATE)
 
-# ==================== USER API (Bot ব্যবহার করবে) ====================
+# ==================== USER API ====================
 
 @app.route('/api/license/verify', methods=['POST'])
 def api_verify_license():
-    """
-    Verify license and get user info
-    Request: {"license_key": "RIDOL-XXXX-XXXX-XXXX-XXXX"}
-    Response: {"valid": true, "credits": 1000, "max_browsers": 5}
-    """
     try:
         data = request.get_json()
         if not data:
@@ -841,10 +787,7 @@ def api_verify_license():
         license_data = validate_license(license_key)
         
         if not license_data:
-            return jsonify({
-                'valid': False,
-                'error': 'Invalid or expired license'
-            }), 401
+            return jsonify({'valid': False, 'error': 'Invalid or expired license'}), 401
         
         return jsonify({
             'valid': True,
@@ -861,11 +804,6 @@ def api_verify_license():
 
 @app.route('/api/proxy/get', methods=['POST'])
 def api_get_proxy():
-    """
-    Get IP from Cliproxy API and deduct credit
-    Request: {"license_key": "RIDOL-XXXX-XXXX-XXXX-XXXX", "country": "BD"}
-    Response: {"success": true, "ip": "103.xxx.xxx.xxx", "port": 3010, "remaining_credits": 999}
-    """
     start_time = time.time()
     try:
         data = request.get_json()
@@ -878,12 +816,10 @@ def api_get_proxy():
         if not license_key:
             return jsonify({'success': False, 'error': 'License key required'}), 400
         
-        # Validate license
         license_data = validate_license(license_key)
         if not license_data:
             return jsonify({'success': False, 'error': 'Invalid or expired license'}), 401
         
-        # Check credits
         if license_data['credits'] <= 0:
             return jsonify({
                 'success': False,
@@ -891,50 +827,24 @@ def api_get_proxy():
                 'credits': 0
             }), 403
         
-        # Try to get proxy from cache first
-        cached_ip, cached_port = get_proxy_from_cache(country)
-        if cached_ip and cached_port:
-            # Deduct credit
-            success, remaining = deduct_credit(license_key)
-            if success:
-                # Log usage
-                conn = get_db()
-                c = conn.cursor()
-                c.execute('''
-                    INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (license_key, 'get_proxy_cached', cached_ip, country, datetime.now().isoformat(), 
-                      license_data.get('user_id', ''), 'success', int((time.time() - start_time) * 1000)))
-                conn.commit()
-                conn.close()
-                
-                return jsonify({
-                    'success': True,
-                    'ip': cached_ip,
-                    'port': cached_port,
-                    'country': country,
-                    'remaining_credits': remaining,
-                    'from_cache': True
-                })
-        
         # Fetch from Cliproxy
-        ip, error = fetch_proxy_from_cliproxy(country)
+        api_url = f"{CLIPROXY_API_URL}?region={country}&num=1&time=10&format=n&type=txt"
+        response = requests.get(api_url, timeout=15)
         
-        if not ip:
-            # Log failure
-            conn = get_db()
-            c = conn.cursor()
-            c.execute('''
-                INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (license_key, 'get_proxy_failed', 'error', country, datetime.now().isoformat(),
-                  license_data.get('user_id', ''), error, int((time.time() - start_time) * 1000)))
-            conn.commit()
-            conn.close()
-            
+        if response.status_code != 200:
             return jsonify({
                 'success': False,
-                'error': error
+                'error': f'Cliproxy API error: {response.status_code}'
+            }), 500
+        
+        ip = response.text.strip()
+        
+        # Validate IP
+        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+        if not re.match(ip_pattern, ip):
+            return jsonify({
+                'success': False,
+                'error': f'Invalid IP from Cliproxy: {ip}'
             }), 500
         
         # Deduct credit
@@ -945,27 +855,28 @@ def api_get_proxy():
                 'error': 'Failed to deduct credit'
             }), 500
         
-        # Save to cache
-        save_proxy_to_cache(ip, 3010, country)
-        
         # Log usage
         conn = get_db()
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (license_key, 'get_proxy', ip, country, datetime.now().isoformat(),
-              license_data.get('user_id', ''), 'success', int((time.time() - start_time) * 1000)))
-        conn.commit()
-        conn.close()
+        if conn:
+            try:
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (license_key, 'get_proxy', ip, country, datetime.now().isoformat(),
+                      license_data.get('user_id', ''), 'success', int((time.time() - start_time) * 1000)))
+                conn.commit()
+            except:
+                pass
+            finally:
+                conn.close()
         
         return jsonify({
             'success': True,
             'ip': ip,
             'port': 3010,
             'country': country,
-            'remaining_credits': remaining,
-            'from_cache': False
+            'remaining_credits': remaining
         })
         
     except Exception as e:
@@ -973,10 +884,6 @@ def api_get_proxy():
 
 @app.route('/api/license/status', methods=['POST'])
 def api_get_status():
-    """
-    Get license status without deducting credit
-    Request: {"license_key": "RIDOL-XXXX-XXXX-XXXX-XXXX"}
-    """
     try:
         data = request.get_json()
         if not data:
@@ -1009,7 +916,6 @@ def api_get_status():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
-    """Admin login"""
     try:
         data = request.get_json()
         password = data.get('password', '')
@@ -1022,13 +928,15 @@ def admin_login():
 
 @app.route('/admin/stats', methods=['GET'])
 def admin_stats():
-    """Get admin stats"""
     try:
         token = request.headers.get('Authorization', '')
         if token != 'Bearer admin_token':
             return jsonify({'success': False, 'error': 'Unauthorized'}), 401
         
         conn = get_db()
+        if not conn:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 500
+        
         c = conn.cursor()
         
         c.execute('SELECT COUNT(*) FROM licenses')
@@ -1060,13 +968,12 @@ def admin_stats():
 
 @app.route('/admin/create_license', methods=['POST'])
 def admin_create_license():
-    """Create new license with credits"""
     try:
-        data = request.get_json()
         token = request.headers.get('Authorization', '')
         if token != 'Bearer admin_token':
             return jsonify({'success': False, 'error': 'Unauthorized'}), 401
         
+        data = request.get_json()
         credits = int(data.get('credits', 100))
         max_browsers = int(data.get('max_browsers', 1))
         expiry_days = int(data.get('expiry_days', 30))
@@ -1077,14 +984,10 @@ def admin_create_license():
         expires_at = (datetime.now() + timedelta(days=expiry_days)).isoformat()
         
         conn = get_db()
+        if not conn:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 500
+        
         c = conn.cursor()
-        
-        # Check if license already exists
-        c.execute('SELECT license_key FROM licenses WHERE license_key = ?', (license_key,))
-        if c.fetchone():
-            # Regenerate if duplicate
-            license_key = generate_license()
-        
         c.execute('''
             INSERT INTO licenses (license_key, credits, max_browsers, created_at, expires_at, is_active, user_id)
             VALUES (?, ?, ?, ?, ?, 1, ?)
@@ -1106,13 +1009,15 @@ def admin_create_license():
 
 @app.route('/admin/list_licenses', methods=['GET'])
 def admin_list_licenses():
-    """List all licenses"""
     try:
         token = request.headers.get('Authorization', '')
         if token != 'Bearer admin_token':
             return jsonify({'success': False, 'error': 'Unauthorized'}), 401
         
         conn = get_db()
+        if not conn:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 500
+        
         c = conn.cursor()
         c.execute('SELECT * FROM licenses ORDER BY created_at DESC')
         results = c.fetchall()
@@ -1129,23 +1034,32 @@ def admin_list_licenses():
 
 @app.route('/admin/add_credits', methods=['POST'])
 def admin_add_credits():
-    """Add credits to existing license"""
     try:
-        data = request.get_json()
         token = request.headers.get('Authorization', '')
         if token != 'Bearer admin_token':
             return jsonify({'success': False, 'error': 'Unauthorized'}), 401
         
+        data = request.get_json()
         license_key = data.get('license_key', '').strip().upper()
         add_credits = int(data.get('credits', 0))
         
         if add_credits <= 0:
             return jsonify({'success': False, 'error': 'Invalid credit amount'}), 400
         
-        success = add_credits_to_license(license_key, add_credits)
+        conn = get_db()
+        if not conn:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 500
         
-        if not success:
+        c = conn.cursor()
+        c.execute('UPDATE licenses SET credits = credits + ? WHERE license_key = ? AND is_active = 1', 
+                 (add_credits, license_key))
+        
+        if c.rowcount == 0:
+            conn.close()
             return jsonify({'success': False, 'error': 'License not found or inactive'}), 404
+        
+        conn.commit()
+        conn.close()
         
         return jsonify({'success': True, 'added_credits': add_credits})
         
@@ -1154,16 +1068,18 @@ def admin_add_credits():
 
 @app.route('/admin/revoke_license', methods=['POST'])
 def admin_revoke_license():
-    """Revoke/deactivate a license"""
     try:
-        data = request.get_json()
         token = request.headers.get('Authorization', '')
         if token != 'Bearer admin_token':
             return jsonify({'success': False, 'error': 'Unauthorized'}), 401
         
+        data = request.get_json()
         license_key = data.get('license_key', '').strip().upper()
         
         conn = get_db()
+        if not conn:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 500
+        
         c = conn.cursor()
         c.execute('UPDATE licenses SET is_active = 0 WHERE license_key = ?', (license_key,))
         
@@ -1181,7 +1097,6 @@ def admin_revoke_license():
 
 @app.route('/admin/logs', methods=['GET'])
 def admin_get_logs():
-    """Get usage logs"""
     try:
         token = request.headers.get('Authorization', '')
         if token != 'Bearer admin_token':
@@ -1190,6 +1105,9 @@ def admin_get_logs():
         limit = request.args.get('limit', 50)
         
         conn = get_db()
+        if not conn:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 500
+        
         c = conn.cursor()
         c.execute('SELECT * FROM usage_logs ORDER BY id DESC LIMIT ?', (limit,))
         results = c.fetchall()
@@ -1207,25 +1125,22 @@ def admin_get_logs():
 # ==================== MAIN ====================
 
 if __name__ == '__main__':
-    # Initialize database
-    init_db()
+    print("=" * 60)
+    print("🚀 RIDOL FB TOOL - LICENSE SERVER v8.0")
+    print("=" * 60)
     
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    # Initialize database - FORCE CREATE
+    if init_db():
+        print("✅ Database ready")
+    else:
+        print("❌ Database initialization failed!")
+        sys.exit(1)
     
-    print("""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║                                                              ║
-    ║     🚀 RIDOL FB TOOL - LICENSE SERVER v7.0                  ║
-    ║                                                              ║
-    ║     ✅ Database: Connected                                   ║
-    ║     🔐 Admin Password: admin123 (change in env)             ║
-    ║     📡 Port: """ + str(PORT) + """                                 ║
-    ║                                                              ║
-    ║     🌐 Admin Panel: https://your-app.onrender.com/admin     ║
-    ║                                                              ║
-    ╚══════════════════════════════════════════════════════════════╝
-    """)
+    print(f"🔐 Admin Password: {ADMIN_PASSWORD}")
+    print(f"📡 Port: {PORT}")
+    print(f"📂 Database: {DB_PATH}")
+    print("=" * 60)
+    print("🌐 Admin Panel: https://your-app.onrender.com/admin")
+    print("=" * 60)
     
     app.run(host='0.0.0.0', port=PORT, debug=False)
