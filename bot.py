@@ -26,7 +26,11 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.j
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
 CUSTOM_SOUND_DIR = os.path.join(SCRIPT_DIR, 'custom_sounds')
-LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'
+
+# ============= আপনার Render সার্ভার URL এখানে দিন =============
+LICENSE_SERVER = 'https://ridol-fb-tool.onrender.com'  # ← আপনার URL দিন
+# ===========================================================
+
 APP_NAME = 'Ridol FB Tool'
 APP_VERSION = 'v7.0'
 
@@ -243,7 +247,6 @@ class ProxyManager:
     
     def _fetch_proxies_from_9proxy(self):
         if not self.api_key:
-            print(f"{Color.YELLOW}[!] No API key for 9proxy. Set PROXY_API_KEY environment variable.{Color.RESET}")
             return []
         try:
             url = f"https://api.9proxy.com/get?api_key={self.api_key}&format=json"
@@ -265,8 +268,7 @@ class ProxyManager:
                             proxies.append({'proxy': proxy, 'country': country})
                 return proxies
             return []
-        except Exception as e:
-            print(f"{Color.RED}[-] 9proxy fetch error: {e}{Color.RESET}")
+        except:
             return []
     
     def _fetch_proxies_from_webshare(self):
@@ -286,8 +288,7 @@ class ProxyManager:
                         proxies.append({'proxy': proxy, 'country': country})
                 return proxies
             return []
-        except Exception as e:
-            print(f"{Color.RED}[-] Webshare fetch error: {e}{Color.RESET}")
+        except:
             return []
     
     def _fetch_proxies_from_scrape(self):
@@ -307,8 +308,7 @@ class ProxyManager:
                             proxies.append({'proxy': proxy, 'country': country})
                 return proxies
             return []
-        except Exception as e:
-            print(f"{Color.RED}[-] Scrape fetch error: {e}{Color.RESET}")
+        except:
             return []
     
     def refresh_proxy_pool(self):
@@ -874,9 +874,9 @@ class FacebookAutomationEngine:
         self.license_key = None
     
     def _get_proxy_from_server(self, phone_number):
-        """সার্ভার থেকে দেশ অনুযায়ী IP নেওয়া + ক্রেডিট কাটা"""
+        """আপনার Render সার্ভার থেকে Proxy নেওয়া"""
         country_code = self.proxy_manager._get_country_from_phone(phone_number)
-        print(f"{Color.CYAN}[*] Requesting proxy for country: {country_code}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Requesting proxy from server for country: {country_code}{Color.RESET}")
         
         try:
             response = requests.post(
@@ -885,7 +885,7 @@ class FacebookAutomationEngine:
                     "license_key": self.license_key,
                     "country": country_code
                 },
-                timeout=5
+                timeout=10
             )
             if response.status_code == 200:
                 data = response.json()
@@ -906,6 +906,9 @@ class FacebookAutomationEngine:
                         return None, country_code, 0
             else:
                 print(f"{Color.RED}[-] Server returned status: {response.status_code}{Color.RESET}")
+        except requests.exceptions.ConnectionError:
+            print(f"{Color.RED}[-] Cannot connect to server! Check LICENSE_SERVER URL{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Current URL: {LICENSE_SERVER}{Color.RESET}")
         except Exception as e:
             print(f"{Color.RED}[-] Server proxy error: {e}{Color.RESET}")
         
@@ -1003,7 +1006,7 @@ class FacebookAutomationEngine:
         
         print(f"\n{Color.CYAN}[+] Processing: {phone_number}{Color.RESET}")
         
-        # 1. প্রোক্সি নেওয়া (ক্রেডিট কাটা হবে)
+        # 1. আপনার Render সার্ভার থেকে Proxy নেওয়া
         proxy, country_code, remaining = self._get_proxy_from_server(phone_number)
         
         # ক্রেডিট না থাকলে থামানো
@@ -1543,7 +1546,7 @@ class MainMenu:
             resp = requests.post(
                 f"{LICENSE_SERVER}/api/license/status",
                 json={"license_key": self.license.get_license_key()},
-                timeout=3
+                timeout=5
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -1614,7 +1617,7 @@ class MainMenu:
             resp = requests.post(
                 f"{LICENSE_SERVER}/api/license/status",
                 json={"license_key": self.license.get_license_key()},
-                timeout=3
+                timeout=5
             )
             if resp.status_code == 200:
                 data = resp.json()
