@@ -451,6 +451,7 @@ class TitleAnimation:
     @staticmethod
     def compact_banner():
         os.system('clear')
+        # শুধু ব্যানার - ফিচার লিস্ট বাদ
         print(f"""
 {Color.CYAN}╔════════════════════════════════════════════════════════════╗{Color.RESET}
 {Color.CYAN}║{Color.RESET}  {Color.GOLD}RIDOL FB TOOL v{APP_VERSION}{Color.RESET}                         {Color.CYAN}║{Color.RESET}
@@ -600,6 +601,14 @@ class AudioEngine:
     def speak_content_found(self): self.speak('Content found', 'high')
     def speak_content_not_found(self): self.speak('Content not found', 'high')
     def speak_stopping(self): self.speak('Stopping operation', 'high')
+    
+    def get_status(self):
+        bg_status = 'Playing' if self.bg_playing else 'Stopped'
+        if self.background_file:
+            bg_status += f' ({os.path.basename(self.background_file)})'
+        return f""" Voice: {'Active' if self.voice_available else 'Not available'}
+ Sound: {'Active' if self.sound_available else 'Not available'}
+ Background: {bg_status}"""
 
 # ==================== BROWSER PILOT MANAGER ====================
 class BrowserPilotManager:
@@ -996,6 +1005,7 @@ class MainMenu:
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[3]{Color.RESET} Set Proxy API Key               {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[4]{Color.RESET} Set Data Folder                 {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[5]{Color.RESET} Create Required Files           {Color.CYAN}║{Color.RESET}
+ {Color.CYAN}║{Color.RESET}  {Color.NEON_GREEN}[6]{Color.RESET} Refresh Proxy Pool              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}║{Color.RESET}  {Color.RED}[0]{Color.RESET} Back                              {Color.CYAN}║{Color.RESET}
  {Color.CYAN}╚════════════════════════════════════════════════════╝{Color.RESET}''')
             choice = input(f'\n {Color.BOLD}Enter choice{Color.RESET}: ').strip()
@@ -1028,6 +1038,10 @@ class MainMenu:
                     if not os.path.exists(fpath):
                         with open(fpath, 'w') as f:
                             f.write(f'# {fname}\n')
+                press_enter()
+            elif choice == '6':
+                count = self.proxy_manager.refresh_proxy_pool()
+                print(f'  {Color.GREEN}[+] Refreshed! {count} proxies available{Color.RESET}')
                 press_enter()
             elif choice == '0': break
             else: print(f'{Color.RED}Invalid!{Color.RESET}'); press_enter()
