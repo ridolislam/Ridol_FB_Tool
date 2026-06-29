@@ -2,6 +2,7 @@
 """
 Ridol FB Tool v8.8 - Professional OTP Sender
 Integrated with PostgreSQL Server & Browser Pilot
+Author: Ridol Islam
 """
 
 import os
@@ -19,10 +20,14 @@ from datetime import datetime
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUND_DIR = os.path.join(SCRIPT_DIR, 'sounds')
+# আপনার রেন্ডার সার্ভার ইউআরএল
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
 APP_VERSION = 'v8.8'
 
-# Ensure directories exist
+# গিটহাব থেকে প্যাকেজ ইনস্টল করার লিঙ্ক (আপনার গিটহাব ইউজারনেম অনুযায়ী পরিবর্তন করতে পারেন)
+BROWSER_PILOT_REPO = "git+https://github.com/ridolislam/termux-browser-pilot.git"
+
+# ডিরেক্টরি নিশ্চিত করা
 os.makedirs(SOUND_DIR, exist_ok=True)
 
 # ==================== COLOR CODES ====================
@@ -38,7 +43,6 @@ class Color:
     DIM = '\033[2m'
     RESET = '\033[0m'
     GOLD = '\033[38;5;214m'
-    ORANGE = '\033[38;5;208m'
 
 # ==================== HELPERS ====================
 def load_json(path):
@@ -103,7 +107,7 @@ class CoreManager:
             if data.get('valid'):
                 self.is_valid = True
                 self.credits = data.get('credits', 0)
-                self.user_id = data.get('user_id', 'Ridol')
+                self.user_id = data.get('user_id', 'User')
                 self.license_key = target
                 self.config['license_key'] = target
                 save_json(CONFIG_FILE, self.config)
@@ -131,46 +135,44 @@ class AutomationEngine:
         proxy = self.core.get_proxy()
         if not proxy: return False, "Proxy/Credit Error"
 
-        from termux_browser_pilot import Browser
-        os.environ['http_proxy'] = proxy
-        os.environ['https_proxy'] = proxy
-        
-        browser = None
         try:
+            from termux_browser_pilot import Browser
+            os.environ['http_proxy'] = proxy
+            os.environ['https_proxy'] = proxy
+            
             browser = Browser(headless=False)
             data = DataGenerator.get_user_data()
             
             browser.goto("https://m.facebook.com/reg")
             time.sleep(2)
             
-            # Fill Form
+            # Form Automation
             browser.type('input[name="firstname"]', data['first'])
             browser.type('input[name="lastname"]', data['last'])
             browser.select('select[id="day"]', data['day'])
             browser.select('select[id="month"]', data['month'])
             browser.select('select[id="year"]', data['year'])
             
+            # Gender Selection
             if data['gender'] == '1': browser.click('input[value="1"]') # Female
             else: browser.click('input[value="2"]') # Male
             
+            # Phone & Submit
             browser.type('input[name="reg_email__"]', phone)
             time.sleep(1)
-            
-            # Submit to send OTP
             browser.click('button[name="submit"]')
+            
             time.sleep(5) # Wait for SMS trigger
+            browser.close()
             return True, "Success"
         except Exception as e:
             return False, str(e)
-        finally:
-            if browser: browser.close()
 
 # ==================== UI DESIGN ====================
 class UI:
     @staticmethod
     def draw_banner(core):
         os.system('clear')
-        # ASCII Art Title
         print(f"""{Color.GOLD}  
    ██████╗ ██╗██████╗  ██████╗ ██╗     
    ██╔══██╗██║██╔══██╗██╔═══██╗██║     
@@ -182,13 +184,12 @@ class UI:
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL v{APP_VERSION}{Color.RESET}")
         print(f"      {Color.DIM}Proxy Rotation + Auto Name Gen{Color.RESET}")
         
-        # Status Box
+        # Status Information
         print(f"{Color.CYAN}  ┌──────────────────────────────────────────┐{Color.RESET}")
         
         br_status = f"{Color.GREEN}Active{Color.RESET}" if core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
         lic_status = f"{Color.GREEN}Active{Color.RESET}" if core.is_valid else f"{Color.RED}Inactive{Color.RESET}"
         
-        # Check server online
         try:
             srv_resp = requests.get(SERVER_URL, timeout=3)
             srv_status = f"{Color.GREEN}Online{Color.RESET}" if srv_resp.status_code == 200 else f"{Color.RED}Offline{Color.RESET}"
@@ -210,8 +211,7 @@ class UI:
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Start Bot                          {Color.CYAN}│{Color.RESET}")
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Status                             {Color.CYAN}│{Color.RESET}")
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[6]{Color.RESET} Audio Settings                    {Color.CYAN}│{Color.RESET}")
-        print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[7]{Color.RESET} Demo                               {Color.CYAN}│{Color.RESET}")
-        print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[8]{Color.RESET} Help                               {Color.CYAN}│{Color.RESET}")
+        print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[7]{Color.RESET} Help                               {Color.CYAN}│{Color.RESET}")
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}│{Color.RESET}")
         print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
 
@@ -253,7 +253,7 @@ class RidolBot:
         
         print(f"\n{Color.GREEN}[+] All Tasks Finished!{Color.RESET}")
         self.audio.speak("Process completed")
-        input("Press Enter...")
+        input("\nPress Enter to continue...")
 
     def run(self):
         self.audio.speak("Welcome to Ridol F B tool")
@@ -264,10 +264,18 @@ class RidolBot:
             choice = input(f"\n{Color.BOLD} Enter choice: {Color.RESET}").strip()
             
             if choice == '1':
-                print(f"\n{Color.CYAN}[*] Installing dependencies...{Color.RESET}")
-                subprocess.run([sys.executable, '-m', 'pip', 'install', 'termux-browser-pilot'])
-                self.core.browser_ready = self.core._check_browser()
-                input("\nInstallation done. Press Enter...")
+                print(f"\n{Color.CYAN}[*] Installing dependencies from Source...{Color.RESET}")
+                try:
+                    # গিটহাব রিপোজিটরি থেকে সরাসরি ইনস্টল
+                    subprocess.run([sys.executable, '-m', 'pip', 'install', BROWSER_PILOT_REPO])
+                    self.core.browser_ready = self.core._check_browser()
+                    if self.core.browser_ready:
+                        print(f"{Color.GREEN}[+] Browser Pilot installed successfully!{Color.RESET}")
+                    else:
+                        print(f"{Color.RED}[-] Installation failed. Check your internet or GitHub Link.{Color.RESET}")
+                except Exception as e:
+                    print(f"{Color.RED}[-] Error: {e}{Color.RESET}")
+                input("\nPress Enter to return...")
             
             elif choice == '2':
                 path = input(f"\n{Color.CYAN} Enter Data Path: {Color.RESET}").strip()
@@ -281,7 +289,7 @@ class RidolBot:
             elif choice == '3':
                 key = input(f"\n{Color.CYAN} Enter License Key: {Color.RESET}").strip().upper()
                 if self.core.verify_license(key):
-                    print(f"{Color.GREEN}[+] License Verified!{Color.RESET}")
+                    print(f"{Color.GREEN}[+] License Verified! Credits: {self.core.credits}{Color.RESET}")
                 else: print(f"{Color.RED}[-] Invalid Key!{Color.RESET}")
                 time.sleep(2)
 
@@ -290,10 +298,10 @@ class RidolBot:
 
             elif choice == '5':
                 UI.draw_banner(self.core)
-                print(f"\n  {Color.WHITE}User ID  : {self.core.user_id}")
-                print(f"  Credits  : {self.core.credits}")
-                print(f"  Key      : {self.core.license_key}")
-                input("\nPress Enter...")
+                print(f"\n  {Color.WHITE}User ID  : {Color.CYAN}{self.core.user_id}{Color.RESET}")
+                print(f"  Credits  : {Color.GOLD}{self.core.credits}{Color.RESET}")
+                print(f"  Key      : {Color.DIM}{self.core.license_key}{Color.RESET}")
+                input("\nPress Enter to return...")
 
             elif choice == '0':
                 print(f"\n{Color.YELLOW}Goodbye!{Color.RESET}")
