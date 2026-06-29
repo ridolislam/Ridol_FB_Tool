@@ -96,17 +96,14 @@ class ChromeDriverManager:
     @staticmethod
     def get_chromedriver_path():
         """Check for ChromeDriver in multiple locations"""
-        # 1. Check project directory
         local_path = os.path.join(SCRIPT_DIR, 'chromedriver')
         if os.path.exists(local_path):
             return local_path
         
-        # 2. Check project directory with .exe (Windows)
         local_path_exe = os.path.join(SCRIPT_DIR, 'chromedriver.exe')
         if os.path.exists(local_path_exe):
             return local_path_exe
         
-        # 3. Check system paths
         system_paths = [
             '/data/data/com.termux/files/usr/bin/chromedriver',
             '/usr/bin/chromedriver',
@@ -124,7 +121,6 @@ class ChromeDriverManager:
         """Download ChromeDriver automatically"""
         print(f"{Color.CYAN}[*] Downloading ChromeDriver...{Color.RESET}")
         
-        # Detect architecture
         arch = os.uname().machine
         if arch == 'aarch64' or arch == 'arm64':
             driver_url = "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/124.0.6367.91/linux-arm64/chromedriver-linux-arm64.zip"
@@ -132,29 +128,23 @@ class ChromeDriverManager:
             driver_url = "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/124.0.6367.91/linux64/chromedriver-linux64.zip"
         
         try:
-            # Download zip file
             zip_path = os.path.join(SCRIPT_DIR, 'chromedriver.zip')
             urllib.request.urlretrieve(driver_url, zip_path)
             
-            # Extract zip
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(SCRIPT_DIR)
             
-            # Find extracted chromedriver
             extracted_dirs = [d for d in os.listdir(SCRIPT_DIR) if d.startswith('chromedriver-linux')]
             for dir_name in extracted_dirs:
                 src = os.path.join(SCRIPT_DIR, dir_name, 'chromedriver')
                 dst = os.path.join(SCRIPT_DIR, 'chromedriver')
                 if os.path.exists(src):
                     os.rename(src, dst)
-                    # Make executable
                     os.chmod(dst, 0o755)
-                    # Cleanup
                     import shutil
                     shutil.rmtree(os.path.join(SCRIPT_DIR, dir_name))
                     break
             
-            # Remove zip file
             os.remove(zip_path)
             
             print(f"{Color.GREEN}[✓] ChromeDriver downloaded successfully!{Color.RESET}")
@@ -177,6 +167,15 @@ class CoreManager:
         self.undetected_available = self.check_undetected_chromedriver()
         self.browser_active = False
         self.all_ready = False
+        self.server_online = self.check_server_status()
+
+    def check_server_status(self):
+        """Check if server is online"""
+        try:
+            resp = requests.get(SERVER_URL, timeout=5)
+            return resp.status_code == 200
+        except:
+            return False
 
     def check_browser_ready(self):
         """Check if ChromeDriver exists"""
@@ -201,7 +200,6 @@ class CoreManager:
             'espeak': False
         }
         
-        # Check Chromium
         chromium_paths = [
             '/data/data/com.termux/files/usr/bin/chromium',
             '/data/data/com.termux/files/usr/bin/chromium-browser',
@@ -212,10 +210,8 @@ class CoreManager:
                 status['chromium'] = True
                 break
         
-        # Check ChromeDriver
         status['chromedriver'] = self.check_browser_ready()
         
-        # Check Python packages
         try:
             import selenium
             status['selenium'] = True
@@ -230,7 +226,6 @@ class CoreManager:
         except:
             pass
         
-        # Check espeak
         espeak_paths = [
             '/data/data/com.termux/files/usr/bin/espeak',
             '/usr/bin/espeak'
@@ -246,7 +241,7 @@ class CoreManager:
         """Install undetected-chromedriver package with multiple methods"""
         print(f"{Color.CYAN}[*] Installing undetected-chromedriver...{Color.RESET}")
         
-        # Method 1: Try normal pip install
+        # Method 1: Normal pip
         try:
             print(f"{Color.DIM}    Trying pip install...{Color.RESET}")
             subprocess.run(
@@ -263,7 +258,7 @@ class CoreManager:
         except:
             pass
         
-        # Method 2: Try specific version (3.5.4)
+        # Method 2: Version 3.5.4
         try:
             print(f"{Color.DIM}    Trying version 3.5.4...{Color.RESET}")
             subprocess.run(
@@ -280,7 +275,7 @@ class CoreManager:
         except:
             pass
         
-        # Method 3: Try GitHub direct
+        # Method 3: GitHub
         try:
             print(f"{Color.DIM}    Trying GitHub installation...{Color.RESET}")
             subprocess.run(
@@ -297,7 +292,7 @@ class CoreManager:
         except:
             pass
         
-        # Method 4: Try with Python 3.11 if available
+        # Method 4: Python 3.11
         try:
             print(f"{Color.DIM}    Trying Python 3.11...{Color.RESET}")
             result = subprocess.run("which python3.11", shell=True, capture_output=True, text=True)
@@ -314,41 +309,6 @@ class CoreManager:
                     print(f"{Color.GREEN}[✓] undetected-chromedriver installed with Python 3.11!{Color.RESET}")
                     print(f"{Color.YELLOW}[!] Please run: python3.11 bot.py{Color.RESET}")
                     return True
-        except:
-            pass
-        
-        # Method 5: Manual download and install
-        try:
-            print(f"{Color.DIM}    Trying manual download...{Color.RESET}")
-            os.chdir(SCRIPT_DIR)
-            subprocess.run("wget -q https://github.com/ultrafunkamsterdam/undetected-chromedriver/archive/refs/heads/master.zip", shell=True, check=False)
-            subprocess.run("unzip -q -o master.zip", shell=True, check=False)
-            if os.path.exists("undetected-chromedriver-master"):
-                os.chdir("undetected-chromedriver-master")
-                subprocess.run("pip install .", shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                os.chdir(SCRIPT_DIR)
-                subprocess.run("rm -rf undetected-chromedriver-master master.zip", shell=True, check=False)
-                self.undetected_available = self.check_undetected_chromedriver()
-                if self.undetected_available:
-                    print(f"{Color.GREEN}[✓] undetected-chromedriver installed manually!{Color.RESET}")
-                    return True
-        except Exception as e:
-            pass
-        
-        # Method 6: Try with --break-system-packages (for newer pip)
-        try:
-            print(f"{Color.DIM}    Trying with --break-system-packages...{Color.RESET}")
-            subprocess.run(
-                "pip install undetected-chromedriver --break-system-packages",
-                shell=True, 
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            self.undetected_available = self.check_undetected_chromedriver()
-            if self.undetected_available:
-                print(f"{Color.GREEN}[✓] undetected-chromedriver installed with --break-system-packages!{Color.RESET}")
-                return True
         except:
             pass
         
@@ -389,20 +349,56 @@ class CoreManager:
         return False
 
     def get_proxy_and_deduct(self):
+        """Get proxy from server with better error handling"""
         try:
+            # Check server status first
+            if not self.check_server_status():
+                print(f"{Color.RED}❌ Server is OFFLINE!{Color.RESET}")
+                return None
+            
+            # Check credits
+            if self.credits <= 0:
+                print(f"{Color.RED}❌ Insufficient Credits! Remaining: {self.credits}{Color.RESET}")
+                return None
+            
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
                 'license_key': self.license_key,
                 'country': 'Rand'
             }, timeout=15)
+            
+            if resp.status_code != 200:
+                print(f"{Color.RED}❌ Server returned: {resp.status_code}{Color.RESET}")
+                return None
+            
             data = resp.json()
+            
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
                 ip = data.get('ip')
                 port = data.get('port', 3010)
-                return f"socks5://{ip}:{port}"
-        except:
-            pass
-        return None
+                
+                if not ip:
+                    print(f"{Color.RED}❌ No proxy IP received!{Color.RESET}")
+                    return None
+                
+                proxy = f"socks5://{ip}:{port}"
+                print(f"{Color.GREEN}✅ Proxy received: {proxy}{Color.RESET}")
+                print(f"{Color.CYAN}💰 Remaining Credits: {self.credits}{Color.RESET}")
+                return proxy
+            else:
+                error_msg = data.get('message', 'Unknown error')
+                print(f"{Color.RED}❌ Server error: {error_msg}{Color.RESET}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            print(f"{Color.RED}❌ Server timeout! Please try again.{Color.RESET}")
+            return None
+        except requests.exceptions.ConnectionError:
+            print(f"{Color.RED}❌ Cannot connect to server!{Color.RESET}")
+            return None
+        except Exception as e:
+            print(f"{Color.RED}❌ Proxy error: {e}{Color.RESET}")
+            return None
 
 # ==================== STEALTH BROWSER ====================
 class StealthBrowser:
@@ -620,8 +616,8 @@ class SaaSApp:
         """Check all dependencies and update status"""
         self.core.browser_ready = self.core.check_browser_ready()
         self.core.undetected_available = self.core.check_undetected_chromedriver()
+        self.core.server_online = self.core.check_server_status()
         
-        # Check if all dependencies are ready
         if self.core.browser_ready:
             self.core.all_ready = True
         else:
@@ -655,10 +651,10 @@ class SaaSApp:
         else:
             ud_status = f"{Color.YELLOW}● Not Installed{Color.RESET}"
         
-        try:
-            srv_check = requests.get(SERVER_URL, timeout=3)
-            srv_status = f"{Color.GREEN}● Online{Color.RESET}" if srv_check.status_code == 200 else f"{Color.RED}● Offline{Color.RESET}"
-        except:
+        # Server status
+        if self.core.server_online:
+            srv_status = f"{Color.GREEN}● Online{Color.RESET}"
+        else:
             srv_status = f"{Color.RED}● Offline{Color.RESET}"
 
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Browser   {Color.RESET}: {br_status}     {Color.BOLD}License{Color.RESET} : {lic_status}")
@@ -681,6 +677,10 @@ class SaaSApp:
             print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}🔒 Undetected Mode: ON{Color.RESET}                      {Color.DIM}│{Color.RESET}")
         else:
             print(f"  {Color.DIM}│{Color.RESET}  {Color.YELLOW}🔓 Undetected Mode: OFF (using standard){Color.RESET} {Color.DIM}│{Color.RESET}")
+        
+        if not self.core.server_online:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.RED}⚠️  Server OFFLINE - Cannot get proxies{Color.RESET}      {Color.DIM}│{Color.RESET}")
+        
         print(f"  {Color.DIM}└──────────────────────────────────────────────────┘{Color.RESET}")
 
     def run_automation(self):
@@ -691,6 +691,12 @@ class SaaSApp:
         
         if not self.core.browser_ready:
             print(f"\n{Color.RED}[!] Browser not ready! Run Option 4 first.{Color.RESET}")
+            time.sleep(3)
+            return
+        
+        if not self.core.server_online:
+            print(f"\n{Color.RED}[!] Server is OFFLINE! Cannot get proxies.{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Please check your internet connection.{Color.RESET}")
             time.sleep(3)
             return
         
@@ -710,37 +716,48 @@ class SaaSApp:
             return
         
         print(f"\n{Color.GREEN}[+] Batch Started: {len(items)} items{Color.RESET}")
+        print(f"{Color.CYAN}[*] Remaining Credits: {self.core.credits}{Color.RESET}")
         self.audio.speak("Starting batch process")
         
         self.core.browser_active = True
+        success_count = 0
+        fail_count = 0
+        proxy_error_count = 0
 
         for idx, item in enumerate(items, 1):
             if self.core.credits <= 0:
-                print(f"\n{Color.RED}[!] Insufficient Credits!{Color.RESET}")
+                print(f"\n{Color.RED}[!] Insufficient Credits! Remaining: {self.core.credits}{Color.RESET}")
                 break
             
             print(f"\n{Color.GOLD}>>> [{idx}/{len(items)}] Task: {item}{Color.RESET}")
             
+            # Get proxy with better error handling
             proxy = self.core.get_proxy_and_deduct()
             if not proxy:
-                print(f"{Color.RED}[✗] Server/Proxy Error!{Color.RESET}")
+                proxy_error_count += 1
+                print(f"{Color.RED}[✗] Skipping {item} - No proxy available{Color.RESET}")
+                
+                # If too many proxy errors, break
+                if proxy_error_count >= 3:
+                    print(f"{Color.RED}[!] Too many proxy errors! Stopping...{Color.RESET}")
+                    break
                 continue
-
-            print(f"{Color.CYAN}[*] Proxy: {proxy}{Color.RESET}")
-            print(f"{Color.CYAN}[*] Remaining Credits: {self.core.credits}{Color.RESET}")
 
             browser = StealthBrowser(proxy)
             if browser.start():
                 success = custom_automation_logic(browser.driver, item)
                 if success:
+                    success_count += 1
                     print(f"{Color.GREEN}[✓] Success: {item}{Color.RESET}")
                 else:
+                    fail_count += 1
                     print(f"{Color.RED}[✗] Failed: {item}{Color.RESET}")
                 browser.stop()
             else:
+                fail_count += 1
                 print(f"{Color.RED}[✗] Browser failed to start!{Color.RESET}")
             
-            if idx < len(items):
+            if idx < len(items) and self.core.credits > 0:
                 print(f"{Color.DIM}[*] Waiting 15s before next number...{Color.RESET}")
                 for remaining in range(15, 0, -1):
                     if remaining % 5 == 0:
@@ -748,6 +765,17 @@ class SaaSApp:
                     time.sleep(1)
 
         self.core.browser_active = False
+        
+        # Summary
+        print(f"\n{Color.GOLD}╔══════════════════════════════════════════╗{Color.RESET}")
+        print(f"{Color.GOLD}║           BATCH SUMMARY                  ║{Color.RESET}")
+        print(f"{Color.GOLD}╠══════════════════════════════════════════╣{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.GREEN}✅ Success  : {success_count}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.RED}❌ Failed   : {fail_count}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.YELLOW}⚠️  Proxy Err: {proxy_error_count}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.CYAN}💰 Credits  : {self.core.credits}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}╚══════════════════════════════════════════╝{Color.RESET}")
+        
         self.audio.speak("All tasks finished")
         input("\nBatch Complete. Press Enter...")
 
@@ -758,11 +786,8 @@ class SaaSApp:
         print(f"{Color.GOLD}║   Checking and installing missing only   ║{Color.RESET}")
         print(f"{Color.GOLD}╚══════════════════════════════════════════╝{Color.RESET}\n")
         
-        # Check current status
-        print(f"{Color.CYAN}[*] Checking current dependencies...{Color.RESET}")
         status = self.core.check_all_dependencies()
         
-        # Show current status
         print(f"\n{Color.CYAN}📊 Current Status:{Color.RESET}")
         print(f"  {Color.GREEN}✅{Color.RESET} Chromium     : {'Installed' if status['chromium'] else 'Missing'}")
         print(f"  {Color.GREEN}✅{Color.RESET} ChromeDriver  : {'Installed' if status['chromedriver'] else 'Missing'}")
@@ -771,7 +796,6 @@ class SaaSApp:
         print(f"  {Color.GREEN}✅{Color.RESET} Requests     : {'Installed' if status['requests'] else 'Missing'}")
         print(f"  {Color.GREEN}✅{Color.RESET} Espeak       : {'Installed' if status['espeak'] else 'Missing'}")
         
-        # Check if all installed
         all_installed = all(status.values())
         
         if all_installed:
@@ -784,10 +808,9 @@ class SaaSApp:
             input("\nPress Enter to continue...")
             return
         
-        # Install missing dependencies
         print(f"\n{Color.YELLOW}[!] Some dependencies are missing. Installing...{Color.RESET}\n")
         
-        # Step 1: Update packages
+        # Install system packages
         if not status['chromium'] or not status['espeak']:
             print(f"{Color.CYAN}[1/4] Installing system packages...{Color.RESET}")
             subprocess.run("pkg update -y", shell=True, check=False)
@@ -801,12 +824,11 @@ class SaaSApp:
                 print(f"{Color.DIM}    Installing espeak...{Color.RESET}")
                 subprocess.run("pkg install espeak -y", shell=True, check=False)
             
-            # Install Python if needed
             subprocess.run("pkg install python python-pip -y", shell=True, check=False)
             subprocess.run("pkg install python3.11 -y", shell=True, check=False)
             subprocess.run("python3.11 -m ensurepip", shell=True, check=False)
         
-        # Step 2: Install ChromeDriver
+        # Install ChromeDriver
         if not status['chromedriver']:
             print(f"{Color.CYAN}[2/4] Installing ChromeDriver...{Color.RESET}")
             if ChromeDriverManager.download_chromedriver():
@@ -814,22 +836,20 @@ class SaaSApp:
             else:
                 print(f"{Color.RED}[✗] ChromeDriver installation failed!{Color.RESET}")
         
-        # Step 3: Install Python packages
+        # Install Python packages
         if not status['selenium'] or not status['requests']:
             print(f"{Color.CYAN}[3/4] Installing Python packages...{Color.RESET}")
             subprocess.run("pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
             subprocess.run("python3.11 -m pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
         
-        # Step 4: Install undetected-chromedriver
+        # Install undetected-chromedriver
         if not status['undetected']:
             print(f"{Color.CYAN}[4/4] Installing undetected-chromedriver...{Color.RESET}")
             self.core.install_undetected_chromedriver()
         
-        # Create directories
         os.makedirs(os.path.join(SCRIPT_DIR, 'data'), exist_ok=True)
         os.makedirs(os.path.join(SCRIPT_DIR, 'logs'), exist_ok=True)
         
-        # Final verification
         print(f"\n{Color.CYAN}[*] Verifying installation...{Color.RESET}")
         
         self.core.browser_ready = self.core.check_browser_ready()
