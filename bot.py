@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v11.1 - Professional Anti-Detect Edition
+Ridol SaaS Tool v11.0 - Professional Anti-Detect Edition
 Integrated with PostgreSQL Server, Premium UI & Stealth Engine
 Author: Ridol Islam
 """
@@ -10,18 +10,17 @@ import sys
 import time
 import json
 import random
-import threading
 import subprocess
 import requests
+import zipfile
+import urllib.request
 from datetime import datetime
 
 # ==================== CONFIGURATION ====================
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v11.1'
-
-os.makedirs(os.path.join(SCRIPT_DIR, 'sounds'), exist_ok=True)
+APP_VERSION = 'v11.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -36,39 +35,8 @@ class Color:
     RESET = '\033[0m'
     GOLD = '\033[38;5;214m'
 
-# ==================== FIND CHROMEDRIVER PATH ====================
-def find_chromedriver():
-    """সঠিক chromedriver পাথ খুঁজে বের করা"""
-    possible_paths = [
-        '/data/data/com.termux/files/usr/bin/chromedriver',
-        '/data/data/com.termux/files/usr/lib/chromium/chromedriver',
-        '/data/data/com.termux/files/usr/libexec/chromedriver',
-        '/data/data/com.termux/files/usr/bin/chromedriver.exe',
-        '/usr/bin/chromedriver',
-        '/usr/lib/chromium/chromedriver',
-        '/usr/libexec/chromedriver',
-    ]
-    
-    for path in possible_paths:
-        if os.path.exists(path):
-            return path
-    
-    # অথবা which কমান্ড চালানো
-    try:
-        result = subprocess.run(['which', 'chromedriver'], capture_output=True, text=True)
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except:
-        pass
-    
-    return None
-
-CHROMEDRIVER_PATH = find_chromedriver()
-
 # ==================== DATA GENERATOR ====================
 class DataGenerator:
-    """Generate random user data for Facebook registration"""
-    
     FIRST_NAMES = {
         'US': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles',
                'Mary', 'Patricia', 'Jennifer', 'Linda', 'Barbara', 'Elizabeth', 'Susan', 'Jessica', 'Sarah', 'Karen'],
@@ -98,10 +66,7 @@ class DataGenerator:
     
     @classmethod
     def get_random_dob(cls):
-        day = random.randint(1, 28)
-        month = random.randint(1, 12)
-        year = random.randint(1992, 2005)
-        return day, month, year
+        return random.randint(1, 28), random.randint(1, 12), random.randint(1992, 2005)
     
     @classmethod
     def get_random_gender(cls):
@@ -109,9 +74,8 @@ class DataGenerator:
     
     @classmethod
     def get_random_password(cls):
-        length = random.randint(8, 12)
         chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
-        return ''.join(random.choices(chars, k=length))
+        return ''.join(random.choices(chars, k=random.randint(8, 12)))
     
     @classmethod
     def get_country_from_phone(cls, phone_number):
@@ -127,7 +91,311 @@ class DataGenerator:
                 return country_codes[code]
         return 'XX'
 
-# ==================== CORE MANAGER (SERVER SYNC) ====================
+# ==================== CHROMEDRIVER MANAGER ====================
+class ChromeDriverManager:
+    @staticmethod
+    def get_chromedriver_path():
+        local_path = os.path.join(SCRIPT_DIR, 'chromedriver')
+        if os.path.exists(local_path):
+            return local_path
+        
+        local_path_exe = os.path.join(SCRIPT_DIR, 'chromedriver.exe')
+        if os.path.exists(local_path_exe):
+            return local_path_exe
+        
+        system_paths = [
+            '/data/data/com.termux/files/usr/bin/chromedriver',
+            '/usr/bin/chromedriver',
+            '/usr/local/bin/chromedriver',
+            '/opt/chromedriver/chromedriver'
+        ]
+        for path in system_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
+    
+    @staticmethod
+    def download_chromedriver():
+        print(f"{Color.CYAN}[*] Downloading ChromeDriver...{Color.RESET}")
+        
+        arch = os.uname().machine
+        if arch == 'aarch64' or arch == 'arm64':
+            driver_url = "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/124.0.6367.91/linux-arm64/chromedriver-linux-arm64.zip"
+        else:
+            driver_url = "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/124.0.6367.91/linux64/chromedriver-linux64.zip"
+        
+        try:
+            zip_path = os.path.join(SCRIPT_DIR, 'chromedriver.zip')
+            urllib.request.urlretrieve(driver_url, zip_path)
+            
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(SCRIPT_DIR)
+            
+            extracted_dirs = [d for d in os.listdir(SCRIPT_DIR) if d.startswith('chromedriver-linux')]
+            for dir_name in extracted_dirs:
+                src = os.path.join(SCRIPT_DIR, dir_name, 'chromedriver')
+                dst = os.path.join(SCRIPT_DIR, 'chromedriver')
+                if os.path.exists(src):
+                    os.rename(src, dst)
+                    os.chmod(dst, 0o755)
+                    import shutil
+                    shutil.rmtree(os.path.join(SCRIPT_DIR, dir_name))
+                    break
+            
+            os.remove(zip_path)
+            print(f"{Color.GREEN}[✓] ChromeDriver downloaded!{Color.RESET}")
+            return True
+        except Exception as e:
+            print(f"{Color.RED}[✗] ChromeDriver download failed: {e}{Color.RESET}")
+            return False
+
+# ==================== FACEBOOK URL MANAGER (WITH CACHE) ====================
+class FacebookURLManager:
+    """Smart URL selector with caching system - remembers working URLs"""
+    
+    # Cache file to store working URLs
+    CACHE_FILE = os.path.join(SCRIPT_DIR, 'working_urls.json')
+    
+    # All possible URLs to try
+    URLS = {
+        'mobile': [
+            'https://m.facebook.com/reg',
+            'https://m.facebook.com/r.php',
+            'https://mbasic.facebook.com/reg',
+            'https://mbasic.facebook.com/r.php'
+        ],
+        'desktop': [
+            'https://www.facebook.com/reg',
+            'https://www.facebook.com/r.php',
+            'https://web.facebook.com/reg',
+            'https://web.facebook.com/r.php'
+        ],
+        'touch': [
+            'https://touch.facebook.com/reg',
+            'https://touch.facebook.com/r.php'
+        ]
+    }
+    
+    # Cache storage
+    _cache = None
+    _current_device = None
+    _working_url = None
+    _device_detected = False
+    
+    @classmethod
+    def load_cache(cls):
+        """Load cached working URLs from file"""
+        if cls._cache is not None:
+            return cls._cache
+        
+        try:
+            if os.path.exists(cls.CACHE_FILE):
+                with open(cls.CACHE_FILE, 'r') as f:
+                    cls._cache = json.load(f)
+                print(f"{Color.GREEN}[✓] Loaded URL cache{Color.RESET}")
+                return cls._cache
+        except:
+            pass
+        
+        cls._cache = {}
+        return cls._cache
+    
+    @classmethod
+    def save_cache(cls):
+        """Save cache to file"""
+        try:
+            with open(cls.CACHE_FILE, 'w') as f:
+                json.dump(cls._cache, f, indent=2)
+        except:
+            pass
+    
+    @classmethod
+    def get_cached_url(cls, device_type):
+        """Get cached working URL for device type"""
+        cache = cls.load_cache()
+        return cache.get(device_type)
+    
+    @classmethod
+    def set_cached_url(cls, device_type, url):
+        """Save working URL to cache"""
+        cache = cls.load_cache()
+        cache[device_type] = url
+        cls._cache = cache
+        cls.save_cache()
+        cls._working_url = url
+        print(f"{Color.GREEN}[✓] Cached working URL for {device_type}: {url}{Color.RESET}")
+    
+    @classmethod
+    def detect_device(cls, driver):
+        """Detect device type from user agent"""
+        if cls._device_detected and cls._current_device:
+            return cls._current_device
+            
+        try:
+            user_agent = driver.execute_script("return navigator.userAgent")
+            user_agent = user_agent.lower()
+            
+            # Check for mobile
+            mobile_keywords = ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone']
+            for keyword in mobile_keywords:
+                if keyword in user_agent:
+                    cls._current_device = 'mobile'
+                    cls._device_detected = True
+                    return 'mobile'
+            
+            # Check for tablet
+            tablet_keywords = ['tablet', 'ipad']
+            for keyword in tablet_keywords:
+                if keyword in user_agent:
+                    cls._current_device = 'touch'
+                    cls._device_detected = True
+                    return 'touch'
+            
+            # Check for touch screen
+            try:
+                is_touch = driver.execute_script("return 'ontouchstart' in window || navigator.maxTouchPoints > 0")
+                if is_touch:
+                    cls._current_device = 'touch'
+                    cls._device_detected = True
+                    return 'touch'
+            except:
+                pass
+            
+            cls._current_device = 'desktop'
+            cls._device_detected = True
+            return 'desktop'
+            
+        except:
+            cls._current_device = 'desktop'
+            cls._device_detected = True
+            return 'desktop'
+    
+    @classmethod
+    def get_urls_for_device(cls, device_type):
+        """Get URLs for specific device type"""
+        return cls.URLS.get(device_type, cls.URLS['desktop'])
+    
+    @classmethod
+    def find_working_url(cls, driver, device_type):
+        """Find a working URL for the device type"""
+        
+        # 1. Check cache first
+        cached_url = cls.get_cached_url(device_type)
+        if cached_url:
+            print(f"{Color.GREEN}[✓] Using cached URL: {cached_url}{Color.RESET}")
+            try:
+                driver.get(cached_url)
+                time.sleep(random.uniform(2, 3))
+                
+                # Verify it works
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                
+                WebDriverWait(driver, 8).until(
+                    EC.presence_of_element_located((By.NAME, "firstname"))
+                )
+                cls._working_url = cached_url
+                return cached_url
+            except:
+                print(f"{Color.YELLOW}[!] Cached URL failed, finding new...{Color.RESET}")
+                # Remove invalid cache
+                cache = cls.load_cache()
+                if device_type in cache:
+                    del cache[device_type]
+                    cls._cache = cache
+                    cls.save_cache()
+        
+        # 2. Try all URLs for this device
+        urls = cls.get_urls_for_device(device_type)
+        print(f"{Color.CYAN}[*] Testing {len(urls)} URLs for {device_type}...{Color.RESET}")
+        
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        
+        for url in urls:
+            print(f"{Color.DIM}[*] Trying: {url}{Color.RESET}")
+            try:
+                driver.get(url)
+                time.sleep(random.uniform(2, 4))
+                
+                # Check if registration form loaded
+                try:
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.NAME, "firstname"))
+                    )
+                    print(f"{Color.GREEN}[✓] URL working: {url}{Color.RESET}")
+                    # Cache this URL
+                    cls.set_cached_url(device_type, url)
+                    cls._working_url = url
+                    return url
+                except:
+                    # Try different element
+                    try:
+                        WebDriverWait(driver, 5).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder*="first"], input[placeholder*="First"]'))
+                        )
+                        print(f"{Color.GREEN}[✓] URL working: {url}{Color.RESET}")
+                        cls.set_cached_url(device_type, url)
+                        cls._working_url = url
+                        return url
+                    except:
+                        print(f"{Color.YELLOW}[!] Form not found on {url}{Color.RESET}")
+                        
+            except Exception as e:
+                print(f"{Color.RED}[✗] Failed: {url} - {str(e)[:40]}{Color.RESET}")
+                continue
+        
+        # 3. Try fallback - all URLs from all devices
+        print(f"{Color.YELLOW}[!] No working URL found for {device_type}, trying all...{Color.RESET}")
+        all_urls = []
+        for urls in cls.URLS.values():
+            all_urls.extend(urls)
+        
+        # Remove duplicates
+        all_urls = list(dict.fromkeys(all_urls))
+        
+        for url in all_urls:
+            if url == cls._working_url:
+                continue
+            print(f"{Color.DIM}[*] Trying fallback: {url}{Color.RESET}")
+            try:
+                driver.get(url)
+                time.sleep(random.uniform(2, 4))
+                
+                try:
+                    WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.NAME, "firstname"))
+                    )
+                    print(f"{Color.GREEN}[✓] Fallback URL working: {url}{Color.RESET}")
+                    cls.set_cached_url(device_type, url)
+                    cls._working_url = url
+                    return url
+                except:
+                    pass
+            except:
+                continue
+        
+        return None
+    
+    @classmethod
+    def get_best_url(cls, driver):
+        """Get the best working URL for current device"""
+        device = cls.detect_device(driver)
+        print(f"{Color.CYAN}[*] Device detected: {device}{Color.RESET}")
+        
+        working_url = cls.find_working_url(driver, device)
+        
+        if working_url:
+            print(f"{Color.GREEN}[✓] Using: {working_url}{Color.RESET}")
+            return working_url, device
+        else:
+            print(f"{Color.RED}[✗] No working URL found!{Color.RESET}")
+            return None, device
+
+# ==================== CORE MANAGER ====================
 class CoreManager:
     def __init__(self):
         self.config = self.load_config()
@@ -136,12 +404,119 @@ class CoreManager:
         self.credits = 0
         self.user_id = "None"
         self.is_valid = False
-        self.browser_ready = CHROMEDRIVER_PATH is not None
+        self.browser_ready = self.check_browser_ready()
+        self.undetected_available = self.check_undetected_chromedriver()
+        self.browser_active = False
+        self.all_ready = False
+        self.server_online = self.check_server_status()
+
+    def check_server_status(self):
+        try:
+            resp = requests.get(SERVER_URL, timeout=5)
+            return resp.status_code == 200
+        except:
+            return False
+
+    def check_browser_ready(self):
+        return ChromeDriverManager.get_chromedriver_path() is not None
+
+    def check_undetected_chromedriver(self):
+        try:
+            import undetected_chromedriver
+            return True
+        except ImportError:
+            return False
+    
+    def check_all_dependencies(self):
+        status = {
+            'chromium': False,
+            'chromedriver': False,
+            'selenium': False,
+            'undetected': False,
+            'requests': False,
+            'espeak': False
+        }
+        
+        chromium_paths = [
+            '/data/data/com.termux/files/usr/bin/chromium',
+            '/data/data/com.termux/files/usr/bin/chromium-browser',
+            '/usr/bin/chromium'
+        ]
+        for p in chromium_paths:
+            if os.path.exists(p):
+                status['chromium'] = True
+                break
+        
+        status['chromedriver'] = self.check_browser_ready()
+        
+        try:
+            import selenium
+            status['selenium'] = True
+        except:
+            pass
+        
+        status['undetected'] = self.check_undetected_chromedriver()
+        
+        try:
+            import requests
+            status['requests'] = True
+        except:
+            pass
+        
+        espeak_paths = [
+            '/data/data/com.termux/files/usr/bin/espeak',
+            '/usr/bin/espeak'
+        ]
+        for p in espeak_paths:
+            if os.path.exists(p):
+                status['espeak'] = True
+                break
+        
+        return status
+
+    def install_undetected_chromedriver(self):
+        print(f"{Color.CYAN}[*] Installing undetected-chromedriver...{Color.RESET}")
+        
+        # Try different methods
+        methods = [
+            "pip install undetected-chromedriver --upgrade",
+            "pip install undetected-chromedriver==3.5.4",
+            "pip install git+https://github.com/ultrafunkamsterdam/undetected-chromedriver.git",
+        ]
+        
+        for method in methods:
+            try:
+                subprocess.run(method, shell=True, check=False,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if self.check_undetected_chromedriver():
+                    print(f"{Color.GREEN}[✓] undetected-chromedriver installed!{Color.RESET}")
+                    return True
+            except:
+                continue
+        
+        # Try Python 3.11
+        try:
+            result = subprocess.run("which python3.11", shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                subprocess.run("python3.11 -m pip install undetected-chromedriver",
+                             shell=True, check=False,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if self.check_undetected_chromedriver():
+                    print(f"{Color.GREEN}[✓] undetected-chromedriver installed with Python 3.11!{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] Please run: python3.11 bot.py{Color.RESET}")
+                    return True
+        except:
+            pass
+        
+        print(f"{Color.RED}[✗] undetected-chromedriver installation failed!{Color.RESET}")
+        return False
 
     def load_config(self):
         try:
-            with open(CONFIG_FILE, 'r') as f: return json.load(f)
-        except: return {}
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
 
     def save_config(self):
         with open(CONFIG_FILE, 'w') as f:
@@ -152,9 +527,11 @@ class CoreManager:
 
     def verify_license(self, key=None):
         target = key if key else self.license_key
-        if not target: return False
+        if not target:
+            return False
         try:
-            resp = requests.post(f"{SERVER_URL}/api/license/verify", json={'license_key': target}, timeout=10)
+            resp = requests.post(f"{SERVER_URL}/api/license/verify", 
+                               json={'license_key': target}, timeout=10)
             data = resp.json()
             if data.get('valid'):
                 self.is_valid = True
@@ -163,101 +540,206 @@ class CoreManager:
                 self.license_key = target
                 self.save_config()
                 return True
-        except: pass
+        except:
+            pass
         return False
 
     def get_proxy_and_deduct(self):
-        """সার্ভারে হিট করে ১ ক্রেডিট কাটবে এবং প্রক্সি নিবে (SOCKS5)"""
         try:
+            if not self.check_server_status():
+                print(f"{Color.RED}❌ Server is OFFLINE!{Color.RESET}")
+                return None
+            
+            if self.credits <= 0:
+                print(f"{Color.RED}❌ Insufficient Credits! Remaining: {self.credits}{Color.RESET}")
+                return None
+            
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
                 'license_key': self.license_key,
                 'country': 'Rand'
-            }, timeout=15)
+            }, timeout=20)
+            
+            if resp.status_code != 200:
+                print(f"{Color.RED}❌ Server returned: {resp.status_code}{Color.RESET}")
+                return None
+            
             data = resp.json()
+            
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
                 ip = data.get('ip')
                 port = data.get('port', 3010)
-                return f"socks5://{ip}:{port}"
-        except: pass
-        return None
+                
+                if not ip or ip == '0.0.0.0':
+                    print(f"{Color.RED}❌ Invalid proxy IP!{Color.RESET}")
+                    return None
+                
+                proxy = f"socks5://{ip}:{port}"
+                print(f"{Color.GREEN}✅ Proxy: {proxy}{Color.RESET}")
+                print(f"{Color.CYAN}💰 Remaining Credits: {self.credits}{Color.RESET}")
+                return proxy
+            else:
+                error_msg = data.get('error', 'Unknown error')
+                print(f"{Color.RED}❌ Server error: {error_msg}{Color.RESET}")
+                return None
+                
+        except Exception as e:
+            print(f"{Color.RED}❌ Proxy error: {e}{Color.RESET}")
+            return None
 
-# ==================== ANTI-DETECT BROWSER ENGINE ====================
+# ==================== STEALTH BROWSER ====================
 class StealthBrowser:
     def __init__(self, proxy=None):
         self.proxy = proxy
         self.driver = None
 
     def start(self):
-        global CHROMEDRIVER_PATH
-        
-        if not CHROMEDRIVER_PATH:
-            print(f"{Color.RED}[-] Chromedriver not found! Please run Option 4 to install.{Color.RESET}")
-            return False
-            
         try:
-            # Try undetected-chromedriver first
-            try:
-                import undetected_chromedriver as uc
+            if core.undetected_available:
                 print(f"{Color.CYAN}[*] Using undetected-chromedriver{Color.RESET}")
-                
-                options = uc.ChromeOptions()
-                options.add_argument('--headless')
-                options.add_argument('--no-sandbox')
-                options.add_argument('--disable-dev-shm-usage')
-                options.add_argument('--disable-gpu')
-                options.add_argument('--blink-settings=imagesEnabled=false')
-                
-                if self.proxy:
-                    options.add_argument(f'--proxy-server={self.proxy}')
-                
-                self.driver = uc.Chrome(
-                    options=options,
-                    driver_executable_path=CHROMEDRIVER_PATH
-                )
-                
-                # Hide WebDriver
-                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                return True
-                
-            except Exception as e:
-                print(f"{Color.YELLOW}[!] undetected-chromedriver error: {e}{Color.RESET}")
-                print(f"{Color.CYAN}[*] Falling back to standard Selenium{Color.RESET}")
-                
-                # Fallback to standard Selenium
-                from selenium import webdriver
-                from selenium.webdriver.chrome.service import Service
-                from selenium.webdriver.chrome.options import Options
-                
-                options = Options()
-                options.add_argument('--headless')
-                options.add_argument('--no-sandbox')
-                options.add_argument('--disable-dev-shm-usage')
-                options.add_argument('--disable-gpu')
-                options.add_argument('--blink-settings=imagesEnabled=false')
-                options.add_argument('--disable-blink-features=AutomationControlled')
-                
-                # Random User-Agent
-                ua_list = [
-                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-                    "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
-                ]
-                options.add_argument(f'user-agent={random.choice(ua_list)}')
-                options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                options.add_experimental_option('useAutomationExtension', False)
-                
-                if self.proxy:
-                    options.add_argument(f'--proxy-server={self.proxy}')
-                
-                service = Service(CHROMEDRIVER_PATH)
-                self.driver = webdriver.Chrome(service=service, options=options)
-                
-                # Hide WebDriver
-                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                return True
-                
+                return self._start_undetected()
+            else:
+                print(f"{Color.CYAN}[*] Using standard selenium{Color.RESET}")
+                return self._start_standard()
         except Exception as e:
-            print(f"{Color.RED}[-] Browser error: {e}{Color.RESET}")
+            print(f"{Color.RED}[-] Browser Error: {e}{Color.RESET}")
+            return False
+
+    def _start_undetected(self):
+        try:
+            import undetected_chromedriver as uc
+            
+            options = uc.ChromeOptions()
+            
+            # Random device selection
+            devices = [
+                {
+                    'ua': "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                    'device': 'mobile'
+                },
+                {
+                    'ua': "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                    'device': 'mobile'
+                },
+                {
+                    'ua': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    'device': 'desktop'
+                },
+                {
+                    'ua': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    'device': 'desktop'
+                },
+                {
+                    'ua': "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                    'device': 'tablet'
+                }
+            ]
+            
+            selected = random.choice(devices)
+            options.add_argument(f'user-agent={selected["ua"]}')
+            
+            if selected['device'] == 'mobile':
+                options.add_argument('--window-size=390,844')
+            elif selected['device'] == 'tablet':
+                options.add_argument('--window-size=768,1024')
+            else:
+                options.add_argument('--window-size=1366,768')
+            
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
+            
+            if self.proxy:
+                options.add_argument(f'--proxy-server={self.proxy}')
+            
+            chromedriver_path = ChromeDriverManager.get_chromedriver_path()
+            
+            self.driver = uc.Chrome(
+                options=options,
+                driver_executable_path=chromedriver_path,
+                version_main=124
+            )
+            
+            # Stealth JavaScript
+            self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": """
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                    window.chrome = { runtime: {} };
+                """
+            })
+            
+            return True
+        except Exception as e:
+            print(f"{Color.RED}[-] undetected-chromedriver error: {e}{Color.RESET}")
+            return self._start_standard()
+
+    def _start_standard(self):
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.service import Service
+            from selenium.webdriver.chrome.options import Options
+            
+            chromedriver_path = ChromeDriverManager.get_chromedriver_path()
+            if not chromedriver_path:
+                print(f"{Color.RED}[-] ChromeDriver not found!{Color.RESET}")
+                return False
+            
+            options = Options()
+            
+            chromium_paths = [
+                '/data/data/com.termux/files/usr/bin/chromium',
+                '/data/data/com.termux/files/usr/bin/chromium-browser',
+                '/usr/bin/chromium'
+            ]
+            for p in chromium_paths:
+                if os.path.exists(p):
+                    options.binary_location = p
+                    break
+            
+            ua_list = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            ]
+            options.add_argument(f'user-agent={random.choice(ua_list)}')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            prefs = {
+                "credentials_enable_service": False,
+                "profile.password_manager_enabled": False,
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.geolocation": 2,
+                "profile.default_content_setting_values.cookies": 1
+            }
+            options.add_experimental_option("prefs", prefs)
+            
+            if self.proxy:
+                options.add_argument(f'--proxy-server={self.proxy}')
+            
+            service = Service(chromedriver_path)
+            self.driver = webdriver.Chrome(service=service, options=options)
+            
+            self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": """
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                    window.chrome = { runtime: {} };
+                """
+            })
+            
+            return True
+        except Exception as e:
+            print(f"{Color.RED}[-] Standard browser error: {e}{Color.RESET}")
             return False
 
     def stop(self):
@@ -270,27 +752,22 @@ class StealthBrowser:
 # ==================== AUDIO ENGINE ====================
 class AudioEngine:
     def speak(self, text):
-        try: 
-            subprocess.Popen(['espeak', text, '-v', 'en+m3', '-s', '140'], 
+        try:
+            subprocess.Popen(['espeak', text, '-v', 'en+m3', '-s', '140'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except: pass
+        except:
+            pass
 
-# ==================== CUSTOM AUTOMATION LOGIC (OTP SENDER) ====================
+# ==================== AUTOMATION LOGIC (WITH CACHED URL) ====================
 def custom_automation_logic(driver, data_item):
-    """
-    OTP Sender Automation - m.facebook.com/reg
-    Auto fills: Name, DOB, Gender, Phone, Password → Submit → Wait for OTP
-    """
+    """Automation with cached working URL"""
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import Select, WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         
-        # 1. দেশ ডিটেক্ট
+        # 1. Generate user data
         country_code = DataGenerator.get_country_from_phone(data_item)
-        print(f"{Color.CYAN}[*] Country detected: {country_code}{Color.RESET}")
-        
-        # 2. র্যান্ডম ডাটা জেনারেট
         first_name, last_name = DataGenerator.get_random_name(country_code)
         day, month, year = DataGenerator.get_random_dob()
         gender = DataGenerator.get_random_gender()
@@ -301,62 +778,159 @@ def custom_automation_logic(driver, data_item):
         print(f"{Color.CYAN}[*] Gender: {gender}{Color.RESET}")
         print(f"{Color.CYAN}[*] Password: {password}{Color.RESET}")
         
-        # 3. Facebook Registration Page
-        driver.get("https://m.facebook.com/reg")
-        time.sleep(2)
+        # 2. Get working URL (from cache or find new)
+        working_url, device_type = FacebookURLManager.get_best_url(driver)
         
-        # 4. Fill First Name
-        first_name_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.NAME, "firstname"))
-        )
-        first_name_field.send_keys(first_name)
-        time.sleep(0.3)
+        if not working_url:
+            print(f"{Color.RED}[✗] No working URL found!{Color.RESET}")
+            return False
         
-        # 5. Fill Last Name
-        last_name_field = driver.find_element(By.NAME, "lastname")
-        last_name_field.send_keys(last_name)
-        time.sleep(0.3)
+        # 3. If we already have a working URL, use it directly
+        current_url = driver.current_url
+        if working_url not in current_url:
+            print(f"{Color.CYAN}[*] Loading: {working_url}{Color.RESET}")
+            driver.get(working_url)
+            time.sleep(random.uniform(2, 4))
         
-        # 6. Select Day
-        day_select = Select(driver.find_element(By.NAME, "birthday_day"))
-        day_select.select_by_value(str(day))
-        time.sleep(0.2)
+        # 4. Fill the form
+        print(f"{Color.CYAN}[*] Filling registration form...{Color.RESET}")
         
-        # 7. Select Month
-        month_select = Select(driver.find_element(By.NAME, "birthday_month"))
-        month_select.select_by_value(str(month))
-        time.sleep(0.2)
+        # First Name
+        try:
+            first_name_field = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "firstname"))
+            )
+            first_name_field.clear()
+            time.sleep(random.uniform(0.2, 0.5))
+            first_name_field.send_keys(first_name)
+        except:
+            try:
+                first_name_field = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="first"]')
+                first_name_field.clear()
+                first_name_field.send_keys(first_name)
+            except:
+                print(f"{Color.YELLOW}[!] Could not find first name field{Color.RESET}")
+                return False
         
-        # 8. Select Year
-        year_select = Select(driver.find_element(By.NAME, "birthday_year"))
-        year_select.select_by_value(str(year))
-        time.sleep(0.2)
+        # Last Name
+        try:
+            last_name_field = driver.find_element(By.NAME, "lastname")
+            last_name_field.clear()
+            time.sleep(random.uniform(0.2, 0.5))
+            last_name_field.send_keys(last_name)
+        except:
+            try:
+                last_name_field = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="last"]')
+                last_name_field.clear()
+                last_name_field.send_keys(last_name)
+            except:
+                print(f"{Color.YELLOW}[!] Could not find last name field{Color.RESET}")
+                return False
         
-        # 9. Select Gender
-        gender_value = '2' if gender == 'Female' else '1'
-        gender_radio = driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]')
-        gender_radio.click()
-        time.sleep(0.3)
+        # DOB
+        try:
+            Select(driver.find_element(By.NAME, "birthday_day")).select_by_value(str(day))
+            time.sleep(random.uniform(0.2, 0.4))
+        except:
+            pass
         
-        # 10. Fill Phone Number
-        phone_field = driver.find_element(By.NAME, "reg_email__")
-        phone_field.send_keys(data_item)
-        time.sleep(0.5)
+        try:
+            Select(driver.find_element(By.NAME, "birthday_month")).select_by_value(str(month))
+            time.sleep(random.uniform(0.2, 0.4))
+        except:
+            pass
         
-        # 11. Fill Password
-        password_field = driver.find_element(By.NAME, "reg_passwd__")
-        password_field.send_keys(password)
-        time.sleep(0.5)
+        try:
+            Select(driver.find_element(By.NAME, "birthday_year")).select_by_value(str(year))
+            time.sleep(random.uniform(0.2, 0.4))
+        except:
+            pass
         
-        # 12. Click Submit
+        # Gender
+        try:
+            gender_value = '2' if gender == 'Female' else '1'
+            driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]').click()
+            time.sleep(random.uniform(0.3, 0.6))
+        except:
+            pass
+        
+        # Phone/Email
+        try:
+            phone_field = driver.find_element(By.NAME, "reg_email__")
+            phone_field.clear()
+            time.sleep(random.uniform(0.2, 0.5))
+            phone_field.send_keys(data_item)
+            time.sleep(random.uniform(0.5, 1.0))
+        except:
+            try:
+                phone_field = driver.find_element(By.CSS_SELECTOR, 'input[type="text"][placeholder*="email"]')
+                phone_field.clear()
+                phone_field.send_keys(data_item)
+            except:
+                try:
+                    phone_field = driver.find_element(By.CSS_SELECTOR, 'input[type="tel"]')
+                    phone_field.clear()
+                    phone_field.send_keys(data_item)
+                except:
+                    print(f"{Color.YELLOW}[!] Could not find phone/email field{Color.RESET}")
+                    return False
+        
+        # Password
+        try:
+            password_field = driver.find_element(By.NAME, "reg_passwd__")
+            password_field.clear()
+            time.sleep(random.uniform(0.2, 0.5))
+            password_field.send_keys(password)
+            time.sleep(random.uniform(0.5, 1.0))
+        except:
+            try:
+                password_field = driver.find_element(By.CSS_SELECTOR, 'input[type="password"]')
+                password_field.clear()
+                password_field.send_keys(password)
+            except:
+                print(f"{Color.YELLOW}[!] Could not find password field{Color.RESET}")
+                return False
+        
+        # Submit
         print(f"{Color.CYAN}[*] Clicking Submit...{Color.RESET}")
-        submit_button = driver.find_element(By.NAME, "websubmit")
-        submit_button.click()
-        time.sleep(2)
         
-        # 13. Wait for OTP (8 seconds)
-        print(f"{Color.CYAN}[*] Waiting 8 seconds for OTP SMS...{Color.RESET}")
-        time.sleep(8)
+        try:
+            submit_button = driver.find_element(By.NAME, "websubmit")
+            driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+            time.sleep(random.uniform(0.3, 0.6))
+            submit_button.click()
+        except:
+            try:
+                submit_button = driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]')
+                driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                submit_button.click()
+            except:
+                try:
+                    submit_button = driver.find_element(By.CSS_SELECTOR, 'input[type="submit"]')
+                    driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                    submit_button.click()
+                except:
+                    print(f"{Color.YELLOW}[!] Could not find submit button{Color.RESET}")
+                    return False
+        
+        time.sleep(random.uniform(2, 4))
+        
+        # Wait for OTP
+        print(f"{Color.CYAN}[*] Waiting 10 seconds for OTP SMS...{Color.RESET}")
+        time.sleep(10)
+        
+        # Check if OTP page loaded
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="code"], input[placeholder*="code"]'))
+            )
+            print(f"{Color.GREEN}[✓] OTP page loaded!{Color.RESET}")
+        except:
+            current_url = driver.current_url
+            if 'confirm' in current_url or 'code' in current_url or 'checkpoint' in current_url:
+                print(f"{Color.GREEN}[✓] OTP page detected!{Color.RESET}")
+            else:
+                print(f"{Color.YELLOW}[!] OTP page may not have loaded properly{Color.RESET}")
         
         print(f"{Color.GREEN}[✓] OTP SMS sent successfully!{Color.RESET}")
         return True
@@ -368,13 +942,25 @@ def custom_automation_logic(driver, data_item):
 # ==================== UI & APP CONTROLLER ====================
 class SaaSApp:
     def __init__(self):
+        global core
         self.core = CoreManager()
+        core = self.core
         self.audio = AudioEngine()
         self.core.verify_license()
+        self.check_and_update_status()
+
+    def check_and_update_status(self):
+        self.core.browser_ready = self.core.check_browser_ready()
+        self.core.undetected_available = self.core.check_undetected_chromedriver()
+        self.core.server_online = self.core.check_server_status()
+        
+        if self.core.browser_ready:
+            self.core.all_ready = True
+        else:
+            self.core.all_ready = False
 
     def draw_ui(self):
         os.system('clear')
-        # Title Art
         print(f"""{Color.GOLD}
    ██████╗ ██╗██████╗  ██████╗ ██╗     
    ██╔══██╗██║██╔══██╗██╔═══██╗██║     
@@ -384,81 +970,260 @@ class SaaSApp:
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
         
-        # Status Box
-        print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
-        br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
-        lic_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.is_valid else f"{Color.RED}Inactive{Color.RESET}"
+        print(f"  {Color.CYAN}┌──────────────────────────────────────────────────┐{Color.RESET}")
         
-        try:
-            srv_check = requests.get(SERVER_URL, timeout=3)
-            srv_status = f"{Color.GREEN}Online{Color.RESET}" if srv_check.status_code == 200 else f"{Color.RED}Offline{Color.RESET}"
-        except: srv_status = f"{Color.RED}Offline{Color.RESET}"
+        if self.core.browser_active:
+            br_status = f"{Color.GREEN}● Active{Color.RESET}"
+        elif self.core.browser_ready:
+            br_status = f"{Color.GREEN}● Ready{Color.RESET}"
+        else:
+            br_status = f"{Color.RED}● Missing{Color.RESET}"
+        
+        lic_status = f"{Color.GREEN}● Active{Color.RESET}" if self.core.is_valid else f"{Color.RED}● Inactive{Color.RESET}"
+        
+        if self.core.undetected_available:
+            ud_status = f"{Color.GREEN}● Installed{Color.RESET}"
+        else:
+            ud_status = f"{Color.YELLOW}● Not Installed{Color.RESET}"
+        
+        if self.core.server_online:
+            srv_status = f"{Color.GREEN}● Online{Color.RESET}"
+        else:
+            srv_status = f"{Color.RED}● Offline{Color.RESET}"
 
-        print(f"  {Color.CYAN}│{Color.RESET}  Browser : {br_status}  | License : {lic_status}")
-        print(f"  {Color.CYAN}│{Color.RESET}  Credits : {Color.GOLD}{self.core.credits}{Color.RESET}  | Server  : {srv_status}")
-        print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
+        print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Browser   {Color.RESET}: {br_status}     {Color.BOLD}License{Color.RESET} : {lic_status}")
+        print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Credits   {Color.RESET}: {Color.GOLD}{self.core.credits}{Color.RESET}     {Color.BOLD}Server {Color.RESET} : {srv_status}")
+        print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Undetected{Color.RESET}: {ud_status}")
+        print(f"  {Color.CYAN}└──────────────────────────────────────────────────┘{Color.RESET}")
         
-        # Chromedriver path info
-        if CHROMEDRIVER_PATH:
-            print(f"  {Color.DIM}Chromedriver: {CHROMEDRIVER_PATH}{Color.RESET}")
+        print(f"  {Color.DIM}┌──────────────────────────────────────────────────┐{Color.RESET}")
+        if self.core.browser_active:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ Browser is ACTIVE and ready to use{Color.RESET}      {Color.DIM}│{Color.RESET}")
+        elif self.core.browser_ready and self.core.undetected_available:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ All systems READY - Everything is active!{Color.RESET}  {Color.DIM}│{Color.RESET}")
+        elif self.core.browser_ready:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.YELLOW}⏳ Browser READY - Undetected mode OFF{Color.RESET}     {Color.DIM}│{Color.RESET}")
+        else:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.RED}❌ Dependencies MISSING - Run Option 4{Color.RESET}      {Color.DIM}│{Color.RESET}")
+        
+        if self.core.undetected_available:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}🔒 Undetected Mode: ON{Color.RESET}                      {Color.DIM}│{Color.RESET}")
+        else:
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.YELLOW}🔓 Undetected Mode: OFF (using standard){Color.RESET} {Color.DIM}│{Color.RESET}")
+        print(f"  {Color.DIM}└──────────────────────────────────────────────────┘{Color.RESET}")
 
     def run_automation(self):
         if not self.core.is_valid:
-            print(f"\n{Color.RED}[!] Verify License First!{Color.RESET}"); time.sleep(2); return
+            print(f"\n{Color.RED}[!] Verify License First!{Color.RESET}")
+            time.sleep(2)
+            return
         
-        if not CHROMEDRIVER_PATH:
-            print(f"\n{Color.RED}[!] Chromedriver not found!{Color.RESET}")
-            print(f"{Color.YELLOW}[*] Please run Option 4 to install dependencies.{Color.RESET}")
-            time.sleep(3); return
+        if not self.core.browser_ready:
+            print(f"\n{Color.RED}[!] Browser not ready! Run Option 4 first.{Color.RESET}")
+            time.sleep(3)
+            return
+        
+        if not self.core.server_online:
+            print(f"\n{Color.RED}[!] Server is OFFLINE! Cannot get proxies.{Color.RESET}")
+            time.sleep(3)
+            return
         
         data_file = os.path.join(self.core.data_dir, 'numbers.txt')
         if not os.path.exists(data_file):
-            print(f"\n{Color.RED}[-] numbers.txt not found!{Color.RESET}"); time.sleep(2); return
+            print(f"\n{Color.RED}[-] numbers.txt not found!{Color.RESET}")
+            time.sleep(2)
+            return
         
         with open(data_file, 'r') as f:
             items = [l.strip() for l in f if l.strip()]
         
+        if not items:
+            print(f"\n{Color.RED}[-] numbers.txt is empty!{Color.RESET}")
+            time.sleep(2)
+            return
+        
         print(f"\n{Color.GREEN}[+] Batch Started: {len(items)} items{Color.RESET}")
+        print(f"{Color.CYAN}[*] Remaining Credits: {self.core.credits}{Color.RESET}")
         self.audio.speak("Starting batch process")
+        
+        self.core.browser_active = True
+        success_count = 0
+        fail_count = 0
+        proxy_error_count = 0
+        
+        # Reset URL cache for new session
+        FacebookURLManager._device_detected = False
+        FacebookURLManager._current_device = None
 
         for idx, item in enumerate(items, 1):
             if self.core.credits <= 0:
-                print(f"\n{Color.RED}[!] Insufficient Credits!{Color.RESET}"); break
+                print(f"\n{Color.RED}[!] Insufficient Credits!{Color.RESET}")
+                break
             
             print(f"\n{Color.GOLD}>>> [{idx}/{len(items)}] Task: {item}{Color.RESET}")
             
-            # ১. আইপি ও ক্রেডিট ম্যানেজমেন্ট
             proxy = self.core.get_proxy_and_deduct()
             if not proxy:
-                print(f"{Color.RED}[✗] Server/Proxy Error!{Color.RESET}"); continue
+                proxy_error_count += 1
+                print(f"{Color.RED}[✗] Skipping {item} - No proxy available{Color.RESET}")
+                
+                if proxy_error_count >= 3:
+                    print(f"{Color.RED}[!] Too many proxy errors! Stopping...{Color.RESET}")
+                    break
+                continue
 
-            print(f"{Color.CYAN}[*] Proxy: {proxy}{Color.RESET}")
-            print(f"{Color.CYAN}[*] Remaining Credits: {self.core.credits}{Color.RESET}")
-
-            # ২. অ্যান্টি-ডিটেক্ট ব্রাউজার লঞ্চ
             browser = StealthBrowser(proxy)
             if browser.start():
                 success = custom_automation_logic(browser.driver, item)
                 if success:
+                    success_count += 1
                     print(f"{Color.GREEN}[✓] Success: {item}{Color.RESET}")
                 else:
+                    fail_count += 1
                     print(f"{Color.RED}[✗] Failed: {item}{Color.RESET}")
                 browser.stop()
+            else:
+                fail_count += 1
+                print(f"{Color.RED}[✗] Browser failed to start!{Color.RESET}")
             
-            # ৩. ১৫ সেকেন্ড ডেলে
-            delay = 15
-            print(f"{Color.DIM}[*] Waiting {delay}s before next number...{Color.RESET}")
-            for remaining in range(delay, 0, -1):
-                if remaining % 5 == 0 or remaining <= 3:
-                    print(f"    {remaining}s remaining...")
-                time.sleep(1)
+            if idx < len(items) and self.core.credits > 0:
+                print(f"{Color.DIM}[*] Waiting 15s before next number...{Color.RESET}")
+                for remaining in range(15, 0, -1):
+                    if remaining % 5 == 0:
+                        print(f"    {remaining}s remaining...")
+                    time.sleep(1)
 
+        self.core.browser_active = False
+        
+        print(f"\n{Color.GOLD}╔══════════════════════════════════════════╗{Color.RESET}")
+        print(f"{Color.GOLD}║           BATCH SUMMARY                  ║{Color.RESET}")
+        print(f"{Color.GOLD}╠══════════════════════════════════════════╣{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.GREEN}✅ Success  : {success_count}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.RED}❌ Failed   : {fail_count}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.YELLOW}⚠️  Proxy Err: {proxy_error_count}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}║{Color.RESET}  {Color.CYAN}💰 Credits  : {self.core.credits}{Color.RESET}                              {Color.GOLD}║{Color.RESET}")
+        print(f"{Color.GOLD}╚══════════════════════════════════════════╝{Color.RESET}")
+        
         self.audio.speak("All tasks finished")
         input("\nBatch Complete. Press Enter...")
 
+    def install_dependencies(self):
+        print(f"\n{Color.GOLD}╔══════════════════════════════════════════╗{Color.RESET}")
+        print(f"{Color.GOLD}║     SMART DEPENDENCY INSTALLER           ║{Color.RESET}")
+        print(f"{Color.GOLD}║   Checking and installing missing only   ║{Color.RESET}")
+        print(f"{Color.GOLD}╚══════════════════════════════════════════╝{Color.RESET}\n")
+        
+        status = self.core.check_all_dependencies()
+        
+        print(f"\n{Color.CYAN}📊 Current Status:{Color.RESET}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Chromium     : {'Installed' if status['chromium'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} ChromeDriver  : {'Installed' if status['chromedriver'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Selenium     : {'Installed' if status['selenium'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Undetected   : {'Installed' if status['undetected'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Requests     : {'Installed' if status['requests'] else 'Missing'}")
+        print(f"  {Color.GREEN}✅{Color.RESET} Espeak       : {'Installed' if status['espeak'] else 'Missing'}")
+        
+        all_installed = all(status.values())
+        
+        if all_installed:
+            print(f"\n{Color.GREEN}✅ All dependencies are already installed!{Color.RESET}")
+            print(f"{Color.GREEN}🎯 System is READY to use!{Color.RESET}")
+            self.core.browser_ready = True
+            self.core.undetected_available = True
+            self.core.all_ready = True
+            self.audio.speak("All dependencies are already installed")
+            input("\nPress Enter to continue...")
+            return
+        
+        print(f"\n{Color.YELLOW}[!] Some dependencies are missing. Installing...{Color.RESET}\n")
+        
+        if not status['chromium'] or not status['espeak']:
+            print(f"{Color.CYAN}[1/4] Installing system packages...{Color.RESET}")
+            subprocess.run("pkg update -y", shell=True, check=False)
+            subprocess.run("pkg upgrade -y", shell=True, check=False)
+            
+            if not status['chromium']:
+                print(f"{Color.DIM}    Installing Chromium...{Color.RESET}")
+                subprocess.run("pkg install chromium -y", shell=True, check=False)
+            
+            if not status['espeak']:
+                print(f"{Color.DIM}    Installing espeak...{Color.RESET}")
+                subprocess.run("pkg install espeak -y", shell=True, check=False)
+            
+            subprocess.run("pkg install python python-pip -y", shell=True, check=False)
+            subprocess.run("pkg install python3.11 -y", shell=True, check=False)
+            subprocess.run("python3.11 -m ensurepip", shell=True, check=False)
+        
+        if not status['chromedriver']:
+            print(f"{Color.CYAN}[2/4] Installing ChromeDriver...{Color.RESET}")
+            if ChromeDriverManager.download_chromedriver():
+                print(f"{Color.GREEN}[✓] ChromeDriver installed!{Color.RESET}")
+            else:
+                print(f"{Color.RED}[✗] ChromeDriver installation failed!{Color.RESET}")
+        
+        if not status['selenium'] or not status['requests']:
+            print(f"{Color.CYAN}[3/4] Installing Python packages...{Color.RESET}")
+            subprocess.run("pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
+            subprocess.run("python3.11 -m pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
+        
+        if not status['undetected']:
+            print(f"{Color.CYAN}[4/4] Installing undetected-chromedriver...{Color.RESET}")
+            self.core.install_undetected_chromedriver()
+        
+        os.makedirs(os.path.join(SCRIPT_DIR, 'data'), exist_ok=True)
+        os.makedirs(os.path.join(SCRIPT_DIR, 'logs'), exist_ok=True)
+        
+        print(f"\n{Color.CYAN}[*] Verifying installation...{Color.RESET}")
+        
+        self.core.browser_ready = self.core.check_browser_ready()
+        self.core.undetected_available = self.core.check_undetected_chromedriver()
+        
+        if self.core.browser_ready and self.core.undetected_available:
+            self.core.all_ready = True
+            print(f"\n{Color.GREEN}╔══════════════════════════════════════════╗{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ ALL SYSTEMS READY!                ║{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ Browser: READY                    ║{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ Undetected Mode: ON              ║{Color.RESET}")
+            print(f"{Color.GREEN}║     🚀 Everything is ACTIVE!            ║{Color.RESET}")
+            print(f"{Color.GREEN}╚══════════════════════════════════════════╝{Color.RESET}")
+        else:
+            print(f"\n{Color.YELLOW}╔══════════════════════════════════════════╗{Color.RESET}")
+            print(f"{Color.YELLOW}║     ⚠️  PARTIAL INSTALLATION              ║{Color.RESET}")
+            if not self.core.browser_ready:
+                print(f"{Color.RED}║     ❌ Browser: NOT READY                ║{Color.RESET}")
+            if not self.core.undetected_available:
+                print(f"{Color.YELLOW}║     ⚠️  Undetected Mode: OFF            ║{Color.RESET}")
+                print(f"{Color.YELLOW}║     Try: python3.11 bot.py            ║{Color.RESET}")
+            print(f"{Color.YELLOW}╚══════════════════════════════════════════╝{Color.RESET}")
+        
+        self.audio.speak("Setup completed")
+        input("\nPress Enter to continue...")
+
+    def create_sample_numbers_file(self):
+        sample_path = os.path.join(SCRIPT_DIR, 'numbers.txt')
+        if not os.path.exists(sample_path):
+            with open(sample_path, 'w') as f:
+                f.write("+8801234567890\n")
+                f.write("+8801987654321\n")
+                f.write("+8801555123456\n")
+            print(f"{Color.GREEN}[+] Created sample numbers.txt{Color.RESET}")
+        else:
+            print(f"{Color.YELLOW}[!] numbers.txt already exists{Color.RESET}")
+
     def main_loop(self):
         self.audio.speak("Welcome to Ridol FB tool")
+        
+        self.create_sample_numbers_file()
+        
+        python_version = sys.version_info
+        if python_version.major == 3 and python_version.minor >= 13:
+            if not self.core.undetected_available:
+                print(f"{Color.YELLOW}[!] You are using Python {python_version.major}.{python_version.minor}{Color.RESET}")
+                print(f"{Color.YELLOW}[!] For undetected-chromedriver, use: python3.11 bot.py{Color.RESET}")
+                time.sleep(2)
+        
         while True:
+            self.check_and_update_status()
             self.draw_ui()
             print(f"\n  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}   MAIN MENU - PROXY + AUTO LOGIC       {Color.CYAN}│{Color.RESET}")
@@ -466,40 +1231,50 @@ class SaaSApp:
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Start Bot Automation               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Data Folder Setup                  {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} License Management                 {Color.CYAN}│{Color.RESET}")
-            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} One-Click Dependencies             {Color.CYAN}│{Color.RESET}")
+            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Smart Dependency Installer         {Color.CYAN}│{Color.RESET}")
+            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Create Sample numbers.txt           {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
 
             choice = input(f"\n{Color.BOLD} Enter choice: {Color.RESET}").strip()
             
-            if choice == '1': self.run_automation()
+            if choice == '1':
+                self.run_automation()
             elif choice == '2':
                 path = input(f"\n{Color.CYAN} Enter Data Folder Path: {Color.RESET}").strip()
                 if os.path.exists(path):
                     self.core.data_dir = path
                     self.core.save_config()
                     print(f"{Color.GREEN}[+] Path Saved!{Color.RESET}")
+                else:
+                    print(f"{Color.RED}[-] Path does not exist!{Color.RESET}")
                 time.sleep(1)
             elif choice == '3':
                 key = input(f"\n{Color.CYAN} Enter License Key: {Color.RESET}").strip().upper()
-                if self.core.verify_license(key): print(f"{Color.GREEN}Verified!{Color.RESET}")
-                else: print(f"{Color.RED}Invalid!{Color.RESET}")
+                if self.core.verify_license(key):
+                    print(f"{Color.GREEN}[+] License Verified!{Color.RESET}")
+                    print(f"{Color.CYAN}[+] Credits: {self.core.credits}{Color.RESET}")
+                else:
+                    print(f"{Color.RED}[-] Invalid License!{Color.RESET}")
                 time.sleep(2)
             elif choice == '4':
-                print(f"\n{Color.CYAN}[*] Installing Tools...{Color.RESET}")
-                subprocess.run("pkg update -y && pkg install tur-repo -y && pkg install python chromium chromedriver espeak -y && pip install selenium requests undetected-chromedriver", shell=True)
-                global CHROMEDRIVER_PATH
-                CHROMEDRIVER_PATH = find_chromedriver()
-                self.core.browser_ready = CHROMEDRIVER_PATH is not None
-                if CHROMEDRIVER_PATH:
-                    print(f"{Color.GREEN}[+] Chromedriver found at: {CHROMEDRIVER_PATH}{Color.RESET}")
-                else:
-                    print(f"{Color.RED}[-] Chromedriver still not found! Try: pkg install chromedriver{Color.RESET}")
-                input("\nSetup Done. Press Enter...")
+                self.install_dependencies()
+            elif choice == '5':
+                self.create_sample_numbers_file()
+                time.sleep(1)
             elif choice == '0':
                 self.audio.speak("Goodbye")
+                print(f"\n{Color.GREEN}Thanks for using Ridol FB Tool!{Color.RESET}")
                 sys.exit()
 
+core = None
+
 if __name__ == '__main__':
-    try: SaaSApp().main_loop()
-    except KeyboardInterrupt: sys.exit()
+    try:
+        SaaSApp().main_loop()
+    except KeyboardInterrupt:
+        print(f"\n{Color.YELLOW}[!] Exiting...{Color.RESET}")
+        sys.exit()
+    except Exception as e:
+        print(f"{Color.RED}[!] Error: {e}{Color.RESET}")
+        sys.exit()
