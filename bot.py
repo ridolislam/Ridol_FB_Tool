@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Ridol SaaS Tool v11.0 - Professional Anti-Detect Edition
-Using Pure Selenium with Stealth Techniques
+Optimized for Termux - Pure Selenium with Headless Mode
 Author: Ridol Islam
 """
 
@@ -99,20 +99,28 @@ class ChromeDriverManager:
         if os.path.exists(local_path):
             return local_path
         
-        local_path_exe = os.path.join(SCRIPT_DIR, 'chromedriver.exe')
-        if os.path.exists(local_path_exe):
-            return local_path_exe
-        
         system_paths = [
             '/data/data/com.termux/files/usr/bin/chromedriver',
             '/usr/bin/chromedriver',
-            '/usr/local/bin/chromedriver',
-            '/opt/chromedriver/chromedriver'
+            '/usr/local/bin/chromedriver'
         ]
         for path in system_paths:
             if os.path.exists(path):
                 return path
         
+        return None
+    
+    @staticmethod
+    def get_chromium_path():
+        chromium_paths = [
+            '/data/data/com.termux/files/usr/bin/chromium',
+            '/data/data/com.termux/files/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser'
+        ]
+        for path in chromium_paths:
+            if os.path.exists(path):
+                return path
         return None
     
     @staticmethod
@@ -150,10 +158,8 @@ class ChromeDriverManager:
             print(f"{Color.RED}[✗] ChromeDriver download failed: {e}{Color.RESET}")
             return False
 
-# ==================== FACEBOOK URL MANAGER (WITH CACHE) ====================
+# ==================== FACEBOOK URL MANAGER ====================
 class FacebookURLManager:
-    """Smart URL selector with caching system - remembers working URLs"""
-    
     CACHE_FILE = os.path.join(SCRIPT_DIR, 'working_urls.json')
     
     URLS = {
@@ -168,32 +174,23 @@ class FacebookURLManager:
             'https://www.facebook.com/r.php',
             'https://web.facebook.com/reg',
             'https://web.facebook.com/r.php'
-        ],
-        'touch': [
-            'https://touch.facebook.com/reg',
-            'https://touch.facebook.com/r.php'
         ]
     }
     
     _cache = None
-    _current_device = None
     _working_url = None
-    _device_detected = False
     
     @classmethod
     def load_cache(cls):
         if cls._cache is not None:
             return cls._cache
-        
         try:
             if os.path.exists(cls.CACHE_FILE):
                 with open(cls.CACHE_FILE, 'r') as f:
                     cls._cache = json.load(f)
-                print(f"{Color.GREEN}[✓] Loaded URL cache{Color.RESET}")
                 return cls._cache
         except:
             pass
-        
         cls._cache = {}
         return cls._cache
     
@@ -206,165 +203,63 @@ class FacebookURLManager:
             pass
     
     @classmethod
-    def get_cached_url(cls, device_type):
+    def get_cached_url(cls):
         cache = cls.load_cache()
-        return cache.get(device_type)
+        return cache.get('working_url')
     
     @classmethod
-    def set_cached_url(cls, device_type, url):
+    def set_cached_url(cls, url):
         cache = cls.load_cache()
-        cache[device_type] = url
+        cache['working_url'] = url
         cls._cache = cache
         cls.save_cache()
         cls._working_url = url
-        print(f"{Color.GREEN}[✓] Cached working URL for {device_type}: {url}{Color.RESET}")
+        print(f"{Color.GREEN}[✓] Cached working URL: {url}{Color.RESET}")
     
     @classmethod
-    def detect_device(cls, driver):
-        if cls._device_detected and cls._current_device:
-            return cls._current_device
-            
-        try:
-            user_agent = driver.execute_script("return navigator.userAgent")
-            user_agent = user_agent.lower()
-            
-            mobile_keywords = ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone']
-            for keyword in mobile_keywords:
-                if keyword in user_agent:
-                    cls._current_device = 'mobile'
-                    cls._device_detected = True
-                    return 'mobile'
-            
-            tablet_keywords = ['tablet', 'ipad']
-            for keyword in tablet_keywords:
-                if keyword in user_agent:
-                    cls._current_device = 'touch'
-                    cls._device_detected = True
-                    return 'touch'
-            
-            try:
-                is_touch = driver.execute_script("return 'ontouchstart' in window || navigator.maxTouchPoints > 0")
-                if is_touch:
-                    cls._current_device = 'touch'
-                    cls._device_detected = True
-                    return 'touch'
-            except:
-                pass
-            
-            cls._current_device = 'desktop'
-            cls._device_detected = True
-            return 'desktop'
-            
-        except:
-            cls._current_device = 'desktop'
-            cls._device_detected = True
-            return 'desktop'
-    
-    @classmethod
-    def get_urls_for_device(cls, device_type):
-        return cls.URLS.get(device_type, cls.URLS['desktop'])
-    
-    @classmethod
-    def find_working_url(cls, driver, device_type):
+    def find_working_url(cls, driver):
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         
-        cached_url = cls.get_cached_url(device_type)
+        # Check cache first
+        cached_url = cls.get_cached_url()
         if cached_url:
             print(f"{Color.GREEN}[✓] Using cached URL: {cached_url}{Color.RESET}")
             try:
                 driver.get(cached_url)
-                time.sleep(random.uniform(2, 3))
-                
+                time.sleep(2)
                 WebDriverWait(driver, 8).until(
                     EC.presence_of_element_located((By.NAME, "firstname"))
                 )
-                cls._working_url = cached_url
                 return cached_url
             except:
                 print(f"{Color.YELLOW}[!] Cached URL failed, finding new...{Color.RESET}")
-                cache = cls.load_cache()
-                if device_type in cache:
-                    del cache[device_type]
-                    cls._cache = cache
-                    cls.save_cache()
         
-        urls = cls.get_urls_for_device(device_type)
-        print(f"{Color.CYAN}[*] Testing {len(urls)} URLs for {device_type}...{Color.RESET}")
-        
-        for url in urls:
-            print(f"{Color.DIM}[*] Trying: {url}{Color.RESET}")
-            try:
-                driver.get(url)
-                time.sleep(random.uniform(2, 4))
-                
-                try:
-                    WebDriverWait(driver, 8).until(
-                        EC.presence_of_element_located((By.NAME, "firstname"))
-                    )
-                    print(f"{Color.GREEN}[✓] URL working: {url}{Color.RESET}")
-                    cls.set_cached_url(device_type, url)
-                    cls._working_url = url
-                    return url
-                except:
-                    try:
-                        WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder*="first"], input[placeholder*="First"]'))
-                        )
-                        print(f"{Color.GREEN}[✓] URL working: {url}{Color.RESET}")
-                        cls.set_cached_url(device_type, url)
-                        cls._working_url = url
-                        return url
-                    except:
-                        print(f"{Color.YELLOW}[!] Form not found on {url}{Color.RESET}")
-                        
-            except Exception as e:
-                print(f"{Color.RED}[✗] Failed: {url} - {str(e)[:40]}{Color.RESET}")
-                continue
-        
-        print(f"{Color.YELLOW}[!] No working URL found for {device_type}, trying all...{Color.RESET}")
+        # Try all URLs
         all_urls = []
         for urls in cls.URLS.values():
             all_urls.extend(urls)
         all_urls = list(dict.fromkeys(all_urls))
         
         for url in all_urls:
-            if url == cls._working_url:
-                continue
-            print(f"{Color.DIM}[*] Trying fallback: {url}{Color.RESET}")
+            print(f"{Color.DIM}[*] Trying: {url}{Color.RESET}")
             try:
                 driver.get(url)
-                time.sleep(random.uniform(2, 4))
-                
+                time.sleep(2)
                 try:
                     WebDriverWait(driver, 5).until(
                         EC.presence_of_element_located((By.NAME, "firstname"))
                     )
-                    print(f"{Color.GREEN}[✓] Fallback URL working: {url}{Color.RESET}")
-                    cls.set_cached_url(device_type, url)
-                    cls._working_url = url
+                    print(f"{Color.GREEN}[✓] URL working: {url}{Color.RESET}")
+                    cls.set_cached_url(url)
                     return url
                 except:
-                    pass
+                    continue
             except:
                 continue
         
         return None
-    
-    @classmethod
-    def get_best_url(cls, driver):
-        device = cls.detect_device(driver)
-        print(f"{Color.CYAN}[*] Device detected: {device}{Color.RESET}")
-        
-        working_url = cls.find_working_url(driver, device)
-        
-        if working_url:
-            print(f"{Color.GREEN}[✓] Using: {working_url}{Color.RESET}")
-            return working_url, device
-        else:
-            print(f"{Color.RED}[✗] No working URL found!{Color.RESET}")
-            return None, device
 
 # ==================== CORE MANAGER ====================
 class CoreManager:
@@ -388,7 +283,8 @@ class CoreManager:
             return False
 
     def check_browser_ready(self):
-        return ChromeDriverManager.get_chromedriver_path() is not None
+        return ChromeDriverManager.get_chromedriver_path() is not None and \
+               ChromeDriverManager.get_chromium_path() is not None
     
     def check_all_dependencies(self):
         status = {
@@ -399,17 +295,8 @@ class CoreManager:
             'espeak': False
         }
         
-        chromium_paths = [
-            '/data/data/com.termux/files/usr/bin/chromium',
-            '/data/data/com.termux/files/usr/bin/chromium-browser',
-            '/usr/bin/chromium'
-        ]
-        for p in chromium_paths:
-            if os.path.exists(p):
-                status['chromium'] = True
-                break
-        
-        status['chromedriver'] = self.check_browser_ready()
+        status['chromium'] = ChromeDriverManager.get_chromium_path() is not None
+        status['chromedriver'] = ChromeDriverManager.get_chromedriver_path() is not None
         
         try:
             import selenium
@@ -510,7 +397,7 @@ class CoreManager:
             print(f"{Color.RED}❌ Proxy error: {e}{Color.RESET}")
             return None
 
-# ==================== STEALTH BROWSER (PURE SELENIUM) ====================
+# ==================== STEALTH BROWSER (TERMUX OPTIMIZED) ====================
 class StealthBrowser:
     def __init__(self, proxy=None):
         self.proxy = proxy
@@ -523,136 +410,97 @@ class StealthBrowser:
             from selenium.webdriver.chrome.options import Options
             
             chromedriver_path = ChromeDriverManager.get_chromedriver_path()
+            chromium_path = ChromeDriverManager.get_chromium_path()
+            
             if not chromedriver_path:
                 print(f"{Color.RED}[-] ChromeDriver not found!{Color.RESET}")
                 return False
             
+            if not chromium_path:
+                print(f"{Color.RED}[-] Chromium not found!{Color.RESET}")
+                return False
+            
             options = Options()
+            options.binary_location = chromium_path
             
-            # Find chromium binary
-            chromium_paths = [
-                '/data/data/com.termux/files/usr/bin/chromium',
-                '/data/data/com.termux/files/usr/bin/chromium-browser',
-                '/usr/bin/chromium'
-            ]
-            for p in chromium_paths:
-                if os.path.exists(p):
-                    options.binary_location = p
-                    break
+            # === TERMUX OPTIMIZED SETTINGS ===
+            # Headless mode for Termux (necessary for stability)
+            options.add_argument('--headless=new')
             
-            # Random device selection
-            devices = [
-                {
-                    'ua': "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-                    'device': 'mobile'
-                },
-                {
-                    'ua': "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-                    'device': 'mobile'
-                },
-                {
-                    'ua': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    'device': 'desktop'
-                },
-                {
-                    'ua': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    'device': 'desktop'
-                },
-                {
-                    'ua': "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-                    'device': 'tablet'
-                }
-            ]
-            
-            selected = random.choice(devices)
-            options.add_argument(f'user-agent={selected["ua"]}')
-            
-            # Window size based on device
-            if selected['device'] == 'mobile':
-                options.add_argument('--window-size=390,844')
-            elif selected['device'] == 'tablet':
-                options.add_argument('--window-size=768,1024')
-            else:
-                options.add_argument('--window-size=1366,768')
-            
-            # Anti-detection options
+            # Essential arguments for Termux
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
-            options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
-            options.add_argument('--disable-web-security')
-            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
+            options.add_argument('--disable-software-rasterizer')
+            options.add_argument('--disable-setuid-sandbox')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-plugins')
+            options.add_argument('--disable-images')
+            options.add_argument('--disable-javascript')  # Will enable later if needed
             
-            # Remove automation flags
+            # Memory optimization
+            options.add_argument('--memory-pressure-off')
+            options.add_argument('--max_old_space_size=512')
+            options.add_argument('--js-flags="--max-old-space-size=512"')
+            
+            # Anti-detection
+            options.add_argument('--disable-blink-features=AutomationControlled')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Disable password manager and notifications
+            # Random User-Agent (Mobile preferred for Termux)
+            ua_list = [
+                "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 12; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            ]
+            options.add_argument(f'user-agent={random.choice(ua_list)}')
+            
+            # Window size (mobile optimized)
+            options.add_argument('--window-size=390,844')
+            
+            # Disable notifications
             prefs = {
                 "credentials_enable_service": False,
                 "profile.password_manager_enabled": False,
                 "profile.default_content_setting_values.notifications": 2,
                 "profile.default_content_setting_values.geolocation": 2,
                 "profile.default_content_setting_values.cookies": 1,
-                "profile.managed_default_content_settings.images": 1
+                "profile.managed_default_content_settings.images": 2  # Disable images for speed
             }
             options.add_experimental_option("prefs", prefs)
             
             if self.proxy:
                 options.add_argument(f'--proxy-server={self.proxy}')
             
-            service = Service(chromedriver_path)
-            self.driver = webdriver.Chrome(service=service, options=options)
+            service = Service(
+                chromedriver_path,
+                service_args=['--verbose', '--log-path=chromedriver.log']
+            )
             
-            # Stealth JavaScript injection
-            stealth_js = """
-            // Remove webdriver signature
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
+            # Set timeout for better stability
+            service.start()
             
-            // Override plugins
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
+            self.driver = webdriver.Chrome(
+                service=service,
+                options=options
+            )
             
-            // Override languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
+            # Set page load timeout
+            self.driver.set_page_load_timeout(30)
+            self.driver.set_script_timeout(30)
             
-            // Override permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-            
-            // Hide Chrome features
-            window.chrome = {
-                runtime: {}
-            };
-            
-            // Fix console
-            const originalConsole = window.console;
-            window.console = originalConsole;
-            
-            // Randomize scroll behavior
-            const originalScrollTo = window.scrollTo;
-            window.scrollTo = function(x, y) {
-                setTimeout(() => {
-                    originalScrollTo(x, y);
-                }, Math.random() * 100 + 50);
-            };
-            """
-            
+            # Stealth JavaScript
             self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-                "source": stealth_js
+                "source": """
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                    window.chrome = { runtime: {} };
+                """
             })
             
-            print(f"{Color.GREEN}[✓] Browser started with {selected['device']} mode{Color.RESET}")
+            print(f"{Color.GREEN}[✓] Browser started (headless mode){Color.RESET}")
             return True
             
         except Exception as e:
@@ -682,7 +530,7 @@ def custom_automation_logic(driver, data_item):
         from selenium.webdriver.support.ui import Select, WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         
-        # 1. Generate user data
+        # Generate user data
         country_code = DataGenerator.get_country_from_phone(data_item)
         first_name, last_name = DataGenerator.get_random_name(country_code)
         day, month, year = DataGenerator.get_random_dob()
@@ -694,21 +542,13 @@ def custom_automation_logic(driver, data_item):
         print(f"{Color.CYAN}[*] Gender: {gender}{Color.RESET}")
         print(f"{Color.CYAN}[*] Password: {password}{Color.RESET}")
         
-        # 2. Get working URL (from cache or find new)
-        working_url, device_type = FacebookURLManager.get_best_url(driver)
-        
+        # Get working URL
+        working_url = FacebookURLManager.find_working_url(driver)
         if not working_url:
             print(f"{Color.RED}[✗] No working URL found!{Color.RESET}")
             return False
         
-        # 3. Load the URL
-        current_url = driver.current_url
-        if working_url not in current_url:
-            print(f"{Color.CYAN}[*] Loading: {working_url}{Color.RESET}")
-            driver.get(working_url)
-            time.sleep(random.uniform(2, 4))
-        
-        # 4. Fill the form
+        # Fill form
         print(f"{Color.CYAN}[*] Filling registration form...{Color.RESET}")
         
         # First Name
@@ -717,11 +557,11 @@ def custom_automation_logic(driver, data_item):
                 EC.presence_of_element_located((By.NAME, "firstname"))
             )
             first_name_field.clear()
-            time.sleep(random.uniform(0.2, 0.5))
+            time.sleep(0.3)
             first_name_field.send_keys(first_name)
         except:
             try:
-                first_name_field = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="first"], input[placeholder*="First"]')
+                first_name_field = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="first"]')
                 first_name_field.clear()
                 first_name_field.send_keys(first_name)
             except:
@@ -732,35 +572,28 @@ def custom_automation_logic(driver, data_item):
         try:
             last_name_field = driver.find_element(By.NAME, "lastname")
             last_name_field.clear()
-            time.sleep(random.uniform(0.2, 0.5))
+            time.sleep(0.3)
             last_name_field.send_keys(last_name)
         except:
             try:
-                last_name_field = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="last"], input[placeholder*="Last"]')
+                last_name_field = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="last"]')
                 last_name_field.clear()
                 last_name_field.send_keys(last_name)
             except:
                 print(f"{Color.YELLOW}[!] Could not find last name field{Color.RESET}")
                 return False
         
-        # DOB - Day
+        # DOB
         try:
             Select(driver.find_element(By.NAME, "birthday_day")).select_by_value(str(day))
-            time.sleep(random.uniform(0.2, 0.4))
         except:
             pass
-        
-        # DOB - Month
         try:
             Select(driver.find_element(By.NAME, "birthday_month")).select_by_value(str(month))
-            time.sleep(random.uniform(0.2, 0.4))
         except:
             pass
-        
-        # DOB - Year
         try:
             Select(driver.find_element(By.NAME, "birthday_year")).select_by_value(str(year))
-            time.sleep(random.uniform(0.2, 0.4))
         except:
             pass
         
@@ -768,24 +601,19 @@ def custom_automation_logic(driver, data_item):
         try:
             gender_value = '2' if gender == 'Female' else '1'
             driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]').click()
-            time.sleep(random.uniform(0.3, 0.6))
         except:
-            try:
-                gender_value = '2' if gender == 'Female' else '1'
-                driver.find_element(By.CSS_SELECTOR, f'input[value="{gender_value}"]').click()
-            except:
-                pass
+            pass
         
-        # Phone/Email
+        # Phone
         try:
             phone_field = driver.find_element(By.NAME, "reg_email__")
             phone_field.clear()
-            time.sleep(random.uniform(0.2, 0.5))
+            time.sleep(0.3)
             phone_field.send_keys(data_item)
-            time.sleep(random.uniform(0.5, 1.0))
+            time.sleep(0.5)
         except:
             try:
-                phone_field = driver.find_element(By.CSS_SELECTOR, 'input[type="text"][placeholder*="email"], input[type="text"][placeholder*="Email"]')
+                phone_field = driver.find_element(By.CSS_SELECTOR, 'input[type="text"][placeholder*="email"]')
                 phone_field.clear()
                 phone_field.send_keys(data_item)
             except:
@@ -794,16 +622,16 @@ def custom_automation_logic(driver, data_item):
                     phone_field.clear()
                     phone_field.send_keys(data_item)
                 except:
-                    print(f"{Color.YELLOW}[!] Could not find phone/email field{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] Could not find phone field{Color.RESET}")
                     return False
         
         # Password
         try:
             password_field = driver.find_element(By.NAME, "reg_passwd__")
             password_field.clear()
-            time.sleep(random.uniform(0.2, 0.5))
+            time.sleep(0.3)
             password_field.send_keys(password)
-            time.sleep(random.uniform(0.5, 1.0))
+            time.sleep(0.5)
         except:
             try:
                 password_field = driver.find_element(By.CSS_SELECTOR, 'input[type="password"]')
@@ -819,7 +647,7 @@ def custom_automation_logic(driver, data_item):
         try:
             submit_button = driver.find_element(By.NAME, "websubmit")
             driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
-            time.sleep(random.uniform(0.3, 0.6))
+            time.sleep(0.3)
             submit_button.click()
         except:
             try:
@@ -835,24 +663,11 @@ def custom_automation_logic(driver, data_item):
                     print(f"{Color.YELLOW}[!] Could not find submit button{Color.RESET}")
                     return False
         
-        time.sleep(random.uniform(2, 4))
+        time.sleep(3)
         
         # Wait for OTP
         print(f"{Color.CYAN}[*] Waiting 10 seconds for OTP SMS...{Color.RESET}")
         time.sleep(10)
-        
-        # Check if OTP page loaded
-        try:
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="code"], input[placeholder*="code"]'))
-            )
-            print(f"{Color.GREEN}[✓] OTP page loaded!{Color.RESET}")
-        except:
-            current_url = driver.current_url
-            if 'confirm' in current_url or 'code' in current_url or 'checkpoint' in current_url:
-                print(f"{Color.GREEN}[✓] OTP page detected!{Color.RESET}")
-            else:
-                print(f"{Color.YELLOW}[!] OTP page may not have loaded properly{Color.RESET}")
         
         print(f"{Color.GREEN}[✓] OTP SMS sent successfully!{Color.RESET}")
         return True
@@ -874,11 +689,7 @@ class SaaSApp:
     def check_and_update_status(self):
         self.core.browser_ready = self.core.check_browser_ready()
         self.core.server_online = self.core.check_server_status()
-        
-        if self.core.browser_ready:
-            self.core.all_ready = True
-        else:
-            self.core.all_ready = False
+        self.core.all_ready = self.core.browser_ready
 
     def draw_ui(self):
         os.system('clear')
@@ -909,17 +720,17 @@ class SaaSApp:
 
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Browser   {Color.RESET}: {br_status}     {Color.BOLD}License{Color.RESET} : {lic_status}")
         print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Credits   {Color.RESET}: {Color.GOLD}{self.core.credits}{Color.RESET}     {Color.BOLD}Server {Color.RESET} : {srv_status}")
-        print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Mode      {Color.RESET}: {Color.GREEN}Selenium Only{Color.RESET}")
+        print(f"  {Color.CYAN}│{Color.RESET}  {Color.BOLD}Mode      {Color.RESET}: {Color.GREEN}Headless{Color.RESET}")
         print(f"  {Color.CYAN}└──────────────────────────────────────────────────┘{Color.RESET}")
         
         print(f"  {Color.DIM}┌──────────────────────────────────────────────────┐{Color.RESET}")
         if self.core.browser_active:
-            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ Browser is ACTIVE and ready to use{Color.RESET}      {Color.DIM}│{Color.RESET}")
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ Browser is ACTIVE{Color.RESET}                         {Color.DIM}│{Color.RESET}")
         elif self.core.browser_ready:
-            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ Browser READY - Using pure Selenium{Color.RESET}    {Color.DIM}│{Color.RESET}")
+            print(f"  {Color.DIM}│{Color.RESET}  {Color.GREEN}✅ Browser READY - Headless Mode{Color.RESET}             {Color.DIM}│{Color.RESET}")
         else:
             print(f"  {Color.DIM}│{Color.RESET}  {Color.RED}❌ Dependencies MISSING - Run Option 4{Color.RESET}      {Color.DIM}│{Color.RESET}")
-        print(f"  {Color.DIM}│{Color.RESET}  {Color.CYAN}📱 Smart Device Detection + URL Cache{Color.RESET}          {Color.DIM}│{Color.RESET}")
+        print(f"  {Color.DIM}│{Color.RESET}  {Color.CYAN}📱 Mobile Optimized + URL Cache{Color.RESET}                 {Color.DIM}│{Color.RESET}")
         print(f"  {Color.DIM}└──────────────────────────────────────────────────┘{Color.RESET}")
 
     def run_automation(self):
@@ -934,7 +745,7 @@ class SaaSApp:
             return
         
         if not self.core.server_online:
-            print(f"\n{Color.RED}[!] Server is OFFLINE! Cannot get proxies.{Color.RESET}")
+            print(f"\n{Color.RED}[!] Server is OFFLINE!{Color.RESET}")
             time.sleep(3)
             return
         
@@ -960,10 +771,6 @@ class SaaSApp:
         success_count = 0
         fail_count = 0
         proxy_error_count = 0
-        
-        # Reset URL cache for new session
-        FacebookURLManager._device_detected = False
-        FacebookURLManager._current_device = None
 
         for idx, item in enumerate(items, 1):
             if self.core.credits <= 0:
@@ -975,8 +782,7 @@ class SaaSApp:
             proxy = self.core.get_proxy_and_deduct()
             if not proxy:
                 proxy_error_count += 1
-                print(f"{Color.RED}[✗] Skipping {item} - No proxy available{Color.RESET}")
-                
+                print(f"{Color.RED}[✗] Skipping {item} - No proxy{Color.RESET}")
                 if proxy_error_count >= 3:
                     print(f"{Color.RED}[!] Too many proxy errors! Stopping...{Color.RESET}")
                     break
@@ -997,7 +803,7 @@ class SaaSApp:
                 print(f"{Color.RED}[✗] Browser failed to start!{Color.RESET}")
             
             if idx < len(items) and self.core.credits > 0:
-                print(f"{Color.DIM}[*] Waiting 15s before next number...{Color.RESET}")
+                print(f"{Color.DIM}[*] Waiting 15s...{Color.RESET}")
                 for remaining in range(15, 0, -1):
                     if remaining % 5 == 0:
                         print(f"    {remaining}s remaining...")
@@ -1019,8 +825,8 @@ class SaaSApp:
 
     def install_dependencies(self):
         print(f"\n{Color.GOLD}╔══════════════════════════════════════════╗{Color.RESET}")
-        print(f"{Color.GOLD}║     SMART DEPENDENCY INSTALLER           ║{Color.RESET}")
-        print(f"{Color.GOLD}║   Pure Selenium - No Undetected Needed   ║{Color.RESET}")
+        print(f"{Color.GOLD}║     TERMUX DEPENDENCY INSTALLER          ║{Color.RESET}")
+        print(f"{Color.GOLD}║     Headless Mode + ChromeDriver         ║{Color.RESET}")
         print(f"{Color.GOLD}╚══════════════════════════════════════════╝{Color.RESET}\n")
         
         status = self.core.check_all_dependencies()
@@ -1035,80 +841,62 @@ class SaaSApp:
         all_installed = all(status.values())
         
         if all_installed:
-            print(f"\n{Color.GREEN}✅ All dependencies are already installed!{Color.RESET}")
-            print(f"{Color.GREEN}🎯 System is READY to use!{Color.RESET}")
+            print(f"\n{Color.GREEN}✅ All dependencies installed!{Color.RESET}")
+            print(f"{Color.GREEN}🎯 System READY!{Color.RESET}")
             self.core.browser_ready = True
             self.core.all_ready = True
-            self.audio.speak("All dependencies are already installed")
             input("\nPress Enter to continue...")
             return
         
-        print(f"\n{Color.YELLOW}[!] Some dependencies are missing. Installing...{Color.RESET}\n")
+        print(f"\n{Color.YELLOW}[!] Installing missing dependencies...{Color.RESET}\n")
         
+        # Install system packages
         if not status['chromium'] or not status['espeak']:
             print(f"{Color.CYAN}[1/3] Installing system packages...{Color.RESET}")
             subprocess.run("pkg update -y", shell=True, check=False)
             subprocess.run("pkg upgrade -y", shell=True, check=False)
-            
-            if not status['chromium']:
-                print(f"{Color.DIM}    Installing Chromium...{Color.RESET}")
-                subprocess.run("pkg install chromium -y", shell=True, check=False)
-            
-            if not status['espeak']:
-                print(f"{Color.DIM}    Installing espeak...{Color.RESET}")
-                subprocess.run("pkg install espeak -y", shell=True, check=False)
-            
-            subprocess.run("pkg install python python-pip -y", shell=True, check=False)
+            subprocess.run("pkg install chromium chromedriver espeak python python-pip -y", shell=True, check=False)
         
-        if not status['chromedriver']:
-            print(f"{Color.CYAN}[2/3] Installing ChromeDriver...{Color.RESET}")
-            if ChromeDriverManager.download_chromedriver():
-                print(f"{Color.GREEN}[✓] ChromeDriver installed!{Color.RESET}")
-            else:
-                print(f"{Color.RED}[✗] ChromeDriver installation failed!{Color.RESET}")
-        
+        # Install Python packages
         if not status['selenium'] or not status['requests']:
-            print(f"{Color.CYAN}[3/3] Installing Python packages...{Color.RESET}")
+            print(f"{Color.CYAN}[2/3] Installing Python packages...{Color.RESET}")
             subprocess.run("pip install selenium requests urllib3 pysocks --upgrade", shell=True, check=False)
+        
+        # ChromeDriver check
+        if not status['chromedriver']:
+            print(f"{Color.CYAN}[3/3] Installing ChromeDriver...{Color.RESET}")
+            ChromeDriverManager.download_chromedriver()
         
         os.makedirs(os.path.join(SCRIPT_DIR, 'data'), exist_ok=True)
         os.makedirs(os.path.join(SCRIPT_DIR, 'logs'), exist_ok=True)
         
-        print(f"\n{Color.CYAN}[*] Verifying installation...{Color.RESET}")
-        
         self.core.browser_ready = self.core.check_browser_ready()
         
         if self.core.browser_ready:
-            self.core.all_ready = True
             print(f"\n{Color.GREEN}╔══════════════════════════════════════════╗{Color.RESET}")
-            print(f"{Color.GREEN}║     ✅ ALL SYSTEMS READY!                ║{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ SETUP COMPLETED!                  ║{Color.RESET}")
             print(f"{Color.GREEN}║     ✅ Browser: READY                    ║{Color.RESET}")
-            print(f"{Color.GREEN}║     ✅ Pure Selenium Mode               ║{Color.RESET}")
-            print(f"{Color.GREEN}║     🚀 Everything is ACTIVE!            ║{Color.RESET}")
+            print(f"{Color.GREEN}║     ✅ Headless Mode                     ║{Color.RESET}")
             print(f"{Color.GREEN}╚══════════════════════════════════════════╝{Color.RESET}")
         else:
             print(f"\n{Color.RED}╔══════════════════════════════════════════╗{Color.RESET}")
             print(f"{Color.RED}║     ❌ SETUP FAILED!                     ║{Color.RESET}")
-            print(f"{Color.RED}║     Browser: NOT READY                   ║{Color.RESET}")
+            print(f"{Color.RED}║     Check: chromium --version            ║{Color.RESET}")
             print(f"{Color.RED}╚══════════════════════════════════════════╝{Color.RESET}")
         
-        self.audio.speak("Setup completed")
         input("\nPress Enter to continue...")
 
     def create_sample_numbers_file(self):
         sample_path = os.path.join(SCRIPT_DIR, 'numbers.txt')
         if not os.path.exists(sample_path):
             with open(sample_path, 'w') as f:
-                f.write("+8801234567890\n")
-                f.write("+8801987654321\n")
-                f.write("+8801555123456\n")
+                f.write("+8801234567890\n+8801987654321\n+8801555123456\n")
             print(f"{Color.GREEN}[+] Created sample numbers.txt{Color.RESET}")
         else:
             print(f"{Color.YELLOW}[!] numbers.txt already exists{Color.RESET}")
 
     def main_loop(self):
         self.audio.speak("Welcome to Ridol FB tool")
-        
         self.create_sample_numbers_file()
         
         while True:
@@ -1120,7 +908,7 @@ class SaaSApp:
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Start Bot Automation               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Data Folder Setup                  {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} License Management                 {Color.CYAN}│{Color.RESET}")
-            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Smart Dependency Installer         {Color.CYAN}│{Color.RESET}")
+            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Termux Dependency Installer        {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Create Sample numbers.txt           {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
