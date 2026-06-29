@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool - Server Side (Render)
-License & Credit Management System with Admin Panel
-Complete API Endpoints for Bot Integration
+Ridol FB Tool - License Server v7.0
+Render.com Deployment Ready
+Complete License & Credit Management System
 """
 
 from flask import Flask, request, jsonify, render_template_string
@@ -14,8 +14,9 @@ import re
 import json
 import random
 import string
-from datetime import datetime, timedelta
 import sqlite3
+from datetime import datetime, timedelta
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -24,12 +25,12 @@ CORS(app)
 CLIPROXY_API_URL = "https://api.cliproxy.io/white/api"
 PORT = int(os.environ.get('PORT', 10000))
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
-
-# ==================== DATABASE ====================
 DB_PATH = 'licenses.db'
 
+# ==================== DATABASE INITIALIZATION ====================
+
 def init_db():
-    """Initialize database"""
+    """Initialize database with all required tables"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
@@ -37,18 +38,25 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS licenses (
             license_key TEXT PRIMARY KEY,
-            credits INTEGER DEFAULT 0,
+            credits INTEGER DEFAULT 100,
             max_browsers INTEGER DEFAULT 1,
             created_at TEXT,
             expires_at TEXT,
             is_active INTEGER DEFAULT 1,
             used_credits INTEGER DEFAULT 0,
             last_used TEXT,
-            user_id TEXT
+            user_id TEXT,
+            total_operations INTEGER DEFAULT 0
         )
     ''')
     
-    # Logs table
+    # Check if columns exist, add if missing
+    try:
+        c.execute('SELECT total_operations FROM licenses LIMIT 1')
+    except sqlite3.OperationalError:
+        c.execute('ALTER TABLE licenses ADD COLUMN total_operations INTEGER DEFAULT 0')
+    
+    # Usage logs table
     c.execute('''
         CREATE TABLE IF NOT EXISTS usage_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,14 +65,40 @@ def init_db():
             ip_used TEXT,
             country TEXT,
             timestamp TEXT,
-            user_id TEXT
+            user_id TEXT,
+            status TEXT,
+            response_time INTEGER
         )
     ''')
     
+    # Proxies cache table (for storing fetched proxies)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS proxy_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proxy_ip TEXT,
+            proxy_port INTEGER,
+            country TEXT,
+            fetched_at TEXT,
+            is_active INTEGER DEFAULT 1,
+            used_count INTEGER DEFAULT 0,
+            last_used TEXT
+        )
+    ''')
+    
+    # Create index for faster queries
+    c.execute('CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_logs_license ON usage_logs(license_key)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_logs_time ON usage_logs(timestamp)')
+    
     conn.commit()
     conn.close()
+    print("✅ Database initialized successfully!")
+    print("   - licenses table ready")
+    print("   - usage_logs table ready")
+    print("   - proxy_cache table ready")
 
 def get_db():
+    """Get database connection with row factory"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -72,7 +106,7 @@ def get_db():
 # ==================== LICENSE FUNCTIONS ====================
 
 def generate_license():
-    """Generate a random license key"""
+    """Generate a unique license key"""
     prefix = "RIDOL"
     parts = []
     for _ in range(4):
@@ -82,6 +116,15 @@ def generate_license():
 
 def validate_license(license_key):
     """Check if license is valid and return details"""
+    if not license_key:
+        return None
+    
+    license_key = license_key.strip().upper()
+    
+    # Validate format
+    if not re.match(r'^RIDOL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', license_key):
+        return None
+    
     conn = get_db()
     c = conn.cursor()
     
@@ -98,9 +141,12 @@ def validate_license(license_key):
     
     # Check expiry
     if result['expires_at']:
-        expires = datetime.fromisoformat(result['expires_at'])
-        if expires < datetime.now():
-            return None
+        try:
+            expires = datetime.fromisoformat(result['expires_at'])
+            if expires < datetime.now():
+                return None
+        except:
+            pass
     
     return dict(result)
 
@@ -109,32 +155,131 @@ def deduct_credit(license_key):
     conn = get_db()
     c = conn.cursor()
     
-    c.execute('SELECT credits, used_credits FROM licenses WHERE license_key = ?', (license_key,))
+    c.execute('SELECT credits, used_credits, total_operations FROM licenses WHERE license_key = ?', (license_key,))
     result = c.fetchone()
     
-    if not result or result['credits'] <= 0:
+    if not result:
         conn.close()
-        return False
+        return False, 0
+    
+    if result['credits'] <= 0:
+        conn.close()
+        return False, result['credits']
     
     new_credits = result['credits'] - 1
     new_used = result['used_credits'] + 1
+    new_total = result['total_operations'] + 1
     
     c.execute('''
         UPDATE licenses 
-        SET credits = ?, used_credits = ?, last_used = ?
+        SET credits = ?, used_credits = ?, total_operations = ?, last_used = ?
         WHERE license_key = ?
-    ''', (new_credits, new_used, datetime.now().isoformat(), license_key))
+    ''', (new_credits, new_used, new_total, datetime.now().isoformat(), license_key))
+    
+    conn.commit()
+    conn.close()
+    return True, new_credits
+
+def add_credits_to_license(license_key, amount):
+    """Add credits to existing license"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    c.execute('UPDATE licenses SET credits = credits + ? WHERE license_key = ? AND is_active = 1', 
+             (amount, license_key))
+    
+    if c.rowcount == 0:
+        conn.close()
+        return False
     
     conn.commit()
     conn.close()
     return True
 
+# ==================== PROXY FUNCTIONS ====================
+
+def fetch_proxy_from_cliproxy(country='Rand', num=1):
+    """Fetch proxy from Cliproxy API"""
+    try:
+        api_url = f"{CLIPROXY_API_URL}?region={country}&num={num}&time=10&format=n&type=txt"
+        response = requests.get(api_url, timeout=15)
+        
+        if response.status_code != 200:
+            return None, f"Cliproxy API error: {response.status_code}"
+        
+        ip = response.text.strip()
+        
+        # Validate IP
+        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+        if not re.match(ip_pattern, ip):
+            return None, f"Invalid IP format: {ip}"
+        
+        return ip, None
+        
+    except requests.Timeout:
+        return None, "Cliproxy API timeout"
+    except Exception as e:
+        return None, f"Cliproxy error: {str(e)}"
+
+def get_proxy_from_cache(country):
+    """Get working proxy from cache"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get least used active proxy for this country
+    c.execute('''
+        SELECT proxy_ip, proxy_port FROM proxy_cache 
+        WHERE country = ? AND is_active = 1
+        ORDER BY used_count ASC, fetched_at DESC
+        LIMIT 1
+    ''', (country,))
+    
+    result = c.fetchone()
+    conn.close()
+    
+    if result:
+        return result['proxy_ip'], result['proxy_port']
+    return None, None
+
+def save_proxy_to_cache(ip, port, country):
+    """Save proxy to cache"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if exists
+    c.execute('SELECT id FROM proxy_cache WHERE proxy_ip = ? AND proxy_port = ?', (ip, port))
+    existing = c.fetchone()
+    
+    if existing:
+        c.execute('''
+            UPDATE proxy_cache 
+            SET fetched_at = ?, is_active = 1
+            WHERE id = ?
+        ''', (datetime.now().isoformat(), existing['id']))
+    else:
+        c.execute('''
+            INSERT INTO proxy_cache (proxy_ip, proxy_port, country, fetched_at, is_active)
+            VALUES (?, ?, ?, ?, 1)
+        ''', (ip, port, country, datetime.now().isoformat()))
+    
+    conn.commit()
+    conn.close()
+
+def mark_proxy_failed(ip, port):
+    """Mark proxy as failed"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE proxy_cache SET is_active = 0 WHERE proxy_ip = ? AND proxy_port = ?', (ip, port))
+    conn.commit()
+    conn.close()
+
 # ==================== ADMIN HTML TEMPLATE ====================
+
 ADMIN_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ridol FB Tool - Admin Panel</title>
+    <title>Ridol FB Tool - Admin Panel v7.0</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -156,20 +301,9 @@ ADMIN_TEMPLATE = '''
             align-items: center;
             flex-wrap: wrap;
         }
-        .header h1 {
-            font-size: 24px;
-            background: linear-gradient(90deg, #f7971e, #ffd200);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+        .header h1 { font-size: 24px; background: linear-gradient(90deg, #f7971e, #ffd200); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header .subtitle { color: #8899aa; font-size: 14px; }
-        .header .status { 
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        .status.online { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
+        .header .status { padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -192,13 +326,7 @@ ADMIN_TEMPLATE = '''
             padding: 20px;
             margin-bottom: 20px;
         }
-        .panel h2 { 
-            font-size: 18px; 
-            margin-bottom: 15px;
-            color: #f7971e;
-            border-bottom: 1px solid #2a3a5c;
-            padding-bottom: 10px;
-        }
+        .panel h2 { font-size: 18px; margin-bottom: 15px; color: #f7971e; border-bottom: 1px solid #2a3a5c; padding-bottom: 10px; }
         .form-group {
             display: flex;
             flex-wrap: wrap;
@@ -238,6 +366,8 @@ ADMIN_TEMPLATE = '''
         .btn-danger:hover { background: #ff5252; }
         .btn-info { background: #2979ff; }
         .btn-info:hover { background: #448aff; }
+        .btn-secondary { background: #2a3a5c; }
+        .btn-secondary:hover { background: #3a4a6c; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -280,14 +410,6 @@ ADMIN_TEMPLATE = '''
         .alert-info { background: #2979ff20; border: 1px solid #2979ff40; color: #2979ff; }
         .hidden { display: none; }
         .flex { display: flex; gap: 10px; flex-wrap: wrap; }
-        @media (max-width: 768px) {
-            .header { flex-direction: column; text-align: center; gap: 10px; }
-            .form-group { flex-direction: column; align-items: stretch; }
-            .form-group label { min-width: auto; }
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            table { font-size: 11px; }
-            th, td { padding: 8px 10px; }
-        }
         .copy-btn {
             background: #2a3a5c;
             border: none;
@@ -298,6 +420,24 @@ ADMIN_TEMPLATE = '''
             font-size: 11px;
         }
         .copy-btn:hover { background: #3a4a6c; }
+        @media (max-width: 768px) {
+            .header { flex-direction: column; text-align: center; gap: 10px; }
+            .form-group { flex-direction: column; align-items: stretch; }
+            .form-group label { min-width: auto; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            table { font-size: 11px; }
+            th, td { padding: 8px 10px; }
+        }
+        .refresh-btn {
+            padding: 5px 15px;
+            background: #2a3a5c;
+            border: none;
+            border-radius: 6px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .refresh-btn:hover { background: #3a4a6c; }
     </style>
 </head>
 <body>
@@ -314,11 +454,11 @@ ADMIN_TEMPLATE = '''
         <div id="dashboardScreen" class="hidden">
             <div class="header">
                 <div>
-                    <h1>⚡ Ridol FB Tool Admin</h1>
+                    <h1>⚡ Ridol FB Tool Admin v7.0</h1>
                     <div class="subtitle">License & Credit Management System</div>
                 </div>
                 <div style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
-                    <span class="status online">● Server Online</span>
+                    <span class="status">● Server Online</span>
                     <span id="serverTime" style="font-size:12px; color:#8899aa;"></span>
                     <button class="btn btn-danger" onclick="adminLogout()" style="padding:6px 15px; font-size:12px;">Logout</button>
                 </div>
@@ -372,7 +512,7 @@ ADMIN_TEMPLATE = '''
 
             <!-- License List -->
             <div class="panel">
-                <h2>📋 License List</h2>
+                <h2>📋 License List <button class="refresh-btn" onclick="loadLicenses()">🔄 Refresh</button></h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
@@ -380,6 +520,7 @@ ADMIN_TEMPLATE = '''
                                 <th>License Key</th>
                                 <th>Credits</th>
                                 <th>Used</th>
+                                <th>Total Ops</th>
                                 <th>Max Browsers</th>
                                 <th>User ID</th>
                                 <th>Status</th>
@@ -388,7 +529,7 @@ ADMIN_TEMPLATE = '''
                             </tr>
                         </thead>
                         <tbody id="licenseTableBody">
-                            <tr><td colspan="8" style="text-align:center; color:#8899aa;">Loading...</td></tr>
+                            <tr><td colspan="9" style="text-align:center; color:#8899aa;">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -396,7 +537,7 @@ ADMIN_TEMPLATE = '''
 
             <!-- Usage Logs -->
             <div class="panel">
-                <h2>📊 Usage Logs</h2>
+                <h2>📊 Usage Logs <button class="refresh-btn" onclick="loadLogs()">🔄 Refresh</button></h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
@@ -406,11 +547,12 @@ ADMIN_TEMPLATE = '''
                                 <th>IP Used</th>
                                 <th>Country</th>
                                 <th>User ID</th>
+                                <th>Status</th>
                                 <th>Timestamp</th>
                             </tr>
                         </thead>
                         <tbody id="logsTableBody">
-                            <tr><td colspan="6" style="text-align:center; color:#8899aa;">Loading...</td></tr>
+                            <tr><td colspan="7" style="text-align:center; color:#8899aa;">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -421,7 +563,6 @@ ADMIN_TEMPLATE = '''
     <script>
         let token = localStorage.getItem('adminToken') || '';
 
-        // ==================== UTILITY ====================
         function showAlert(id, message, type) {
             const el = document.getElementById(id);
             el.className = `alert alert-${type}`;
@@ -449,7 +590,6 @@ ADMIN_TEMPLATE = '''
             alert('License key copied: ' + key);
         }
 
-        // ==================== AUTH ====================
         function adminLogin() {
             const pass = document.getElementById('adminPass').value;
             if (!pass) { showAlert('loginAlert', 'Please enter password', 'error'); return; }
@@ -492,7 +632,6 @@ ADMIN_TEMPLATE = '''
             document.getElementById('serverTime').textContent = new Date().toLocaleString();
         }
 
-        // ==================== API CALLS ====================
         function apiCall(endpoint, method, data) {
             return fetch(endpoint, {
                 method: method,
@@ -504,7 +643,6 @@ ADMIN_TEMPLATE = '''
             }).then(r => r.json());
         }
 
-        // ==================== LOAD DATA ====================
         function loadStats() {
             apiCall('/admin/stats', 'GET')
                 .then(data => {
@@ -522,7 +660,7 @@ ADMIN_TEMPLATE = '''
             apiCall('/admin/list_licenses', 'GET')
                 .then(data => {
                     const tbody = document.getElementById('licenseTableBody');
-                    if (data.success && data.licenses.length) {
+                    if (data.success && data.licenses && data.licenses.length) {
                         tbody.innerHTML = data.licenses.map(l => `
                             <tr>
                                 <td><span style="font-family:monospace;font-size:12px;">${l.license_key}</span>
@@ -530,6 +668,7 @@ ADMIN_TEMPLATE = '''
                                 </td>
                                 <td style="color:#00c853;font-weight:bold;">${l.credits}</td>
                                 <td style="color:#8899aa;">${l.used_credits || 0}</td>
+                                <td style="color:#2979ff;">${l.total_operations || 0}</td>
                                 <td>${l.max_browsers || 1}</td>
                                 <td style="font-size:11px;">${l.user_id || '-'}</td>
                                 <td>${getStatusBadge(l)}</td>
@@ -540,7 +679,7 @@ ADMIN_TEMPLATE = '''
                             </tr>
                         `).join('');
                     } else {
-                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#8899aa;">No licenses found</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#8899aa;">No licenses found</td></tr>';
                     }
                 })
                 .catch(() => {});
@@ -550,7 +689,7 @@ ADMIN_TEMPLATE = '''
             apiCall('/admin/logs?limit=50', 'GET')
                 .then(data => {
                     const tbody = document.getElementById('logsTableBody');
-                    if (data.success && data.logs.length) {
+                    if (data.success && data.logs && data.logs.length) {
                         tbody.innerHTML = data.logs.map(l => `
                             <tr>
                                 <td style="font-family:monospace;font-size:11px;">${l.license_key ? l.license_key.substring(0,20)+'...' : '-'}</td>
@@ -558,17 +697,17 @@ ADMIN_TEMPLATE = '''
                                 <td style="font-family:monospace;font-size:12px;">${l.ip_used || '-'}</td>
                                 <td>${l.country || '-'}</td>
                                 <td style="font-size:11px;">${l.user_id || '-'}</td>
+                                <td>${l.status || 'Success'}</td>
                                 <td style="font-size:11px;">${formatDate(l.timestamp)}</td>
                             </tr>
                         `).join('');
                     } else {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8899aa;">No logs found</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8899aa;">No logs found</td></tr>';
                     }
                 })
                 .catch(() => {});
         }
 
-        // ==================== ACTIONS ====================
         function createLicense() {
             const credits = parseInt(document.getElementById('creditsInput').value);
             const max_browsers = parseInt(document.getElementById('maxBrowsersInput').value);
@@ -580,12 +719,12 @@ ADMIN_TEMPLATE = '''
             apiCall('/admin/create_license', 'POST', { credits, max_browsers, expiry_days, user_id })
                 .then(data => {
                     if (data.success) {
-                        showAlert('createAlert', `License created: ${data.license_key} (${data.credits} credits)`, 'success');
+                        showAlert('createAlert', `✅ License created: ${data.license_key} (${data.credits} credits)`, 'success');
                         loadLicenses();
                         loadStats();
                         document.getElementById('userIdInput').value = '';
                     } else {
-                        showAlert('createAlert', data.error || 'Failed to create license', 'error');
+                        showAlert('createAlert', '❌ ' + (data.error || 'Failed to create license'), 'error');
                     }
                 })
                 .catch(() => showAlert('createAlert', 'Server error', 'error'));
@@ -601,12 +740,12 @@ ADMIN_TEMPLATE = '''
             apiCall('/admin/add_credits', 'POST', { license_key, credits })
                 .then(data => {
                     if (data.success) {
-                        showAlert('addAlert', `Added ${data.added_credits} credits`, 'success');
+                        showAlert('addAlert', `✅ Added ${data.added_credits} credits`, 'success');
                         loadLicenses();
                         loadStats();
                         document.getElementById('addLicenseKey').value = '';
                     } else {
-                        showAlert('addAlert', data.error || 'Failed to add credits', 'error');
+                        showAlert('addAlert', '❌ ' + (data.error || 'Failed to add credits'), 'error');
                     }
                 })
                 .catch(() => showAlert('addAlert', 'Server error', 'error'));
@@ -618,17 +757,17 @@ ADMIN_TEMPLATE = '''
             apiCall('/admin/revoke_license', 'POST', { license_key })
                 .then(data => {
                     if (data.success) {
-                        showAlert('createAlert', `License ${license_key} revoked`, 'info');
+                        showAlert('createAlert', `✅ License ${license_key} revoked`, 'info');
                         loadLicenses();
                         loadStats();
                     } else {
-                        showAlert('createAlert', data.error || 'Failed to revoke', 'error');
+                        showAlert('createAlert', '❌ ' + (data.error || 'Failed to revoke'), 'error');
                     }
                 })
                 .catch(() => showAlert('createAlert', 'Server error', 'error'));
         }
 
-        // ==================== AUTO-LOGIN CHECK ====================
+        // Auto-login check
         if (token) {
             fetch('/admin/stats', {
                 headers: { 'Authorization': 'Bearer ' + token }
@@ -671,7 +810,8 @@ def home():
         'status': 'online',
         'service': 'Ridol FB Tool License Server',
         'version': '7.0',
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'database': 'connected' if os.path.exists(DB_PATH) else 'initializing'
     })
 
 @app.route('/admin', methods=['GET'])
@@ -681,8 +821,8 @@ def admin_panel():
 
 # ==================== USER API (Bot ব্যবহার করবে) ====================
 
-@app.route('/api/verify', methods=['POST'])
-def verify_license():
+@app.route('/api/license/verify', methods=['POST'])
+def api_verify_license():
     """
     Verify license and get user info
     Request: {"license_key": "RIDOL-XXXX-XXXX-XXXX-XXXX"}
@@ -690,14 +830,13 @@ def verify_license():
     """
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'valid': False, 'error': 'No data provided'}), 400
+        
         license_key = data.get('license_key', '').strip().upper()
         
         if not license_key:
             return jsonify({'valid': False, 'error': 'License key required'}), 400
-        
-        # Validate format
-        if not re.match(r'^RIDOL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', license_key):
-            return jsonify({'valid': False, 'error': 'Invalid license format'}), 400
         
         license_data = validate_license(license_key)
         
@@ -713,23 +852,31 @@ def verify_license():
             'max_browsers': license_data['max_browsers'],
             'expires_at': license_data['expires_at'],
             'used_credits': license_data['used_credits'],
+            'total_operations': license_data.get('total_operations', 0),
             'user_id': license_data.get('user_id', '')
         })
         
     except Exception as e:
         return jsonify({'valid': False, 'error': str(e)}), 500
 
-@app.route('/api/get_ip', methods=['POST'])
-def get_ip():
+@app.route('/api/proxy/get', methods=['POST'])
+def api_get_proxy():
     """
     Get IP from Cliproxy API and deduct credit
     Request: {"license_key": "RIDOL-XXXX-XXXX-XXXX-XXXX", "country": "BD"}
     Response: {"success": true, "ip": "103.xxx.xxx.xxx", "port": 3010, "remaining_credits": 999}
     """
+    start_time = time.time()
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
         license_key = data.get('license_key', '').strip().upper()
         country = data.get('country', 'Rand').upper()
+        
+        if not license_key:
+            return jsonify({'success': False, 'error': 'License key required'}), 400
         
         # Validate license
         license_data = validate_license(license_key)
@@ -744,64 +891,101 @@ def get_ip():
                 'credits': 0
             }), 403
         
+        # Try to get proxy from cache first
+        cached_ip, cached_port = get_proxy_from_cache(country)
+        if cached_ip and cached_port:
+            # Deduct credit
+            success, remaining = deduct_credit(license_key)
+            if success:
+                # Log usage
+                conn = get_db()
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (license_key, 'get_proxy_cached', cached_ip, country, datetime.now().isoformat(), 
+                      license_data.get('user_id', ''), 'success', int((time.time() - start_time) * 1000)))
+                conn.commit()
+                conn.close()
+                
+                return jsonify({
+                    'success': True,
+                    'ip': cached_ip,
+                    'port': cached_port,
+                    'country': country,
+                    'remaining_credits': remaining,
+                    'from_cache': True
+                })
+        
+        # Fetch from Cliproxy
+        ip, error = fetch_proxy_from_cliproxy(country)
+        
+        if not ip:
+            # Log failure
+            conn = get_db()
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (license_key, 'get_proxy_failed', 'error', country, datetime.now().isoformat(),
+                  license_data.get('user_id', ''), error, int((time.time() - start_time) * 1000)))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({
+                'success': False,
+                'error': error
+            }), 500
+        
         # Deduct credit
-        if not deduct_credit(license_key):
-            return jsonify({'success': False, 'error': 'Failed to deduct credit'}), 500
-        
-        # Get IP from Cliproxy
-        api_url = f"{CLIPROXY_API_URL}?region={country}&num=1&time=10&format=n&type=txt"
-        response = requests.get(api_url, timeout=15)
-        
-        if response.status_code != 200:
+        success, remaining = deduct_credit(license_key)
+        if not success:
             return jsonify({
                 'success': False,
-                'error': f'Cliproxy API error: {response.status_code}'
+                'error': 'Failed to deduct credit'
             }), 500
         
-        ip = response.text.strip()
-        
-        # Validate IP
-        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-        if not re.match(ip_pattern, ip):
-            return jsonify({
-                'success': False,
-                'error': 'Invalid IP from Cliproxy',
-                'details': ip
-            }), 500
+        # Save to cache
+        save_proxy_to_cache(ip, 3010, country)
         
         # Log usage
         conn = get_db()
         c = conn.cursor()
         c.execute('''
-            INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (license_key, 'get_ip', ip, country, datetime.now().isoformat(), license_data.get('user_id', '')))
+            INSERT INTO usage_logs (license_key, action, ip_used, country, timestamp, user_id, status, response_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (license_key, 'get_proxy', ip, country, datetime.now().isoformat(),
+              license_data.get('user_id', ''), 'success', int((time.time() - start_time) * 1000)))
         conn.commit()
         conn.close()
-        
-        # Get updated credits
-        updated_data = validate_license(license_key)
         
         return jsonify({
             'success': True,
             'ip': ip,
             'port': 3010,
             'country': country,
-            'remaining_credits': updated_data['credits'] if updated_data else 0
+            'remaining_credits': remaining,
+            'from_cache': False
         })
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/status', methods=['POST'])
-def get_status():
+@app.route('/api/license/status', methods=['POST'])
+def api_get_status():
     """
     Get license status without deducting credit
     Request: {"license_key": "RIDOL-XXXX-XXXX-XXXX-XXXX"}
     """
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'valid': False, 'error': 'No data provided'}), 400
+        
         license_key = data.get('license_key', '').strip().upper()
+        
+        if not license_key:
+            return jsonify({'valid': False, 'error': 'License key required'}), 400
         
         license_data = validate_license(license_key)
         
@@ -813,6 +997,7 @@ def get_status():
             'credits': license_data['credits'],
             'max_browsers': license_data['max_browsers'],
             'used_credits': license_data['used_credits'],
+            'total_operations': license_data.get('total_operations', 0),
             'expires_at': license_data['expires_at'],
             'user_id': license_data.get('user_id', '')
         })
@@ -825,12 +1010,15 @@ def get_status():
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     """Admin login"""
-    data = request.get_json()
-    password = data.get('password', '')
-    
-    if password == ADMIN_PASSWORD:
-        return jsonify({'success': True, 'token': 'admin_token'})
-    return jsonify({'success': False}), 401
+    try:
+        data = request.get_json()
+        password = data.get('password', '')
+        
+        if password == ADMIN_PASSWORD:
+            return jsonify({'success': True, 'token': 'admin_token'})
+        return jsonify({'success': False}), 401
+    except:
+        return jsonify({'success': False}), 401
 
 @app.route('/admin/stats', methods=['GET'])
 def admin_stats():
@@ -871,7 +1059,7 @@ def admin_stats():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/admin/create_license', methods=['POST'])
-def create_license():
+def admin_create_license():
     """Create new license with credits"""
     try:
         data = request.get_json()
@@ -890,6 +1078,13 @@ def create_license():
         
         conn = get_db()
         c = conn.cursor()
+        
+        # Check if license already exists
+        c.execute('SELECT license_key FROM licenses WHERE license_key = ?', (license_key,))
+        if c.fetchone():
+            # Regenerate if duplicate
+            license_key = generate_license()
+        
         c.execute('''
             INSERT INTO licenses (license_key, credits, max_browsers, created_at, expires_at, is_active, user_id)
             VALUES (?, ?, ?, ?, ?, 1, ?)
@@ -910,7 +1105,7 @@ def create_license():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/admin/list_licenses', methods=['GET'])
-def list_licenses():
+def admin_list_licenses():
     """List all licenses"""
     try:
         token = request.headers.get('Authorization', '')
@@ -933,7 +1128,7 @@ def list_licenses():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/admin/add_credits', methods=['POST'])
-def add_credits():
+def admin_add_credits():
     """Add credits to existing license"""
     try:
         data = request.get_json()
@@ -947,17 +1142,10 @@ def add_credits():
         if add_credits <= 0:
             return jsonify({'success': False, 'error': 'Invalid credit amount'}), 400
         
-        conn = get_db()
-        c = conn.cursor()
-        c.execute('UPDATE licenses SET credits = credits + ? WHERE license_key = ?', 
-                 (add_credits, license_key))
+        success = add_credits_to_license(license_key, add_credits)
         
-        if c.rowcount == 0:
-            conn.close()
-            return jsonify({'success': False, 'error': 'License not found'}), 404
-        
-        conn.commit()
-        conn.close()
+        if not success:
+            return jsonify({'success': False, 'error': 'License not found or inactive'}), 404
         
         return jsonify({'success': True, 'added_credits': add_credits})
         
@@ -965,7 +1153,7 @@ def add_credits():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/admin/revoke_license', methods=['POST'])
-def revoke_license():
+def admin_revoke_license():
     """Revoke/deactivate a license"""
     try:
         data = request.get_json()
@@ -992,7 +1180,7 @@ def revoke_license():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/admin/logs', methods=['GET'])
-def get_logs():
+def admin_get_logs():
     """Get usage logs"""
     try:
         token = request.headers.get('Authorization', '')
@@ -1017,10 +1205,27 @@ def get_logs():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==================== MAIN ====================
+
 if __name__ == '__main__':
+    # Initialize database
     init_db()
+    
+    # Setup logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    logger.info(f"[+] Starting License Server on port {PORT}")
-    logger.info(f"[+] Admin Panel: http://localhost:{PORT}/admin")
+    
+    print("""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║                                                              ║
+    ║     🚀 RIDOL FB TOOL - LICENSE SERVER v7.0                  ║
+    ║                                                              ║
+    ║     ✅ Database: Connected                                   ║
+    ║     🔐 Admin Password: admin123 (change in env)             ║
+    ║     📡 Port: """ + str(PORT) + """                                 ║
+    ║                                                              ║
+    ║     🌐 Admin Panel: https://your-app.onrender.com/admin     ║
+    ║                                                              ║
+    ╚══════════════════════════════════════════════════════════════╝
+    """)
+    
     app.run(host='0.0.0.0', port=PORT, debug=False)
