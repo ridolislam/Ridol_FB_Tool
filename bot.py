@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v13.4 - Messenger Login Trigger (OTP Sender)
-Dynamic Port from Server + Better Error Handling
+Ridol SaaS Tool v13.5 - Messenger Login Trigger (OTP Sender)
+SOCKS5 Proxy Support
 Author: Ridol Islam
 """
 
@@ -18,7 +18,7 @@ from datetime import datetime
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v13.4'
+APP_VERSION = 'v13.5'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -100,7 +100,7 @@ class CoreManager:
         return False
 
     def get_proxy_and_deduct(self):
-        """সার্ভার থেকে IP + Port নেওয়া (Dynamic Port)"""
+        """সার্ভার থেকে SOCKS5 Proxy নেওয়া"""
         try:
             print(f"{Color.DIM}[*] Requesting proxy from server...{Color.RESET}")
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
@@ -120,14 +120,16 @@ class CoreManager:
             
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
+                
+                # SOCKS5 Proxy
+                proxy = data.get('proxy')
                 ip = data.get('ip')
                 port = data.get('port')
                 
-                if not ip:
-                    print(f"{Color.RED}[-] No IP in response{Color.RESET}")
+                if not proxy:
+                    print(f"{Color.RED}[-] No proxy in response{Color.RESET}")
                     return None
                 
-                proxy = f"http://{ip}:{port}"
                 print(f"{Color.GREEN}[+] Proxy: {proxy}{Color.RESET}")
                 print(f"{Color.CYAN}[+] Credits left: {self.credits}{Color.RESET}")
                 return proxy
@@ -173,6 +175,7 @@ class StealthBrowser:
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
             
+            # SOCKS5 Proxy Support
             if self.proxy:
                 options.add_argument(f'--proxy-server={self.proxy}')
                 print(f"{Color.CYAN}[*] Using proxy: {self.proxy}{Color.RESET}")
@@ -211,22 +214,18 @@ class StealthBrowser:
 def messenger_login_trigger(driver, phone_number):
     """
     Messenger Login - OTP Trigger
-    শুধু লগইন ট্রিগার করবে, OTP সাবমিট করবে না
     """
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
-        from selenium.common.exceptions import TimeoutException
         
         print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
         
-        # 1. Messenger Login Page
         print(f"{Color.CYAN}[*] Opening Messenger...{Color.RESET}")
         driver.get("https://www.messenger.com/login")
         time.sleep(3)
         
-        # 2. Click "Continue with Phone Number"
         try:
             phone_option = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Phone Number')]"))
@@ -237,7 +236,6 @@ def messenger_login_trigger(driver, phone_number):
         except:
             print(f"{Color.YELLOW}[!] Phone option not found{Color.RESET}")
         
-        # 3. Enter Phone Number
         try:
             phone_field = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "phone"))
@@ -256,7 +254,6 @@ def messenger_login_trigger(driver, phone_number):
                 print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
                 return False
         
-        # 4. Click Continue
         try:
             continue_btn = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Continue')]"))
@@ -291,7 +288,6 @@ class SaaSApp:
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
         print(f"         {Color.PINK}Messenger Login Trigger (OTP Sender){Color.RESET}")
         
-        # Status Box
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
         lic_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.is_valid else f"{Color.RED}Inactive{Color.RESET}"
@@ -337,7 +333,7 @@ class SaaSApp:
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
-        print(f"{Color.YELLOW}[!] Server: {SERVER_URL}{Color.RESET}")
+        print(f"{Color.YELLOW}[!] Proxy: SOCKS5{Color.RESET}")
         print("-" * 50)
 
         success_count = 0
@@ -351,7 +347,6 @@ class SaaSApp:
             
             print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Processing: {phone}{Color.RESET}")
             
-            # Get proxy from server (Dynamic Port)
             proxy = self.core.get_proxy_and_deduct()
             if not proxy:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
@@ -359,7 +354,6 @@ class SaaSApp:
                 failed_count += 1
                 continue
 
-            # Start browser with proxy
             browser = StealthBrowser(proxy)
             if browser.start():
                 success = messenger_login_trigger(browser.driver, phone)
@@ -374,7 +368,6 @@ class SaaSApp:
                 failed_count += 1
                 print(f"{Color.RED}[✗] Browser failed!{Color.RESET}")
 
-        # Summary
         print("\n" + "="*50)
         print(f"{Color.GREEN}COMPLETE{Color.RESET}")
         print("="*50)
