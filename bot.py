@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v13.3 - Messenger Login Trigger (OTP Sender)
-Dynamic Port from Server
+Ridol SaaS Tool v13.4 - Messenger Login Trigger (OTP Sender)
+Dynamic Port from Server + Better Error Handling
 Author: Ridol Islam
 """
 
@@ -18,7 +18,7 @@ from datetime import datetime
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v13.3'
+APP_VERSION = 'v13.4'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -85,7 +85,7 @@ class CoreManager:
         target = key if key else self.license_key
         if not target: return False
         try:
-            resp = requests.post(f"{SERVER_URL}/api/license/verify", json={'license_key': target}, timeout=10)
+            resp = requests.post(f"{SERVER_URL}/api/license/verify", json={'license_key': target}, timeout=15)
             data = resp.json()
             if data.get('valid'):
                 self.is_valid = True
@@ -93,30 +93,59 @@ class CoreManager:
                 self.user_id = data.get('user_id', 'User')
                 self.license_key = target
                 self.save_config()
+                print(f"{Color.GREEN}[+] License Active! Credits: {self.credits}{Color.RESET}")
                 return True
-        except: pass
+        except Exception as e:
+            print(f"{Color.RED}[-] License verify error: {e}{Color.RESET}")
         return False
 
     def get_proxy_and_deduct(self):
         """সার্ভার থেকে IP + Port নেওয়া (Dynamic Port)"""
         try:
+            print(f"{Color.DIM}[*] Requesting proxy from server...{Color.RESET}")
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
                 'license_key': self.license_key,
                 'country': 'Rand'
-            }, timeout=15)
+            }, timeout=20)
+            
+            print(f"{Color.DIM}[*] Server response status: {resp.status_code}{Color.RESET}")
+            
+            if resp.status_code != 200:
+                print(f"{Color.RED}[-] Server error: {resp.status_code}{Color.RESET}")
+                print(f"{Color.YELLOW}[!] Response: {resp.text[:200]}{Color.RESET}")
+                return None
+            
             data = resp.json()
+            print(f"{Color.DIM}[*] Server response: {data}{Color.RESET}")
+            
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
                 ip = data.get('ip')
-                port = data.get('port')  # ← সার্ভার থেকে Port
+                port = data.get('port')
                 
-                # সার্ভার থেকে আসা IP + Port ব্যবহার
+                if not ip:
+                    print(f"{Color.RED}[-] No IP in response{Color.RESET}")
+                    return None
+                
                 proxy = f"http://{ip}:{port}"
-                print(f"{Color.CYAN}[*] IP: {ip}, Port: {port}{Color.RESET}")
+                print(f"{Color.GREEN}[+] Proxy: {proxy}{Color.RESET}")
+                print(f"{Color.CYAN}[+] Credits left: {self.credits}{Color.RESET}")
                 return proxy
+            else:
+                error = data.get('error', 'Unknown error')
+                print(f"{Color.RED}[-] Server error: {error}{Color.RESET}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            print(f"{Color.RED}[-] Request timeout! Server might be down.{Color.RESET}")
+            return None
+        except requests.exceptions.ConnectionError:
+            print(f"{Color.RED}[-] Cannot connect to server!{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Server URL: {SERVER_URL}{Color.RESET}")
+            return None
         except Exception as e:
             print(f"{Color.RED}[-] Proxy error: {e}{Color.RESET}")
-        return None
+            return None
 
 # ==================== STEALTH BROWSER ====================
 class StealthBrowser:
@@ -144,12 +173,10 @@ class StealthBrowser:
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
             
-            # Proxy Set (Dynamic Port)
             if self.proxy:
                 options.add_argument(f'--proxy-server={self.proxy}')
-                print(f"{Color.CYAN}[*] Proxy: {self.proxy}{Color.RESET}")
+                print(f"{Color.CYAN}[*] Using proxy: {self.proxy}{Color.RESET}")
             
-            # Random User-Agent
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -162,7 +189,6 @@ class StealthBrowser:
             service = Service(CHROMEDRIVER_PATH)
             self.driver = webdriver.Chrome(service=service, options=options)
             
-            # Hide WebDriver
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.set_page_load_timeout(30)
             
@@ -221,7 +247,6 @@ def messenger_login_trigger(driver, phone_number):
             time.sleep(1)
             print(f"{Color.CYAN}[*] Phone entered: {phone_number}{Color.RESET}")
         except:
-            # Alternative selector
             try:
                 phone_field = driver.find_element(By.ID, "email")
                 phone_field.clear()
@@ -272,7 +297,7 @@ class SaaSApp:
         lic_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.is_valid else f"{Color.RED}Inactive{Color.RESET}"
         
         try:
-            srv_check = requests.get(SERVER_URL, timeout=3)
+            srv_check = requests.get(SERVER_URL, timeout=5)
             srv_status = f"{Color.GREEN}Online{Color.RESET}" if srv_check.status_code == 200 else f"{Color.RED}Offline{Color.RESET}"
         except: srv_status = f"{Color.RED}Offline{Color.RESET}"
 
@@ -312,10 +337,12 @@ class SaaSApp:
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
+        print(f"{Color.YELLOW}[!] Server: {SERVER_URL}{Color.RESET}")
         print("-" * 50)
 
         success_count = 0
         failed_count = 0
+        no_proxy_count = 0
         
         for idx, phone in enumerate(numbers, 1):
             if self.core.credits <= 0:
@@ -328,10 +355,9 @@ class SaaSApp:
             proxy = self.core.get_proxy_and_deduct()
             if not proxy:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
+                no_proxy_count += 1
                 failed_count += 1
                 continue
-
-            print(f"{Color.CYAN}[*] Credits left: {self.core.credits}{Color.RESET}")
 
             # Start browser with proxy
             browser = StealthBrowser(proxy)
@@ -355,6 +381,7 @@ class SaaSApp:
         print(f"Total: {len(numbers)}")
         print(f"Success: {Color.GREEN}{success_count}{Color.RESET}")
         print(f"Failed: {Color.RED}{failed_count}{Color.RESET}")
+        print(f"No Proxy: {Color.YELLOW}{no_proxy_count}{Color.RESET}")
         print(f"Credits Left: {Color.GOLD}{self.core.credits}{Color.RESET}")
         print("="*50)
         
