@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v13.5 - Messenger Login Trigger (OTP Sender)
+Ridol SaaS Tool v13.6 - Messenger Login Trigger (OTP Sender)
 SOCKS5 Proxy Support
 Author: Ridol Islam
 """
@@ -18,7 +18,7 @@ from datetime import datetime
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v13.5'
+APP_VERSION = 'v13.6'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -100,7 +100,7 @@ class CoreManager:
         return False
 
     def get_proxy_and_deduct(self):
-        """সার্ভার থেকে SOCKS5 Proxy নেওয়া"""
+        """সার্ভার থেকে IP + Port নেওয়া"""
         try:
             print(f"{Color.DIM}[*] Requesting proxy from server...{Color.RESET}")
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
@@ -120,16 +120,15 @@ class CoreManager:
             
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
-                
-                # SOCKS5 Proxy
-                proxy = data.get('proxy')
                 ip = data.get('ip')
                 port = data.get('port')
                 
-                if not proxy:
-                    print(f"{Color.RED}[-] No proxy in response{Color.RESET}")
+                if not ip:
+                    print(f"{Color.RED}[-] No IP in response{Color.RESET}")
                     return None
                 
+                # SOCKS5 Proxy ফরম্যাট তৈরি
+                proxy = f"socks5://{ip}:{port}"
                 print(f"{Color.GREEN}[+] Proxy: {proxy}{Color.RESET}")
                 print(f"{Color.CYAN}[+] Credits left: {self.credits}{Color.RESET}")
                 return proxy
