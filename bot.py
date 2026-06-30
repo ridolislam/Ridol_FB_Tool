@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.7 - Facebook Forgot Password OTP Sender
-Updated Excel Reader with Detailed Error Handling
+Ridol SaaS Tool v14.8 - Facebook Forgot Password OTP Sender
+Detailed Browser Logging
 Author: Ridol Islam
 """
 
@@ -29,7 +29,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.7'
+APP_VERSION = 'v14.8'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -90,11 +90,10 @@ def get_country_from_phone(phone_number):
             return country_codes[code]
     return 'XX'
 
-# ==================== EXCEL READER (UPDATED) ====================
+# ==================== EXCEL READER ====================
 def read_numbers_from_excel(file_path):
     numbers = []
     try:
-        # ফাইলটি আসলে আছে কি না চেক
         if not os.path.exists(file_path):
             print(f"{Color.RED}[-] File not found at path: {file_path}{Color.RESET}")
             return []
@@ -106,11 +105,8 @@ def read_numbers_from_excel(file_path):
         
         current_country = None
         
-        # সব সারি চেক করা হচ্ছে
         for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-            # Column A (index 0) - Country Name
             country_val = row[0] if len(row) > 0 else None
-            # Column B (index 1) - Number
             number_val = row[1] if len(row) > 1 else None
             
             if country_val and isinstance(country_val, str):
@@ -119,24 +115,15 @@ def read_numbers_from_excel(file_path):
                     current_country = temp_country
             
             if number_val:
-                # নাম্বারকে টেক্সটে কনভার্ট
                 number_str = str(number_val).strip()
-                # সায়েন্টিফিক ফরম্যাট (যেমন 8.8E+12) হ্যান্ডেল করা
                 if 'E+' in number_str:
                     number_str = "{:.0f}".format(float(number_val))
                 
-                # শুধুমাত্র সংখ্যাগুলো নেওয়া
                 clean_number = re.sub(r'[^0-9]', '', number_str)
                 
-                # কমপক্ষে ৭ ডিজিট হতে হবে (ভ্যালিড নাম্বারের জন্য)
                 if len(clean_number) >= 7:
                     if not number_str.startswith('+'):
-                        # যদি শুরুতে ৮৮০ না থাকে এবং লোকাল নাম্বার হয়
-                        if clean_number.startswith('0'):
-                            # আপাতত কান্ট্রি কোড ছাড়া থাকলে XX থাকবে
-                            full_number = '+' + clean_number
-                        else:
-                            full_number = '+' + clean_number
+                        full_number = '+' + clean_number
                     else:
                         full_number = number_str
 
@@ -185,7 +172,6 @@ CHROMEDRIVER_PATH = get_chromedriver_path()
 
 # ==================== FIND EXCEL FILES ====================
 def find_excel_files():
-    """Phone এ Excel ফাইল খুঁজে বের করা"""
     excel_files = []
     search_paths = [
         '/storage/emulated/0/Download/',
@@ -384,6 +370,8 @@ class StealthBrowser:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
             
+            print(f"{Color.CYAN}[*] Initializing Chrome options...{Color.RESET}")
+            
             options = Options()
             
             options.add_argument('--headless=new')
@@ -415,13 +403,14 @@ class StealthBrowser:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
+            print(f"{Color.CYAN}[*] Starting Chrome driver...{Color.RESET}")
             service = Service(CHROMEDRIVER_PATH)
             self.driver = webdriver.Chrome(service=service, options=options)
             
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.set_page_load_timeout(30)
             
-            print(f"{Color.GREEN}[+] Browser started{Color.RESET}")
+            print(f"{Color.GREEN}[+] Browser started successfully!{Color.RESET}")
             return True
                 
         except Exception as e:
@@ -436,7 +425,7 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FORGOT PASSWORD OTP SENDER ====================
+# ==================== FORGOT PASSWORD OTP SENDER (Detailed Logs) ====================
 def forgot_password_otp_sender(driver, phone_number):
     try:
         from selenium.webdriver.common.by import By
@@ -446,57 +435,76 @@ def forgot_password_otp_sender(driver, phone_number):
         
         print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
         
-        print(f"{Color.CYAN}[*] Opening Facebook Forgot Password...{Color.RESET}")
+        # Step 1: Open Forgot Password Page
+        print(f"{Color.CYAN}[*] Step 1: Opening Facebook Forgot Password page...{Color.RESET}")
         driver.get("https://m.facebook.com/login/identify/")
-        time.sleep(3)
+        time.sleep(2)
+        print(f"{Color.GREEN}[✓] Page loaded: https://m.facebook.com/login/identify/{Color.RESET}")
         
+        # Step 2: Find Phone Field
+        print(f"{Color.CYAN}[*] Step 2: Looking for phone/email field...{Color.RESET}")
         try:
             phone_field = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "email"))
             )
-            phone_field.clear()
-            phone_field.send_keys(phone_number)
-            time.sleep(1)
-            print(f"{Color.CYAN}[*] Phone entered: {phone_number}{Color.RESET}")
+            print(f"{Color.GREEN}[✓] Phone field found{Color.RESET}")
         except:
-            print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
+            print(f"{Color.RED}[✗] Phone field not found!{Color.RESET}")
             return False
         
+        # Step 3: Enter Phone Number
+        print(f"{Color.CYAN}[*] Step 3: Entering phone number: {phone_number}{Color.RESET}")
+        phone_field.clear()
+        phone_field.send_keys(phone_number)
+        time.sleep(1)
+        print(f"{Color.GREEN}[✓] Phone number entered{Color.RESET}")
+        
+        # Step 4: Click Continue
+        print(f"{Color.CYAN}[*] Step 4: Looking for Continue button...{Color.RESET}")
         try:
             continue_btn = driver.find_element(By.NAME, "did_submit")
-            continue_btn.click()
-            time.sleep(3)
-            print(f"{Color.CYAN}[*] Continue clicked{Color.RESET}")
+            print(f"{Color.GREEN}[✓] Continue button found{Color.RESET}")
         except:
-            print(f"{Color.RED}[-] Continue button not found{Color.RESET}")
+            print(f"{Color.RED}[✗] Continue button not found!{Color.RESET}")
             return False
         
+        print(f"{Color.CYAN}[*] Step 5: Clicking Continue...{Color.RESET}")
+        continue_btn.click()
+        time.sleep(3)
+        print(f"{Color.GREEN}[✓] Continue clicked{Color.RESET}")
+        
+        # Step 6: Check for Account
+        print(f"{Color.CYAN}[*] Step 6: Checking for account...{Color.RESET}")
         try:
             account_select = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'account')]"))
             )
-            print(f"{Color.GREEN}[+] Account found for: {phone_number}{Color.RESET}")
+            print(f"{Color.GREEN}[✓] Account found for: {phone_number}{Color.RESET}")
         except TimeoutException:
             print(f"{Color.YELLOW}[!] No account found for: {phone_number}{Color.RESET}")
             return False
         
+        # Step 7: Select Account
+        print(f"{Color.CYAN}[*] Step 7: Selecting account...{Color.RESET}")
         try:
             account_btn = driver.find_element(By.XPATH, "//div[contains(@class, 'account')]//a")
             account_btn.click()
             time.sleep(2)
-            print(f"{Color.CYAN}[*] Account selected{Color.RESET}")
+            print(f"{Color.GREEN}[✓] Account selected{Color.RESET}")
         except:
             print(f"{Color.YELLOW}[!] Could not select account{Color.RESET}")
         
+        # Step 8: Find SMS Option
+        print(f"{Color.CYAN}[*] Step 8: Looking for SMS option...{Color.RESET}")
         try:
             sms_option = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), 'SMS')]"))
             )
-            sms_option.click()
-            time.sleep(2)
-            print(f"{Color.GREEN}[+] SMS option selected! OTP sent to: {phone_number}{Color.RESET}")
-            return True
+            print(f"{Color.GREEN}[✓] SMS option found{Color.RESET}")
         except TimeoutException:
+            print(f"{Color.YELLOW}[!] SMS option not found, checking alternatives...{Color.RESET}")
+            
+            # Check for countdown
             try:
                 countdown = driver.find_element(By.XPATH, "//div[contains(text(), 'minute')]")
                 if countdown:
@@ -505,6 +513,7 @@ def forgot_password_otp_sender(driver, phone_number):
             except:
                 pass
             
+            # Check for WhatsApp
             try:
                 whatsapp = driver.find_element(By.XPATH, "//div[contains(text(), 'WhatsApp')]")
                 if whatsapp:
@@ -513,8 +522,17 @@ def forgot_password_otp_sender(driver, phone_number):
             except:
                 pass
             
-            print(f"{Color.RED}[-] SMS option not available{Color.RESET}")
+            print(f"{Color.RED}[✗] SMS option not available{Color.RESET}")
             return False
+        
+        # Step 9: Click SMS Option
+        print(f"{Color.CYAN}[*] Step 9: Clicking SMS option...{Color.RESET}")
+        sms_option.click()
+        time.sleep(2)
+        print(f"{Color.GREEN}[✓] SMS option clicked{Color.RESET}")
+        
+        print(f"{Color.GREEN}[+] OTP sent successfully to: {phone_number}{Color.RESET}")
+        return True
             
     except Exception as e:
         print(f"{Color.RED}[-] Error: {e}{Color.RESET}")
@@ -607,7 +625,9 @@ class SaaSApp:
             country = data['country']
             country_name = data['country_name']
             
-            print(f"\n{Color.GOLD}[{idx}/{len(numbers_data)}] Phone: {phone} | Country: {country} ({country_name}){Color.RESET}")
+            print(f"\n{Color.GOLD}{'='*50}{Color.RESET}")
+            print(f"{Color.GOLD}[{idx}/{len(numbers_data)}] Phone: {phone} | Country: {country} ({country_name}){Color.RESET}")
+            print(f"{Color.GOLD}{'='*50}{Color.RESET}")
             
             proxy_data = self.core.get_proxy_and_deduct(country)
             if not proxy_data:
