@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool - Professional License Server v9.6
+Ridol FB Tool - Professional License Server v9.8
 Backend: Flask, Database: PostgreSQL (Render.com Optimized)
 Author: Ridol Islam
 """
@@ -236,7 +236,7 @@ ADMIN_UI = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ridol Admin Panel v9.6</title>
+    <title>Ridol Admin Panel v9.8</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -300,8 +300,6 @@ ADMIN_UI = '''
         }
         .btn-create { background: #00c853; }
         .btn-create:hover { background: #00e676; }
-        .btn-danger { background: #ff1744; }
-        .btn-danger:hover { background: #ff5252; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
         th, td { padding: 12px 15px; border-bottom: 1px solid #2a3a5c; text-align: left; }
         th { color: #f7971e; font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -313,7 +311,6 @@ ADMIN_UI = '''
             font-weight: bold;
         }
         .badge-active { background: #00c85320; color: #00c853; }
-        .badge-inactive { background: #ff174420; color: #ff1744; }
         code { background: #0d1117; padding: 2px 8px; border-radius: 4px; font-size: 12px; color: #f7971e; }
         .stats-grid {
             display: grid;
@@ -355,7 +352,7 @@ ADMIN_UI = '''
         <div class="header">
             <div>
                 <h1>⚡ Ridol FB Tool Admin</h1>
-                <div class="subtitle">License & Credit Management System v9.6</div>
+                <div class="subtitle">License & Credit Management System v9.8</div>
             </div>
             <div style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
                 <span style="padding:8px 16px; border-radius:20px; font-size:12px; font-weight:bold; background:#00c85320; color:#00c853; border:1px solid #00c85340;">● Server Online</span>
@@ -462,7 +459,7 @@ def home():
     return jsonify({
         'status': 'online', 
         'service': 'Ridol FB Tool License Server',
-        'version': '9.6',
+        'version': '9.8',
         'database': 'connected',
         'timestamp': datetime.now().isoformat()
     })
@@ -583,9 +580,10 @@ def api_verify_license():
 def api_get_proxy():
     """
     Get IP from Cliproxy API and deduct credit
-    Cliproxy থেকে যে Port আসবে সেটাই ব্যবহার করবে
+    Cliproxy Response Format: [{"host":"107.151.249.77","port":"29264"}]
+    
     Request: {"license_key": "RIDOL-XXXX", "country": "BD"}
-    Response: {"success": true, "ip": "103.xxx.xxx.xxx", "port": 3010, "remaining_credits": 999}
+    Response: {"success": true, "ip": "107.151.249.77", "port": 29264, "remaining_credits": 999}
     """
     start_time = time.time()
     try:
@@ -615,10 +613,8 @@ def api_get_proxy():
         # ============ TRY CACHED PROXY ============
         cached_ip, cached_port = get_cached_proxy(country)
         if cached_ip and cached_port:
-            # Deduct credit
             success, remaining = deduct_credit(license_key)
             if success:
-                # Log usage
                 log_usage(
                     license_key, 'proxy_cached', cached_ip, cached_port, country,
                     license_data.get('user_id', ''), 'success', 
@@ -635,66 +631,60 @@ def api_get_proxy():
                 })
         
         # ============ FETCH FROM CLIPROXY ============
-        # Cliproxy API Call (format=n মানে plain text)
-        api_url = f"{CLIPROXY_API_URL}?region={country}&num=1&time=10&format=n&type=txt"
+        # Cliproxy API Call - সঠিক ফরম্যাট
+        # format=n মানে plain text, type=json মানে JSON রেসপন্স
+        api_url = f"{CLIPROXY_API_URL}?region={country}&num=1&format=n&type=json"
         print(f"[*] Calling Cliproxy: {api_url}")
-        response = requests.get(api_url, timeout=15)
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json'
+        }
+        
+        response = requests.get(api_url, headers=headers, timeout=15)
         
         if response.status_code != 200:
-            print(f"[-] Cliproxy error: {response.status_code}")
+            print(f"[-] Cliproxy error: {response.status_code} - {response.text}")
             return jsonify({
                 'success': False,
                 'error': f'Cliproxy API error: {response.status_code}'
             }), 500
         
-        # Cliproxy থেকে রেসপন্স পার্স করা
+        # Cliproxy রেসপন্স পার্স করা
         raw_response = response.text.strip()
         print(f"[*] Cliproxy response: {raw_response}")
         
-        # Cliproxy ফরম্যাট: {"host":"128.1.12.147","port":"15401"}
-        # অথবা সরাসরি IP:PORT ফরম্যাটেও আসতে পারে
         ip = None
         port = None
         
-        # JSON ফরম্যাট চেক
-        if raw_response.startswith('{'):
-            try:
-                import json
-                data = json.loads(raw_response)
-                ip = data.get('host')
-                port = data.get('port')
-                if port:
-                    port = int(port)
-            except:
-                pass
+        # JSON ফরম্যাট: [{"host":"107.151.249.77","port":"29264"}]
+        try:
+            proxy_data_list = json.loads(raw_response)
+            if isinstance(proxy_data_list, list) and len(proxy_data_list) > 0:
+                proxy_data = proxy_data_list[0]
+                ip = proxy_data.get('host')
+                port_str = proxy_data.get('port')
+                if port_str:
+                    port = int(port_str)
+        except json.JSONDecodeError as e:
+            print(f"[-] JSON decode error: {e}")
+            # JSON না হলে টেক্সট পার্স
+            if ':' in raw_response:
+                parts = raw_response.split(':')
+                if len(parts) == 2:
+                    ip = parts[0].strip()
+                    try:
+                        port = int(parts[1].strip())
+                    except:
+                        pass
         
-        # JSON না হলে IP:PORT ফরম্যাট চেক
-        if not ip and ':' in raw_response:
-            parts = raw_response.split(':')
-            if len(parts) == 2:
-                ip = parts[0].strip()
-                try:
-                    port = int(parts[1].strip())
-                except:
-                    pass
-        
-        # শুধু IP এলেও (port না থাকলে)
-        if not ip:
-            # সরাসরি IP চেক
-            ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-            if re.match(ip_pattern, raw_response):
-                ip = raw_response
-                # Port না থাকলে Random Generate
-                port = random.randint(3000, 5000)
-                print(f"[!] No port from Cliproxy, generated random port: {port}")
-        
-        # Validate IP
+        # IP Validate
         ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
         if not ip or not re.match(ip_pattern, ip):
             print(f"[-] Invalid IP: {ip}")
             return jsonify({
                 'success': False,
-                'error': f'Invalid IP from Cliproxy: {ip or raw_response}'
+                'error': f'Invalid IP from Cliproxy: {raw_response}'
             }), 500
         
         # Port না পেলে Random
@@ -779,7 +769,7 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     
     print("="*60)
-    print("🚀 RIDOL FB TOOL - LICENSE SERVER v9.6")
+    print("🚀 RIDOL FB TOOL - LICENSE SERVER v9.8")
     print("="*60)
     print(f"✅ Database: PostgreSQL")
     print(f"🔐 Admin Password: {ADMIN_PASSWORD}")
