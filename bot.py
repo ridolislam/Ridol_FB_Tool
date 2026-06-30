@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v13.2 - Messenger Login Trigger (OTP Sender)
-Dynamic Port Support
+Ridol SaaS Tool v13.3 - Messenger Login Trigger (OTP Sender)
+Dynamic Port from Server
 Author: Ridol Islam
 """
 
@@ -18,7 +18,7 @@ from datetime import datetime
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v13.2'
+APP_VERSION = 'v13.3'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -108,9 +108,9 @@ class CoreManager:
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
                 ip = data.get('ip')
-                port = data.get('port', 3010)  # Dynamic Port
+                port = data.get('port')  # ← সার্ভার থেকে Port
                 
-                # HTTP Proxy ফরম্যাট
+                # সার্ভার থেকে আসা IP + Port ব্যবহার
                 proxy = f"http://{ip}:{port}"
                 print(f"{Color.CYAN}[*] IP: {ip}, Port: {port}{Color.RESET}")
                 return proxy
@@ -127,7 +127,6 @@ class StealthBrowser:
     def start(self):
         if not CHROMEDRIVER_PATH:
             print(f"{Color.RED}[-] Chromedriver not found!{Color.RESET}")
-            print(f"{Color.YELLOW}[*] Run: pkg install chromedriver{Color.RESET}")
             return False
             
         try:
@@ -144,9 +143,8 @@ class StealthBrowser:
             options.add_argument('--disable-web-security')
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
             
-            # Proxy Set (Dynamic Port সহ)
+            # Proxy Set (Dynamic Port)
             if self.proxy:
                 options.add_argument(f'--proxy-server={self.proxy}')
                 print(f"{Color.CYAN}[*] Proxy: {self.proxy}{Color.RESET}")
@@ -211,14 +209,7 @@ def messenger_login_trigger(driver, phone_number):
             time.sleep(2)
             print(f"{Color.CYAN}[*] Phone option selected{Color.RESET}")
         except:
-            print(f"{Color.YELLOW}[!] Phone option not found, trying alternative{Color.RESET}")
-            try:
-                driver.find_element(By.ID, "email").clear()
-                driver.find_element(By.ID, "email").send_keys(phone_number)
-                time.sleep(1)
-                return True
-            except:
-                pass
+            print(f"{Color.YELLOW}[!] Phone option not found{Color.RESET}")
         
         # 3. Enter Phone Number
         try:
@@ -230,8 +221,15 @@ def messenger_login_trigger(driver, phone_number):
             time.sleep(1)
             print(f"{Color.CYAN}[*] Phone entered: {phone_number}{Color.RESET}")
         except:
-            print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
-            return False
+            # Alternative selector
+            try:
+                phone_field = driver.find_element(By.ID, "email")
+                phone_field.clear()
+                phone_field.send_keys(phone_number)
+                time.sleep(1)
+            except:
+                print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
+                return False
         
         # 4. Click Continue
         try:
@@ -326,7 +324,7 @@ class SaaSApp:
             
             print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Processing: {phone}{Color.RESET}")
             
-            # Get proxy (IP + Dynamic Port)
+            # Get proxy from server (Dynamic Port)
             proxy = self.core.get_proxy_and_deduct()
             if not proxy:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
@@ -335,7 +333,7 @@ class SaaSApp:
 
             print(f"{Color.CYAN}[*] Credits left: {self.core.credits}{Color.RESET}")
 
-            # Start browser
+            # Start browser with proxy
             browser = StealthBrowser(proxy)
             if browser.start():
                 success = messenger_login_trigger(browser.driver, phone)
