@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.8 - Facebook Forgot Password OTP Sender
-Detailed Browser Logging
+Ridol SaaS Tool v14.9 - Facebook Forgot Password OTP Sender
+Updated OTP Sender with Multiple Selectors
 Author: Ridol Islam
 """
 
@@ -29,7 +29,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.8'
+APP_VERSION = 'v14.9'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -425,7 +425,7 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FORGOT PASSWORD OTP SENDER (Detailed Logs) ====================
+# ==================== FORGOT PASSWORD OTP SENDER ====================
 def forgot_password_otp_sender(driver, phone_number):
     try:
         from selenium.webdriver.common.by import By
@@ -435,104 +435,117 @@ def forgot_password_otp_sender(driver, phone_number):
         
         print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
         
-        # Step 1: Open Forgot Password Page
-        print(f"{Color.CYAN}[*] Step 1: Opening Facebook Forgot Password page...{Color.RESET}")
+        # ১. ফরগট পাসওয়ার্ড পেজে যাওয়া
+        print(f"{Color.CYAN}[*] Opening Forgot Password page...{Color.RESET}")
         driver.get("https://m.facebook.com/login/identify/")
-        time.sleep(2)
-        print(f"{Color.GREEN}[✓] Page loaded: https://m.facebook.com/login/identify/{Color.RESET}")
+        time.sleep(3)
+
+        # ২. ফোন নম্বর ইনপুট ফিল্ড খুঁজে বের করা (একাধিক পদ্ধতিতে চেষ্টা)
+        input_selectors = [
+            (By.NAME, "email"),
+            (By.ID, "identify_email"),
+            (By.XPATH, "//input[@type='text']"),
+            (By.XPATH, "//input[@placeholder='Mobile number']")
+        ]
         
-        # Step 2: Find Phone Field
-        print(f"{Color.CYAN}[*] Step 2: Looking for phone/email field...{Color.RESET}")
-        try:
-            phone_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "email"))
-            )
-            print(f"{Color.GREEN}[✓] Phone field found{Color.RESET}")
-        except:
+        phone_field = None
+        for selector in input_selectors:
+            try:
+                phone_field = WebDriverWait(driver, 5).until(EC.presence_of_element_located(selector))
+                if phone_field: break
+            except: continue
+
+        if phone_field:
+            phone_field.clear()
+            phone_field.send_keys(phone_number)
+            print(f"{Color.GREEN}[✓] Phone number entered{Color.RESET}")
+        else:
             print(f"{Color.RED}[✗] Phone field not found!{Color.RESET}")
             return False
+
+        # ৩. সার্চ/কন্টিনিউ বাটনে ক্লিক (নাম্বার বসানোর পর)
+        submit_selectors = [
+            (By.NAME, "did_submit"),
+            (By.ID, "did_submit"),
+            (By.XPATH, "//button[@type='submit']"),
+            (By.XPATH, "//button[contains(text(), 'Search')]"),
+            (By.XPATH, "//button[contains(text(), 'Continue')]")
+        ]
         
-        # Step 3: Enter Phone Number
-        print(f"{Color.CYAN}[*] Step 3: Entering phone number: {phone_number}{Color.RESET}")
-        phone_field.clear()
-        phone_field.send_keys(phone_number)
-        time.sleep(1)
-        print(f"{Color.GREEN}[✓] Phone number entered{Color.RESET}")
-        
-        # Step 4: Click Continue
-        print(f"{Color.CYAN}[*] Step 4: Looking for Continue button...{Color.RESET}")
-        try:
-            continue_btn = driver.find_element(By.NAME, "did_submit")
-            print(f"{Color.GREEN}[✓] Continue button found{Color.RESET}")
-        except:
-            print(f"{Color.RED}[✗] Continue button not found!{Color.RESET}")
+        clicked = False
+        for selector in submit_selectors:
+            try:
+                btn = driver.find_element(*selector)
+                btn.click()
+                clicked = True
+                print(f"{Color.GREEN}[✓] Search clicked{Color.RESET}")
+                break
+            except: continue
+            
+        if not clicked: 
+            print(f"{Color.RED}[✗] Submit button not found!{Color.RESET}")
             return False
-        
-        print(f"{Color.CYAN}[*] Step 5: Clicking Continue...{Color.RESET}")
-        continue_btn.click()
         time.sleep(3)
-        print(f"{Color.GREEN}[✓] Continue clicked{Color.RESET}")
-        
-        # Step 6: Check for Account
-        print(f"{Color.CYAN}[*] Step 6: Checking for account...{Color.RESET}")
+
+        # ৪. যদি একাধিক অ্যাকাউন্ট শো করে (Choose your account)
         try:
-            account_select = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'account')]"))
-            )
-            print(f"{Color.GREEN}[✓] Account found for: {phone_number}{Color.RESET}")
-        except TimeoutException:
-            print(f"{Color.YELLOW}[!] No account found for: {phone_number}{Color.RESET}")
-            return False
+            # স্ক্রিনশট অনুযায়ী প্রোফাইল লিস্ট চেক
+            accounts = driver.find_elements(By.XPATH, "//ul/li//a | //div[contains(@role, 'button')]")
+            if accounts:
+                accounts[0].click() # প্রথম অ্যাকাউন্টটি সিলেক্ট করা হলো
+                print(f"{Color.GREEN}[✓] Profile selected from list{Color.RESET}")
+                time.sleep(2)
+        except: 
+            pass
+
+        # ৫. SMS অপশন খুঁজে সিলেক্ট করা (Get code via SMS)
+        print(f"{Color.CYAN}[*] Looking for SMS option...{Color.RESET}")
+        sms_selectors = [
+            "//div[contains(text(), 'SMS')]",
+            "//span[contains(text(), 'SMS')]",
+            "//label[contains(., 'SMS')]",
+            "//div[contains(text(), 'code via SMS')]"
+        ]
         
-        # Step 7: Select Account
-        print(f"{Color.CYAN}[*] Step 7: Selecting account...{Color.RESET}")
-        try:
-            account_btn = driver.find_element(By.XPATH, "//div[contains(@class, 'account')]//a")
-            account_btn.click()
-            time.sleep(2)
-            print(f"{Color.GREEN}[✓] Account selected{Color.RESET}")
-        except:
-            print(f"{Color.YELLOW}[!] Could not select account{Color.RESET}")
-        
-        # Step 8: Find SMS Option
-        print(f"{Color.CYAN}[*] Step 8: Looking for SMS option...{Color.RESET}")
-        try:
-            sms_option = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), 'SMS')]"))
-            )
-            print(f"{Color.GREEN}[✓] SMS option found{Color.RESET}")
-        except TimeoutException:
-            print(f"{Color.YELLOW}[!] SMS option not found, checking alternatives...{Color.RESET}")
-            
-            # Check for countdown
+        sms_option = None
+        for xpath in sms_selectors:
             try:
-                countdown = driver.find_element(By.XPATH, "//div[contains(text(), 'minute')]")
-                if countdown:
-                    print(f"{Color.YELLOW}[!] Countdown detected! Skipping...{Color.RESET}")
-                    return False
-            except:
-                pass
-            
-            # Check for WhatsApp
+                sms_option = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+                if sms_option:
+                    sms_option.click()
+                    print(f"{Color.GREEN}[✓] SMS option selected{Color.RESET}")
+                    break
+            except: 
+                continue
+
+        # ৬. চূড়ান্ত কন্টিনিউ বাটন (OTP পাঠানোর জন্য)
+        final_continue_selectors = [
+            (By.NAME, "reset_action"),
+            (By.XPATH, "//button[@type='submit' and contains(., 'Continue')]"),
+            (By.XPATH, "//button[contains(., 'Continue')]")
+        ]
+
+        sent = False
+        for selector in final_continue_selectors:
             try:
-                whatsapp = driver.find_element(By.XPATH, "//div[contains(text(), 'WhatsApp')]")
-                if whatsapp:
-                    print(f"{Color.YELLOW}[!] Only WhatsApp/Email available. Skipping...{Color.RESET}")
-                    return False
-            except:
-                pass
-            
-            print(f"{Color.RED}[✗] SMS option not available{Color.RESET}")
+                final_btn = driver.find_element(*selector)
+                final_btn.click()
+                sent = True
+                print(f"{Color.GREEN}[+] OTP Triggered Successfully!{Color.RESET}")
+                break
+            except: 
+                continue
+
+        if sent:
+            time.sleep(5) # ওটিপি রিকোয়েস্ট কমপ্লিট হওয়ার জন্য সময়
+            return True
+        else:
+            # যদি সরাসরি ওটিপি পেজে চলে যায় তবে চেক
+            if "checkpoint" in driver.current_url or "confirm" in driver.current_url:
+                print(f"{Color.GREEN}[+] Already on OTP confirmation page{Color.RESET}")
+                return True
+            print(f"{Color.RED}[✗] Could not trigger OTP{Color.RESET}")
             return False
-        
-        # Step 9: Click SMS Option
-        print(f"{Color.CYAN}[*] Step 9: Clicking SMS option...{Color.RESET}")
-        sms_option.click()
-        time.sleep(2)
-        print(f"{Color.GREEN}[✓] SMS option clicked{Color.RESET}")
-        
-        print(f"{Color.GREEN}[+] OTP sent successfully to: {phone_number}{Color.RESET}")
-        return True
             
     except Exception as e:
         print(f"{Color.RED}[-] Error: {e}{Color.RESET}")
