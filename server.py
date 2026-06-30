@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool - Professional License Server v9.8
+Ridol FB Tool - Professional License Server v9.9
 Backend: Flask, Database: PostgreSQL (Render.com Optimized)
 Author: Ridol Islam
 """
@@ -179,7 +179,7 @@ def get_cached_proxy(country):
     """Check if we have a working cached proxy"""
     conn = get_db()
     if not conn:
-        return None
+        return None, None
     try:
         c = conn.cursor(cursor_factory=RealDictCursor)
         c.execute('''
@@ -192,9 +192,9 @@ def get_cached_proxy(country):
         conn.close()
         if res:
             return res['proxy_ip'], res['proxy_port']
-        return None
+        return None, None
     except:
-        return None
+        return None, None
 
 def save_proxy_to_cache(ip, port, country):
     """Save proxy to cache"""
@@ -236,7 +236,7 @@ ADMIN_UI = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ridol Admin Panel v9.8</title>
+    <title>Ridol Admin Panel v9.9</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -352,7 +352,7 @@ ADMIN_UI = '''
         <div class="header">
             <div>
                 <h1>⚡ Ridol FB Tool Admin</h1>
-                <div class="subtitle">License & Credit Management System v9.8</div>
+                <div class="subtitle">License & Credit Management System v9.9</div>
             </div>
             <div style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
                 <span style="padding:8px 16px; border-radius:20px; font-size:12px; font-weight:bold; background:#00c85320; color:#00c853; border:1px solid #00c85340;">● Server Online</span>
@@ -459,7 +459,7 @@ def home():
     return jsonify({
         'status': 'online', 
         'service': 'Ridol FB Tool License Server',
-        'version': '9.8',
+        'version': '9.9',
         'database': 'connected',
         'timestamp': datetime.now().isoformat()
     })
@@ -581,9 +581,6 @@ def api_get_proxy():
     """
     Get IP from Cliproxy API and deduct credit
     Cliproxy Response Format: [{"host":"107.151.249.77","port":"29264"}]
-    
-    Request: {"license_key": "RIDOL-XXXX", "country": "BD"}
-    Response: {"success": true, "ip": "107.151.249.77", "port": 29264, "remaining_credits": 999}
     """
     start_time = time.time()
     try:
@@ -592,7 +589,7 @@ def api_get_proxy():
             return jsonify({'success': False, 'error': 'No data provided'}), 400
         
         license_key = data.get('license_key', '').strip().upper()
-        country = data.get('country', 'Rand').upper()
+        country = data.get('country', 'Rand').lower()
         
         if not license_key:
             return jsonify({'success': False, 'error': 'License key required'}), 400
@@ -632,7 +629,6 @@ def api_get_proxy():
         
         # ============ FETCH FROM CLIPROXY ============
         # Cliproxy API Call - সঠিক ফরম্যাট
-        # format=n মানে plain text, type=json মানে JSON রেসপন্স
         api_url = f"{CLIPROXY_API_URL}?region={country}&num=1&format=n&type=json"
         print(f"[*] Calling Cliproxy: {api_url}")
         
@@ -769,7 +765,7 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     
     print("="*60)
-    print("🚀 RIDOL FB TOOL - LICENSE SERVER v9.8")
+    print("🚀 RIDOL FB TOOL - LICENSE SERVER v9.9")
     print("="*60)
     print(f"✅ Database: PostgreSQL")
     print(f"🔐 Admin Password: {ADMIN_PASSWORD}")
