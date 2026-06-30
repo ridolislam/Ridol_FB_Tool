@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.3 - Facebook Forgot Password OTP Sender
-Excel File Support - Read numbers from .xlsx
+Ridol SaaS Tool v14.4 - Facebook Forgot Password OTP Sender
+Direct Excel File Path Support
 Author: Ridol Islam
 """
 
@@ -28,7 +28,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.3'
+APP_VERSION = 'v14.4'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -71,11 +71,10 @@ def get_country_from_phone(phone_number):
     """Phone number থেকে Country Code বের করা"""
     phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
     
-    # সবচেয়ে বড় কোড আগে চেক করি
     for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
         if phone.startswith(code):
             return COUNTRY_CODES[code]
-    return 'XX'  # Unknown
+    return 'XX'
 
 # ==================== EXCEL READER ====================
 def read_numbers_from_excel(file_path):
@@ -85,14 +84,11 @@ def read_numbers_from_excel(file_path):
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
         
-        for row in sheet.iter_rows(min_row=2, values=True):  # Skip header
+        for row in sheet.iter_rows(min_row=2, values=True):
             if row and len(row) >= 2:
-                # কলাম B তে নাম্বার আছে (index 1)
-                number = row[1]
+                number = row[1]  # কলাম B
                 if number:
-                    # নাম্বার স্ট্রিং এ কনভার্ট
                     number_str = str(number).strip()
-                    # '+' যোগ করা
                     if not number_str.startswith('+'):
                         number_str = '+' + number_str
                     numbers.append(number_str)
@@ -204,7 +200,7 @@ class CoreManager:
     def __init__(self):
         self.config = self.load_config()
         self.license_key = self.config.get('license_key', '')
-        self.data_dir = self.config.get('data_dir', SCRIPT_DIR)
+        self.excel_file = self.config.get('excel_file', '')
         self.credits = 0
         self.user_id = "None"
         self.is_valid = False
@@ -219,7 +215,7 @@ class CoreManager:
         with open(CONFIG_FILE, 'w') as f:
             json.dump({
                 'license_key': self.license_key,
-                'data_dir': self.data_dir
+                'excel_file': self.excel_file
             }, f, indent=2)
 
     def verify_license(self, key=None):
@@ -241,7 +237,6 @@ class CoreManager:
         return False
 
     def get_proxy_and_deduct(self, country='Rand'):
-        """সার্ভার থেকে দেশ অনুযায়ী Proxy নেওয়া"""
         try:
             print(f"{Color.DIM}[*] Requesting proxy for country: {country}{Color.RESET}")
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
@@ -249,14 +244,11 @@ class CoreManager:
                 'country': country
             }, timeout=20)
             
-            print(f"{Color.DIM}[*] Server response status: {resp.status_code}{Color.RESET}")
-            
             if resp.status_code != 200:
                 print(f"{Color.RED}[-] Server error: {resp.status_code}{Color.RESET}")
                 return None
             
             data = resp.json()
-            print(f"{Color.DIM}[*] Server response: {data}{Color.RESET}")
             
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
@@ -359,9 +351,6 @@ class StealthBrowser:
 
 # ==================== FORGOT PASSWORD OTP SENDER ====================
 def forgot_password_otp_sender(driver, phone_number):
-    """
-    Facebook Forgot Password - OTP Sender
-    """
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
@@ -473,6 +462,7 @@ class SaaSApp:
 
         print(f"  {Color.CYAN}│{Color.RESET}  Browser : {br_status}  | License : {lic_status}")
         print(f"  {Color.CYAN}│{Color.RESET}  Credits : {Color.GOLD}{self.core.credits}{Color.RESET}  | Server  : {srv_status}")
+        print(f"  {Color.CYAN}│{Color.RESET}  Excel File : {Color.DIM}{self.core.excel_file or 'Not set'}{Color.RESET}{Color.CYAN}  │{Color.RESET}")
         print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
         
         if CHROMEDRIVER_PATH:
@@ -490,17 +480,20 @@ class SaaSApp:
             time.sleep(3)
             return
         
-        # Excel ফাইল চেক
-        excel_file = os.path.join(self.core.data_dir, 'My Numbers Sheet (1).xlsx')
-        if not os.path.exists(excel_file):
-            print(f"\n{Color.RED}[-] Excel file not found: {excel_file}{Color.RESET}")
-            print(f"{Color.YELLOW}[*] Please place 'My Numbers Sheet (1).xlsx' in data folder{Color.RESET}")
+        if not self.core.excel_file:
+            print(f"\n{Color.RED}[-] No Excel file path set!{Color.RESET}")
+            print(f"{Color.YELLOW}[*] Please set Excel file path in Data Folder Setup{Color.RESET}")
             time.sleep(3)
             return
         
-        # Excel থেকে নাম্বার পড়া
+        if not os.path.exists(self.core.excel_file):
+            print(f"\n{Color.RED}[-] Excel file not found: {self.core.excel_file}{Color.RESET}")
+            print(f"{Color.YELLOW}[*] Please check the file path{Color.RESET}")
+            time.sleep(3)
+            return
+        
         print(f"{Color.CYAN}[*] Reading numbers from Excel...{Color.RESET}")
-        numbers = read_numbers_from_excel(excel_file)
+        numbers = read_numbers_from_excel(self.core.excel_file)
         
         if not numbers:
             print(f"\n{Color.RED}[-] No numbers found in Excel!{Color.RESET}")
@@ -513,7 +506,6 @@ class SaaSApp:
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
-        print(f"{Color.YELLOW}[!] Country detection from phone number{Color.RESET}")
         print("-" * 50)
 
         success_count = 0
@@ -525,11 +517,9 @@ class SaaSApp:
                 print(f"\n{Color.RED}[!] Insufficient Credits!{Color.RESET}")
                 break
             
-            # দেশ ডিটেক্ট
             country = get_country_from_phone(phone)
             print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Phone: {phone} | Country: {country}{Color.RESET}")
             
-            # দেশ অনুযায়ী Proxy Request
             proxy_data = self.core.get_proxy_and_deduct(country)
             if not proxy_data:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
@@ -580,12 +570,21 @@ class SaaSApp:
             
             if choice == '1': self.run_otp_sender()
             elif choice == '2':
-                path = input(f"\n{Color.CYAN} Enter Data Folder Path: {Color.RESET}").strip()
-                if os.path.exists(path):
-                    self.core.data_dir = path
-                    self.core.save_config()
-                    print(f"{Color.GREEN}[+] Path Saved!{Color.RESET}")
-                time.sleep(1)
+                print(f"\n{Color.CYAN}[*] Enter the FULL path to your Excel file{Color.RESET}")
+                print(f"{Color.DIM}Example: /storage/emulated/0/Download/My Numbers Sheet (1).xlsx{Color.RESET}")
+                path = input(f"\n{Color.CYAN} Enter Excel File Path: {Color.RESET}").strip()
+                if path:
+                    # Remove quotes if any
+                    path = path.strip('"').strip("'")
+                    if os.path.exists(path):
+                        self.core.excel_file = path
+                        self.core.save_config()
+                        print(f"{Color.GREEN}[+] Excel file path saved!{Color.RESET}")
+                        print(f"{Color.CYAN}[+] File: {path}{Color.RESET}")
+                    else:
+                        print(f"{Color.RED}[-] File not found: {path}{Color.RESET}")
+                        print(f"{Color.YELLOW}[!] Please check the path and try again{Color.RESET}")
+                time.sleep(2)
             elif choice == '3':
                 key = input(f"\n{Color.CYAN} Enter License Key: {Color.RESET}").strip().upper()
                 if self.core.verify_license(key): 
