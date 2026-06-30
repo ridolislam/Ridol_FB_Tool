@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.1 - Facebook Signup OTP Sender
-Fixed URL: m.facebook.com/reg
+Ridol SaaS Tool v14.3 - Facebook Forgot Password OTP Sender
+Excel File Support - Read numbers from .xlsx
 Author: Ridol Islam
 """
 
@@ -16,11 +16,19 @@ import requests
 from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 
+# ==================== INSTALL OPENPYXL IF NOT AVAILABLE ====================
+try:
+    import openpyxl
+except ImportError:
+    print("[*] Installing openpyxl...")
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'openpyxl'], capture_output=True)
+    import openpyxl
+
 # ==================== CONFIGURATION ====================
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.1'
+APP_VERSION = 'v14.3'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -35,6 +43,65 @@ class Color:
     RESET = '\033[0m'
     GOLD = '\033[38;5;214m'
     PINK = '\033[38;5;206m'
+
+# ==================== COUNTRY CODES ====================
+COUNTRY_CODES = {
+    '228': 'TG',  # Togo
+    '1': 'US',    # USA/Canada
+    '44': 'GB',   # UK
+    '91': 'IN',   # India
+    '92': 'PK',   # Pakistan
+    '880': 'BD',  # Bangladesh
+    '62': 'ID',   # Indonesia
+    '60': 'MY',   # Malaysia
+    '65': 'SG',   # Singapore
+    '63': 'PH',   # Philippines
+    '66': 'TH',   # Thailand
+    '84': 'VN',   # Vietnam
+    '81': 'JP',   # Japan
+    '82': 'KR',   # South Korea
+    '49': 'DE',   # Germany
+    '33': 'FR',   # France
+    '39': 'IT',   # Italy
+    '7': 'RU',    # Russia
+    '55': 'BR',   # Brazil
+}
+
+def get_country_from_phone(phone_number):
+    """Phone number থেকে Country Code বের করা"""
+    phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
+    
+    # সবচেয়ে বড় কোড আগে চেক করি
+    for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
+        if phone.startswith(code):
+            return COUNTRY_CODES[code]
+    return 'XX'  # Unknown
+
+# ==================== EXCEL READER ====================
+def read_numbers_from_excel(file_path):
+    """Excel ফাইল থেকে নাম্বার পড়া"""
+    numbers = []
+    try:
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        sheet = wb.active
+        
+        for row in sheet.iter_rows(min_row=2, values=True):  # Skip header
+            if row and len(row) >= 2:
+                # কলাম B তে নাম্বার আছে (index 1)
+                number = row[1]
+                if number:
+                    # নাম্বার স্ট্রিং এ কনভার্ট
+                    number_str = str(number).strip()
+                    # '+' যোগ করা
+                    if not number_str.startswith('+'):
+                        number_str = '+' + number_str
+                    numbers.append(number_str)
+        
+        wb.close()
+        return numbers
+    except Exception as e:
+        print(f"{Color.RED}[-] Excel read error: {e}{Color.RESET}")
+        return []
 
 # ==================== FIND CHROMEDRIVER ====================
 def get_chromedriver_path():
@@ -60,67 +127,8 @@ def get_chromedriver_path():
 
 CHROMEDRIVER_PATH = get_chromedriver_path()
 
-# ==================== DATA GENERATOR ====================
-class DataGenerator:
-    """Generate random user data for Facebook registration"""
-    
-    FIRST_NAMES = {
-        'US': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles'],
-        'BD': ['Mohammad', 'Abdullah', 'Rafiq', 'Shahid', 'Kamal', 'Jamal', 'Rahim', 'Karim', 'Hasan', 'Ali'],
-        'IN': ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Pranav', 'Dhruv', 'Aryan', 'Reyansh'],
-        'GB': ['Oliver', 'George', 'Harry', 'Jack', 'Jacob', 'Charlie', 'Thomas', 'James', 'William', 'Muhammad'],
-        'XX': ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Hayden', 'Harper']
-    }
-    
-    LAST_NAMES = {
-        'US': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'],
-        'BD': ['Rahman', 'Ahmed', 'Islam', 'Hossain', 'Ali', 'Khan', 'Haque', 'Sarkar', 'Mia', 'Pramanik'],
-        'IN': ['Sharma', 'Verma', 'Patel', 'Singh', 'Kumar', 'Gupta', 'Joshi', 'Gandhi', 'Prasad', 'Sinha'],
-        'GB': ['Smith', 'Jones', 'Williams', 'Taylor', 'Brown', 'Davies', 'Evans', 'Thomas', 'Johnson', 'Roberts'],
-        'XX': ['Chen', 'Singh', 'Garcia', 'Wang', 'Perez', 'Nguyen', 'Patel', 'Smith', 'Jones', 'Williams']
-    }
-    
-    @classmethod
-    def get_random_name(cls, country_code):
-        first_list = cls.FIRST_NAMES.get(country_code, cls.FIRST_NAMES['XX'])
-        last_list = cls.LAST_NAMES.get(country_code, cls.LAST_NAMES['XX'])
-        return random.choice(first_list), random.choice(last_list)
-    
-    @classmethod
-    def get_random_dob(cls):
-        day = random.randint(1, 28)
-        month = random.randint(1, 12)
-        year = random.randint(1992, 2005)
-        return day, month, year
-    
-    @classmethod
-    def get_random_gender(cls):
-        return random.choice(['Male', 'Female'])
-    
-    @classmethod
-    def get_random_password(cls):
-        length = random.randint(8, 12)
-        chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
-        return ''.join(random.choices(chars, k=length))
-    
-    @classmethod
-    def get_country_from_phone(cls, phone_number):
-        phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
-        country_codes = {
-            '62': 'ID', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
-            '880': 'BD', '86': 'CN', '81': 'JP', '49': 'DE', '33': 'FR',
-            '39': 'IT', '7': 'RU', '55': 'BR', '82': 'KR', '60': 'MY',
-            '65': 'SG', '63': 'PH', '66': 'TH', '84': 'VN'
-        }
-        for code in sorted(country_codes.keys(), key=len, reverse=True):
-            if phone.startswith(code):
-                return country_codes[code]
-        return 'XX'
-
 # ==================== PROXY EXTENSION CREATOR ====================
 def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, folder_path):
-    """Chrome Proxy Authentication Extension তৈরি করা"""
-    
     manifest_json = """
     {
         "version": "1.0.0",
@@ -232,20 +240,19 @@ class CoreManager:
             print(f"{Color.RED}[-] License verify error: {e}{Color.RESET}")
         return False
 
-    def get_proxy_and_deduct(self):
-        """সার্ভার থেকে Residential Proxy নেওয়া"""
+    def get_proxy_and_deduct(self, country='Rand'):
+        """সার্ভার থেকে দেশ অনুযায়ী Proxy নেওয়া"""
         try:
-            print(f"{Color.DIM}[*] Requesting proxy from server...{Color.RESET}")
+            print(f"{Color.DIM}[*] Requesting proxy for country: {country}{Color.RESET}")
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
                 'license_key': self.license_key,
-                'country': 'Rand'
+                'country': country
             }, timeout=20)
             
             print(f"{Color.DIM}[*] Server response status: {resp.status_code}{Color.RESET}")
             
             if resp.status_code != 200:
                 print(f"{Color.RED}[-] Server error: {resp.status_code}{Color.RESET}")
-                print(f"{Color.YELLOW}[!] Response: {resp.text[:200]}{Color.RESET}")
                 return None
             
             data = resp.json()
@@ -279,13 +286,6 @@ class CoreManager:
                 print(f"{Color.RED}[-] Server error: {error}{Color.RESET}")
                 return None
                 
-        except requests.exceptions.Timeout:
-            print(f"{Color.RED}[-] Request timeout! Server might be down.{Color.RESET}")
-            return None
-        except requests.exceptions.ConnectionError:
-            print(f"{Color.RED}[-] Cannot connect to server!{Color.RESET}")
-            print(f"{Color.YELLOW}[!] Server URL: {SERVER_URL}{Color.RESET}")
-            return None
         except Exception as e:
             print(f"{Color.RED}[-] Proxy error: {e}{Color.RESET}")
             return None
@@ -315,7 +315,6 @@ class StealthBrowser:
             options.add_argument('--disable-web-security')
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
             
             if self.proxy_data:
                 print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
@@ -331,8 +330,7 @@ class StealthBrowser:
             
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
             ]
             options.add_argument(f'user-agent={random.choice(ua_list)}')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -359,122 +357,87 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FACEBOOK SIGNUP OTP SENDER ====================
-def facebook_signup_otp_sender(driver, phone_number):
+# ==================== FORGOT PASSWORD OTP SENDER ====================
+def forgot_password_otp_sender(driver, phone_number):
     """
-    Facebook Signup - OTP Sender (মোবাইল ভার্সন)
-    URL: https://m.facebook.com/reg/
+    Facebook Forgot Password - OTP Sender
     """
     try:
         from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait, Select
+        from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException
         
-        # 1. দেশ ডিটেক্ট
-        country_code = DataGenerator.get_country_from_phone(phone_number)
-        print(f"{Color.CYAN}[*] Country detected: {country_code}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
         
-        # 2. র্যান্ডম ডাটা জেনারেট
-        first_name, last_name = DataGenerator.get_random_name(country_code)
-        day, month, year = DataGenerator.get_random_dob()
-        gender = DataGenerator.get_random_gender()
-        password = DataGenerator.get_random_password()
-        
-        print(f"{Color.CYAN}[*] Name: {first_name} {last_name}{Color.RESET}")
-        print(f"{Color.CYAN}[*] DOB: {day}/{month}/{year}{Color.RESET}")
-        print(f"{Color.CYAN}[*] Gender: {gender}{Color.RESET}")
-        print(f"{Color.CYAN}[*] Phone: {phone_number}{Color.RESET}")
-        print(f"{Color.CYAN}[*] Password: {password}{Color.RESET}")
-        
-        # 3. Facebook Signup Page (মোবাইল ভার্সন)
-        print(f"{Color.CYAN}[*] Opening Facebook Signup (Mobile)...{Color.RESET}")
-        driver.get("https://m.facebook.com/reg/")
+        print(f"{Color.CYAN}[*] Opening Facebook Forgot Password...{Color.RESET}")
+        driver.get("https://m.facebook.com/login/identify/")
         time.sleep(3)
         
-        # 4. Fill First Name
-        try:
-            first_name_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "firstname"))
-            )
-            first_name_field.send_keys(first_name)
-            time.sleep(0.5)
-            print(f"{Color.CYAN}[*] First name filled{Color.RESET}")
-        except:
-            print(f"{Color.YELLOW}[!] First name field not found{Color.RESET}")
-        
-        # 5. Fill Last Name
-        try:
-            last_name_field = driver.find_element(By.NAME, "lastname")
-            last_name_field.send_keys(last_name)
-            time.sleep(0.5)
-            print(f"{Color.CYAN}[*] Last name filled{Color.RESET}")
-        except:
-            print(f"{Color.YELLOW}[!] Last name field not found{Color.RESET}")
-        
-        # 6. Select Day
-        try:
-            day_select = Select(driver.find_element(By.NAME, "birthday_day"))
-            day_select.select_by_value(str(day))
-            time.sleep(0.3)
-        except:
-            pass
-        
-        # 7. Select Month
-        try:
-            month_select = Select(driver.find_element(By.NAME, "birthday_month"))
-            month_select.select_by_value(str(month))
-            time.sleep(0.3)
-        except:
-            pass
-        
-        # 8. Select Year
-        try:
-            year_select = Select(driver.find_element(By.NAME, "birthday_year"))
-            year_select.select_by_value(str(year))
-            time.sleep(0.3)
-        except:
-            pass
-        
-        # 9. Select Gender (মোবাইল ভার্সনে ভিন্ন হতে পারে)
-        try:
-            gender_value = '2' if gender == 'Female' else '1'
-            gender_radio = driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]')
-            gender_radio.click()
-            time.sleep(0.5)
-            print(f"{Color.CYAN}[*] Gender selected{Color.RESET}")
-        except:
-            print(f"{Color.YELLOW}[!] Gender field not found{Color.RESET}")
-        
-        # 10. Fill Phone Number
         try:
             phone_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "reg_email__"))
+                EC.presence_of_element_located((By.NAME, "email"))
             )
+            phone_field.clear()
             phone_field.send_keys(phone_number)
-            time.sleep(0.5)
-            print(f"{Color.CYAN}[*] Phone number filled{Color.RESET}")
+            time.sleep(1)
+            print(f"{Color.CYAN}[*] Phone entered: {phone_number}{Color.RESET}")
         except:
             print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
             return False
         
-        # 11. Fill Password
         try:
-            password_field = driver.find_element(By.NAME, "reg_passwd__")
-            password_field.send_keys(password)
-            time.sleep(0.5)
-            print(f"{Color.CYAN}[*] Password filled{Color.RESET}")
-        except:
-            print(f"{Color.YELLOW}[!] Password field not found{Color.RESET}")
-        
-        # 12. Click Sign Up
-        try:
-            signup_btn = driver.find_element(By.NAME, "websubmit")
-            signup_btn.click()
+            continue_btn = driver.find_element(By.NAME, "did_submit")
+            continue_btn.click()
             time.sleep(3)
-            print(f"{Color.GREEN}[+] Signup submitted! OTP sent to: {phone_number}{Color.RESET}")
-            return True
+            print(f"{Color.CYAN}[*] Continue clicked{Color.RESET}")
         except:
-            print(f"{Color.RED}[-] Failed to click Sign Up{Color.RESET}")
+            print(f"{Color.RED}[-] Continue button not found{Color.RESET}")
+            return False
+        
+        try:
+            account_select = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'account')]"))
+            )
+            print(f"{Color.GREEN}[+] Account found for: {phone_number}{Color.RESET}")
+        except TimeoutException:
+            print(f"{Color.YELLOW}[!] No account found for: {phone_number}{Color.RESET}")
+            return False
+        
+        try:
+            account_btn = driver.find_element(By.XPATH, "//div[contains(@class, 'account')]//a")
+            account_btn.click()
+            time.sleep(2)
+            print(f"{Color.CYAN}[*] Account selected{Color.RESET}")
+        except:
+            print(f"{Color.YELLOW}[!] Could not select account{Color.RESET}")
+        
+        try:
+            sms_option = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), 'SMS')]"))
+            )
+            sms_option.click()
+            time.sleep(2)
+            print(f"{Color.GREEN}[+] SMS option selected! OTP sent to: {phone_number}{Color.RESET}")
+            return True
+        except TimeoutException:
+            try:
+                countdown = driver.find_element(By.XPATH, "//div[contains(text(), 'minute')]")
+                if countdown:
+                    print(f"{Color.YELLOW}[!] Countdown detected! Skipping...{Color.RESET}")
+                    return False
+            except:
+                pass
+            
+            try:
+                whatsapp = driver.find_element(By.XPATH, "//div[contains(text(), 'WhatsApp')]")
+                if whatsapp:
+                    print(f"{Color.YELLOW}[!] Only WhatsApp/Email available. Skipping...{Color.RESET}")
+                    return False
+            except:
+                pass
+            
+            print(f"{Color.RED}[-] SMS option not available{Color.RESET}")
             return False
             
     except Exception as e:
@@ -497,7 +460,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Facebook Signup OTP Sender (Mobile){Color.RESET}")
+        print(f"         {Color.PINK}Forgot Password OTP Sender (Excel){Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
@@ -527,24 +490,30 @@ class SaaSApp:
             time.sleep(3)
             return
         
-        data_file = os.path.join(self.core.data_dir, 'numbers.txt')
-        if not os.path.exists(data_file):
-            print(f"\n{Color.RED}[-] numbers.txt not found!{Color.RESET}")
-            time.sleep(2)
+        # Excel ফাইল চেক
+        excel_file = os.path.join(self.core.data_dir, 'My Numbers Sheet (1).xlsx')
+        if not os.path.exists(excel_file):
+            print(f"\n{Color.RED}[-] Excel file not found: {excel_file}{Color.RESET}")
+            print(f"{Color.YELLOW}[*] Please place 'My Numbers Sheet (1).xlsx' in data folder{Color.RESET}")
+            time.sleep(3)
             return
         
-        with open(data_file, 'r') as f:
-            numbers = [l.strip() for l in f if l.strip() and not l.startswith('#')]
+        # Excel থেকে নাম্বার পড়া
+        print(f"{Color.CYAN}[*] Reading numbers from Excel...{Color.RESET}")
+        numbers = read_numbers_from_excel(excel_file)
         
         if not numbers:
-            print(f"\n{Color.RED}[-] No numbers found!{Color.RESET}")
+            print(f"\n{Color.RED}[-] No numbers found in Excel!{Color.RESET}")
             time.sleep(2)
             return
+        
+        print(f"\n{Color.GREEN}[+] Found {len(numbers)} numbers in Excel{Color.RESET}")
+        print(f"{Color.CYAN}[+] Example: {numbers[0] if numbers else 'N/A'}{Color.RESET}")
         
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
-        print(f"{Color.YELLOW}[!] Proxy: Residential (Chrome Extension){Color.RESET}")
+        print(f"{Color.YELLOW}[!] Country detection from phone number{Color.RESET}")
         print("-" * 50)
 
         success_count = 0
@@ -556,9 +525,12 @@ class SaaSApp:
                 print(f"\n{Color.RED}[!] Insufficient Credits!{Color.RESET}")
                 break
             
-            print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Processing: {phone}{Color.RESET}")
+            # দেশ ডিটেক্ট
+            country = get_country_from_phone(phone)
+            print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Phone: {phone} | Country: {country}{Color.RESET}")
             
-            proxy_data = self.core.get_proxy_and_deduct()
+            # দেশ অনুযায়ী Proxy Request
+            proxy_data = self.core.get_proxy_and_deduct(country)
             if not proxy_data:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
                 no_proxy_count += 1
@@ -567,7 +539,7 @@ class SaaSApp:
 
             browser = StealthBrowser(proxy_data)
             if browser.start():
-                success = facebook_signup_otp_sender(browser.driver, phone)
+                success = forgot_password_otp_sender(browser.driver, phone)
                 if success:
                     success_count += 1
                     print(f"{Color.GREEN}[✓] OTP sent to: {phone}{Color.RESET}")
@@ -623,7 +595,7 @@ class SaaSApp:
                 time.sleep(2)
             elif choice == '4':
                 print(f"\n{Color.CYAN}[*] Installing Dependencies...{Color.RESET}")
-                subprocess.run("pkg update -y && pkg install -y tur-repo python chromium chromedriver && pip install --upgrade pip && pip install selenium requests", shell=True)
+                subprocess.run("pkg update -y && pkg install -y tur-repo python chromium chromedriver && pip install --upgrade pip && pip install selenium requests openpyxl", shell=True)
                 global CHROMEDRIVER_PATH
                 CHROMEDRIVER_PATH = get_chromedriver_path()
                 if CHROMEDRIVER_PATH:
