@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.5 - Facebook Forgot Password OTP Sender
-Auto Excel Detect + Country from Column A
+Ridol SaaS Tool v14.7 - Facebook Forgot Password OTP Sender
+Updated Excel Reader with Detailed Error Handling
 Author: Ridol Islam
 """
 
@@ -13,6 +13,7 @@ import random
 import subprocess
 import zipfile
 import requests
+import re
 from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 
@@ -28,7 +29,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.5'
+APP_VERSION = 'v14.7'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -68,7 +69,6 @@ COUNTRY_NAME_TO_CODE = {
 }
 
 def get_country_code_from_name(country_name):
-    """Country Name থেকে Country Code বের করা"""
     if not country_name:
         return 'XX'
     country_name = country_name.strip().upper()
@@ -78,7 +78,6 @@ def get_country_code_from_name(country_name):
     return 'XX'
 
 def get_country_from_phone(phone_number):
-    """Phone number থেকে Country Code বের করা"""
     phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
     country_codes = {
         '228': 'TG', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
@@ -91,73 +90,73 @@ def get_country_from_phone(phone_number):
             return country_codes[code]
     return 'XX'
 
-# ==================== EXCEL READER ====================
+# ==================== EXCEL READER (UPDATED) ====================
 def read_numbers_from_excel(file_path):
-    """
-    Excel ফাইল থেকে নাম্বার পড়া
-    - Column A: Country Name
-    - Column B: Phone Numbers (4th row থেকে শুরু)
-    """
     numbers = []
     try:
+        # ফাইলটি আসলে আছে কি না চেক
+        if not os.path.exists(file_path):
+            print(f"{Color.RED}[-] File not found at path: {file_path}{Color.RESET}")
+            return []
+
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
         
+        print(f"{Color.CYAN}[*] Sheet Name: {sheet.title}{Color.RESET}")
+        
         current_country = None
         
-        for row_idx, row in enumerate(sheet.iter_rows(min_row=1, values=False), 1):
-            if row and len(row) >= 2:
-                # Column A (index 0) - Country Name
-                country_cell = row[0]
-                country_name = country_cell.value if country_cell else None
+        # সব সারি চেক করা হচ্ছে
+        for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+            # Column A (index 0) - Country Name
+            country_val = row[0] if len(row) > 0 else None
+            # Column B (index 1) - Number
+            number_val = row[1] if len(row) > 1 else None
+            
+            if country_val and isinstance(country_val, str):
+                temp_country = re.sub(r'\d+', '', country_val).strip()
+                if temp_country:
+                    current_country = temp_country
+            
+            if number_val:
+                # নাম্বারকে টেক্সটে কনভার্ট
+                number_str = str(number_val).strip()
+                # সায়েন্টিফিক ফরম্যাট (যেমন 8.8E+12) হ্যান্ডেল করা
+                if 'E+' in number_str:
+                    number_str = "{:.0f}".format(float(number_val))
                 
-                # Column B (index 1) - Number
-                number_cell = row[1]
-                number = number_cell.value if number_cell else None
+                # শুধুমাত্র সংখ্যাগুলো নেওয়া
+                clean_number = re.sub(r'[^0-9]', '', number_str)
                 
-                # যদি Country Name পাওয়া যায় (শুধু মাত্র ১ম সারি থেকে)
-                if country_name and isinstance(country_name, str):
-                    country_name = country_name.strip()
-                    # টেক্সট clean করা
-                    country_name = re.sub(r'\d+', '', country_name).strip()
-                    if country_name:
-                        current_country = country_name
-                        print(f"{Color.DIM}[*] Country detected: {current_country}{Color.RESET}")
-                
-                # যদি নাম্বার পাওয়া যায় (৪র্থ সারি থেকে start)
-                if number and row_idx >= 4:
-                    try:
-                        # Number কে string এ convert
-                        if isinstance(number, (int, float)):
-                            number_str = str(int(number))
+                # কমপক্ষে ৭ ডিজিট হতে হবে (ভ্যালিড নাম্বারের জন্য)
+                if len(clean_number) >= 7:
+                    if not number_str.startswith('+'):
+                        # যদি শুরুতে ৮৮০ না থাকে এবং লোকাল নাম্বার হয়
+                        if clean_number.startswith('0'):
+                            # আপাতত কান্ট্রি কোড ছাড়া থাকলে XX থাকবে
+                            full_number = '+' + clean_number
                         else:
-                            number_str = str(number).strip()
-                        
-                        # Number valid কিনা চেক (কমপক্ষে 5 digits)
-                        if len(number_str) >= 5 and number_str.isdigit():
-                            # '+' যোগ করা
-                            if not number_str.startswith('+'):
-                                number_str = '+' + number_str
-                            
-                            # Country Code বের করা
-                            country_code = get_country_from_phone(number_str)
-                            
-                            # যদি Country Code না পাওয়া যায়, Column A থেকে নেওয়া
-                            if country_code == 'XX' and current_country:
-                                country_code = get_country_code_from_name(current_country)
-                            
-                            numbers.append({
-                                'number': number_str,
-                                'country': country_code,
-                                'country_name': current_country or 'Unknown'
-                            })
-                    except:
-                        pass
+                            full_number = '+' + clean_number
+                    else:
+                        full_number = number_str
+
+                    c_code = get_country_from_phone(full_number)
+                    if c_code == 'XX' and current_country:
+                        c_code = get_country_code_from_name(current_country)
+
+                    numbers.append({
+                        'number': full_number,
+                        'country': c_code,
+                        'country_name': current_country or 'Unknown'
+                    })
         
         wb.close()
+        print(f"{Color.GREEN}[+] Total numbers found: {len(numbers)}{Color.RESET}")
         return numbers
     except Exception as e:
-        print(f"{Color.RED}[-] Excel read error: {e}{Color.RESET}")
+        print(f"{Color.RED}[-] Excel detailed error: {str(e)}{Color.RESET}")
+        import traceback
+        traceback.print_exc()
         return []
 
 # ==================== FIND CHROMEDRIVER ====================
@@ -184,7 +183,7 @@ def get_chromedriver_path():
 
 CHROMEDRIVER_PATH = get_chromedriver_path()
 
-# ==================== FIND EXCEL FILE ====================
+# ==================== FIND EXCEL FILES ====================
 def find_excel_files():
     """Phone এ Excel ফাইল খুঁজে বের করা"""
     excel_files = []
@@ -196,13 +195,16 @@ def find_excel_files():
     
     for path in search_paths:
         if os.path.exists(path):
-            for root, dirs, files in os.walk(path):
-                for file in files:
-                    if file.endswith('.xlsx') or file.endswith('.xls'):
-                        if 'number' in file.lower() or 'sheet' in file.lower():
-                            excel_files.append(os.path.join(root, file))
-                if len(excel_files) >= 5:
-                    break
+            try:
+                for root, dirs, files in os.walk(path):
+                    for file in files:
+                        if file.endswith('.xlsx') or file.endswith('.xls'):
+                            if 'number' in file.lower() or 'sheet' in file.lower() or 'my' in file.lower():
+                                excel_files.append(os.path.join(root, file))
+                    if len(excel_files) >= 5:
+                        break
+            except:
+                pass
             if len(excel_files) >= 5:
                 break
     
@@ -663,7 +665,8 @@ class SaaSApp:
                 if excel_files:
                     print(f"\n{Color.GREEN}[+] Found {len(excel_files)} Excel files:{Color.RESET}")
                     for i, f in enumerate(excel_files, 1):
-                        print(f"  {Color.CYAN}[{i}]{Color.RESET} {f}")
+                        print(f"  {Color.CYAN}[{i}]{Color.RESET} {os.path.basename(f)}")
+                        print(f"      {Color.DIM}{f}{Color.RESET}")
                     
                     print(f"\n{Color.YELLOW}[0]{Color.RESET} Enter custom path")
                     choice_file = input(f"\n{Color.BOLD} Select file (number): {Color.RESET}").strip()
