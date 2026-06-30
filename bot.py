@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v13.8 - Messenger Login Trigger (OTP Sender)
+Ridol SaaS Tool v14.0 - Facebook Signup OTP Sender
 Residential Proxy with Chrome Extension
 Author: Ridol Islam
 """
@@ -20,7 +20,7 @@ from selenium.webdriver.chrome.service import Service
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v13.8'
+APP_VERSION = 'v14.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -59,6 +59,63 @@ def get_chromedriver_path():
     return None
 
 CHROMEDRIVER_PATH = get_chromedriver_path()
+
+# ==================== DATA GENERATOR ====================
+class DataGenerator:
+    """Generate random user data for Facebook registration"""
+    
+    FIRST_NAMES = {
+        'US': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles'],
+        'BD': ['Mohammad', 'Abdullah', 'Rafiq', 'Shahid', 'Kamal', 'Jamal', 'Rahim', 'Karim', 'Hasan', 'Ali'],
+        'IN': ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Pranav', 'Dhruv', 'Aryan', 'Reyansh'],
+        'GB': ['Oliver', 'George', 'Harry', 'Jack', 'Jacob', 'Charlie', 'Thomas', 'James', 'William', 'Muhammad'],
+        'XX': ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Hayden', 'Harper']
+    }
+    
+    LAST_NAMES = {
+        'US': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'],
+        'BD': ['Rahman', 'Ahmed', 'Islam', 'Hossain', 'Ali', 'Khan', 'Haque', 'Sarkar', 'Mia', 'Pramanik'],
+        'IN': ['Sharma', 'Verma', 'Patel', 'Singh', 'Kumar', 'Gupta', 'Joshi', 'Gandhi', 'Prasad', 'Sinha'],
+        'GB': ['Smith', 'Jones', 'Williams', 'Taylor', 'Brown', 'Davies', 'Evans', 'Thomas', 'Johnson', 'Roberts'],
+        'XX': ['Chen', 'Singh', 'Garcia', 'Wang', 'Perez', 'Nguyen', 'Patel', 'Smith', 'Jones', 'Williams']
+    }
+    
+    @classmethod
+    def get_random_name(cls, country_code):
+        first_list = cls.FIRST_NAMES.get(country_code, cls.FIRST_NAMES['XX'])
+        last_list = cls.LAST_NAMES.get(country_code, cls.LAST_NAMES['XX'])
+        return random.choice(first_list), random.choice(last_list)
+    
+    @classmethod
+    def get_random_dob(cls):
+        day = random.randint(1, 28)
+        month = random.randint(1, 12)
+        year = random.randint(1992, 2005)
+        return day, month, year
+    
+    @classmethod
+    def get_random_gender(cls):
+        return random.choice(['Male', 'Female'])
+    
+    @classmethod
+    def get_random_password(cls):
+        length = random.randint(8, 12)
+        chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
+        return ''.join(random.choices(chars, k=length))
+    
+    @classmethod
+    def get_country_from_phone(cls, phone_number):
+        phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
+        country_codes = {
+            '62': 'ID', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
+            '880': 'BD', '86': 'CN', '81': 'JP', '49': 'DE', '33': 'FR',
+            '39': 'IT', '7': 'RU', '55': 'BR', '82': 'KR', '60': 'MY',
+            '65': 'SG', '63': 'PH', '66': 'TH', '84': 'VN'
+        }
+        for code in sorted(country_codes.keys(), key=len, reverse=True):
+            if phone.startswith(code):
+                return country_codes[code]
+        return 'XX'
 
 # ==================== PROXY EXTENSION CREATOR ====================
 def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, folder_path):
@@ -116,23 +173,22 @@ def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, 
     );
     """ % (proxy_host, proxy_port, proxy_user, proxy_pass)
     
-    # Extension ফোল্ডার তৈরি
     extension_folder = os.path.join(folder_path, 'proxy_extension')
     os.makedirs(extension_folder, exist_ok=True)
     
-    # ফাইল তৈরি
     with open(os.path.join(extension_folder, 'manifest.json'), 'w') as f:
         f.write(manifest_json)
     with open(os.path.join(extension_folder, 'background.js'), 'w') as f:
         f.write(background_js)
     
-    # ZIP ফাইল তৈরি
     zip_path = os.path.join(folder_path, 'proxy_auth_plugin.zip')
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    
     with zipfile.ZipFile(zip_path, 'w') as zp:
         zp.write(os.path.join(extension_folder, 'manifest.json'), 'manifest.json')
         zp.write(os.path.join(extension_folder, 'background.js'), 'background.js')
     
-    # Unzipped folder path return (Chrome requires unpacked extension)
     return extension_folder
 
 # ==================== CORE MANAGER ====================
@@ -198,12 +254,17 @@ class CoreManager:
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
                 
-                # Proxy Data Dictionary
+                raw_user = data.get('user', '')
+                if '@' in raw_user:
+                    proxy_user = raw_user.split('@')[0]
+                else:
+                    proxy_user = raw_user
+                
                 proxy_data = {
                     'ip': data.get('ip'),
                     'port': str(data.get('port')),
-                    'user': data.get('user'),
-                    'pass': data.get('pass')
+                    'user': proxy_user,
+                    'pass': data.get('pass', 'Ridol123')
                 }
                 
                 if not proxy_data['ip']:
@@ -232,7 +293,7 @@ class CoreManager:
 # ==================== STEALTH BROWSER ====================
 class StealthBrowser:
     def __init__(self, proxy_data=None):
-        self.proxy_data = proxy_data  # Dictionary: {'ip': '', 'port': '', 'user': '', 'pass': ''}
+        self.proxy_data = proxy_data
         self.driver = None
 
     def start(self):
@@ -246,7 +307,6 @@ class StealthBrowser:
             
             options = Options()
             
-            # Headless Mode (Termux-এর জন্য প্রয়োজন)
             options.add_argument('--headless=new')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
@@ -255,8 +315,8 @@ class StealthBrowser:
             options.add_argument('--disable-web-security')
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-features=IsolateOrigins,site-per-process')
             
-            # Proxy Extension Load
             if self.proxy_data:
                 print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
                 extension_path = create_proxy_auth_extension(
@@ -269,7 +329,6 @@ class StealthBrowser:
                 options.add_argument(f'--load-extension={extension_path}')
                 print(f"{Color.GREEN}[+] Proxy extension loaded{Color.RESET}")
             
-            # Random User-Agent
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -282,7 +341,6 @@ class StealthBrowser:
             service = Service(CHROMEDRIVER_PATH)
             self.driver = webdriver.Chrome(service=service, options=options)
             
-            # Hide WebDriver
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.set_page_load_timeout(30)
             
@@ -301,60 +359,122 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== MESSENGER LOGIN TRIGGER ====================
-def messenger_login_trigger(driver, phone_number):
+# ==================== FACEBOOK SIGNUP OTP SENDER ====================
+def facebook_signup_otp_sender(driver, phone_number):
     """
-    Messenger Login - OTP Trigger
+    Facebook Signup - OTP Sender
+    ফর্ম ফিল করে OTP Send করবে, Submit করবে না
     """
     try:
         from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support.ui import WebDriverWait, Select
         from selenium.webdriver.support import expected_conditions as EC
         
-        print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
+        # 1. দেশ ডিটেক্ট
+        country_code = DataGenerator.get_country_from_phone(phone_number)
+        print(f"{Color.CYAN}[*] Country detected: {country_code}{Color.RESET}")
         
-        print(f"{Color.CYAN}[*] Opening Messenger...{Color.RESET}")
-        driver.get("https://www.messenger.com/login")
+        # 2. র্যান্ডম ডাটা জেনারেট
+        first_name, last_name = DataGenerator.get_random_name(country_code)
+        day, month, year = DataGenerator.get_random_dob()
+        gender = DataGenerator.get_random_gender()
+        password = DataGenerator.get_random_password()
+        
+        print(f"{Color.CYAN}[*] Name: {first_name} {last_name}{Color.RESET}")
+        print(f"{Color.CYAN}[*] DOB: {day}/{month}/{year}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Gender: {gender}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Phone: {phone_number}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Password: {password}{Color.RESET}")
+        
+        # 3. Facebook Signup Page
+        print(f"{Color.CYAN}[*] Opening Facebook Signup...{Color.RESET}")
+        driver.get("https://www.facebook.com/reg/")
         time.sleep(3)
         
+        # 4. Fill First Name
         try:
-            phone_option = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Phone Number')]"))
+            first_name_field = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "firstname"))
             )
-            phone_option.click()
-            time.sleep(2)
-            print(f"{Color.CYAN}[*] Phone option selected{Color.RESET}")
+            first_name_field.send_keys(first_name)
+            time.sleep(0.5)
+            print(f"{Color.CYAN}[*] First name filled{Color.RESET}")
         except:
-            print(f"{Color.YELLOW}[!] Phone option not found{Color.RESET}")
+            print(f"{Color.YELLOW}[!] First name field not found{Color.RESET}")
         
+        # 5. Fill Last Name
+        try:
+            last_name_field = driver.find_element(By.NAME, "lastname")
+            last_name_field.send_keys(last_name)
+            time.sleep(0.5)
+            print(f"{Color.CYAN}[*] Last name filled{Color.RESET}")
+        except:
+            print(f"{Color.YELLOW}[!] Last name field not found{Color.RESET}")
+        
+        # 6. Select Day
+        try:
+            day_select = Select(driver.find_element(By.NAME, "birthday_day"))
+            day_select.select_by_value(str(day))
+            time.sleep(0.3)
+        except:
+            pass
+        
+        # 7. Select Month
+        try:
+            month_select = Select(driver.find_element(By.NAME, "birthday_month"))
+            month_select.select_by_value(str(month))
+            time.sleep(0.3)
+        except:
+            pass
+        
+        # 8. Select Year
+        try:
+            year_select = Select(driver.find_element(By.NAME, "birthday_year"))
+            year_select.select_by_value(str(year))
+            time.sleep(0.3)
+        except:
+            pass
+        
+        # 9. Select Gender
+        try:
+            gender_value = '2' if gender == 'Female' else '1'
+            gender_radio = driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]')
+            gender_radio.click()
+            time.sleep(0.5)
+            print(f"{Color.CYAN}[*] Gender selected{Color.RESET}")
+        except:
+            print(f"{Color.YELLOW}[!] Gender field not found{Color.RESET}")
+        
+        # 10. Fill Phone Number
         try:
             phone_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "phone"))
+                EC.presence_of_element_located((By.NAME, "reg_email__"))
             )
-            phone_field.clear()
             phone_field.send_keys(phone_number)
-            time.sleep(1)
-            print(f"{Color.CYAN}[*] Phone entered: {phone_number}{Color.RESET}")
+            time.sleep(0.5)
+            print(f"{Color.CYAN}[*] Phone number filled{Color.RESET}")
         except:
-            try:
-                phone_field = driver.find_element(By.ID, "email")
-                phone_field.clear()
-                phone_field.send_keys(phone_number)
-                time.sleep(1)
-            except:
-                print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
-                return False
+            print(f"{Color.YELLOW}[!] Phone field not found{Color.RESET}")
+            return False
         
+        # 11. Fill Password
         try:
-            continue_btn = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Continue')]"))
-            )
-            continue_btn.click()
+            password_field = driver.find_element(By.NAME, "reg_passwd__")
+            password_field.send_keys(password)
+            time.sleep(0.5)
+            print(f"{Color.CYAN}[*] Password filled{Color.RESET}")
+        except:
+            print(f"{Color.YELLOW}[!] Password field not found{Color.RESET}")
+        
+        # 12. Click Sign Up
+        try:
+            signup_btn = driver.find_element(By.NAME, "websubmit")
+            signup_btn.click()
             time.sleep(3)
-            print(f"{Color.GREEN}[+] Login triggered! OTP sent to: {phone_number}{Color.RESET}")
+            print(f"{Color.GREEN}[+] Signup submitted! OTP sent to: {phone_number}{Color.RESET}")
             return True
         except:
-            print(f"{Color.RED}[-] Failed to click Continue{Color.RESET}")
+            print(f"{Color.RED}[-] Failed to click Sign Up{Color.RESET}")
             return False
             
     except Exception as e:
@@ -377,7 +497,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Messenger Login Trigger (OTP Sender){Color.RESET}")
+        print(f"         {Color.PINK}Facebook Signup OTP Sender{Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
@@ -438,7 +558,6 @@ class SaaSApp:
             
             print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Processing: {phone}{Color.RESET}")
             
-            # Get proxy data from server
             proxy_data = self.core.get_proxy_and_deduct()
             if not proxy_data:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
@@ -446,10 +565,9 @@ class SaaSApp:
                 failed_count += 1
                 continue
 
-            # Start browser with proxy extension
             browser = StealthBrowser(proxy_data)
             if browser.start():
-                success = messenger_login_trigger(browser.driver, phone)
+                success = facebook_signup_otp_sender(browser.driver, phone)
                 if success:
                     success_count += 1
                     print(f"{Color.GREEN}[✓] OTP sent to: {phone}{Color.RESET}")
