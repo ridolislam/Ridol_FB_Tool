@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.0 - Facebook Signup OTP Sender
-Residential Proxy with Chrome Extension
+Ridol SaaS Tool v14.1 - Facebook Signup OTP Sender
+Fixed URL: m.facebook.com/reg
 Author: Ridol Islam
 """
 
@@ -20,7 +20,7 @@ from selenium.webdriver.chrome.service import Service
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.0'
+APP_VERSION = 'v14.1'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -362,8 +362,8 @@ class StealthBrowser:
 # ==================== FACEBOOK SIGNUP OTP SENDER ====================
 def facebook_signup_otp_sender(driver, phone_number):
     """
-    Facebook Signup - OTP Sender
-    ফর্ম ফিল করে OTP Send করবে, Submit করবে না
+    Facebook Signup - OTP Sender (মোবাইল ভার্সন)
+    URL: https://m.facebook.com/reg/
     """
     try:
         from selenium.webdriver.common.by import By
@@ -386,9 +386,9 @@ def facebook_signup_otp_sender(driver, phone_number):
         print(f"{Color.CYAN}[*] Phone: {phone_number}{Color.RESET}")
         print(f"{Color.CYAN}[*] Password: {password}{Color.RESET}")
         
-        # 3. Facebook Signup Page
-        print(f"{Color.CYAN}[*] Opening Facebook Signup...{Color.RESET}")
-        driver.get("https://www.facebook.com/reg/")
+        # 3. Facebook Signup Page (মোবাইল ভার্সন)
+        print(f"{Color.CYAN}[*] Opening Facebook Signup (Mobile)...{Color.RESET}")
+        driver.get("https://m.facebook.com/reg/")
         time.sleep(3)
         
         # 4. Fill First Name
@@ -435,7 +435,7 @@ def facebook_signup_otp_sender(driver, phone_number):
         except:
             pass
         
-        # 9. Select Gender
+        # 9. Select Gender (মোবাইল ভার্সনে ভিন্ন হতে পারে)
         try:
             gender_value = '2' if gender == 'Female' else '1'
             gender_radio = driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]')
@@ -497,7 +497,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Facebook Signup OTP Sender{Color.RESET}")
+        print(f"         {Color.PINK}Facebook Signup OTP Sender (Mobile){Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
