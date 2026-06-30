@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol FB Tool - Professional License Server v9.9
+Ridol FB Tool - Professional License Server v10.2
 Backend: Flask, Database: PostgreSQL (Render.com Optimized)
 Author: Ridol Islam
 """
@@ -27,6 +27,10 @@ CLIPROXY_API_URL = "https://api.cliproxy.io/white/api"
 PORT = int(os.environ.get('PORT', 10000))
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
+# Cliproxy Residential Proxy Credentials
+CLIPROXY_USER = os.environ.get('CLIPROXY_USER', 'duov1209972')
+CLIPROXY_PASS = os.environ.get('CLIPROXY_PASS', 'Ridol123')
 
 # ==================== DATABASE FUNCTIONS ====================
 
@@ -175,43 +179,6 @@ def deduct_credit(key):
         conn.close()
         return False, 0
 
-def get_cached_proxy(country):
-    """Check if we have a working cached proxy"""
-    conn = get_db()
-    if not conn:
-        return None, None
-    try:
-        c = conn.cursor(cursor_factory=RealDictCursor)
-        c.execute('''
-            SELECT proxy_ip, proxy_port FROM proxy_cache 
-            WHERE country = %s AND is_active = 1 
-            ORDER BY used_count ASC, fetched_at DESC 
-            LIMIT 1
-        ''', (country,))
-        res = c.fetchone()
-        conn.close()
-        if res:
-            return res['proxy_ip'], res['proxy_port']
-        return None, None
-    except:
-        return None, None
-
-def save_proxy_to_cache(ip, port, country):
-    """Save proxy to cache"""
-    conn = get_db()
-    if not conn:
-        return
-    try:
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO proxy_cache (proxy_ip, proxy_port, country, fetched_at, is_active)
-            VALUES (%s, %s, %s, %s, 1)
-        ''', (ip, port, country, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
-    except:
-        pass
-
 def log_usage(license_key, action, ip, port, country, user_id, status, response_time):
     """Log API usage"""
     conn = get_db()
@@ -236,7 +203,7 @@ ADMIN_UI = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ridol Admin Panel v9.9</title>
+    <title>Ridol Admin Panel v10.2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -352,7 +319,7 @@ ADMIN_UI = '''
         <div class="header">
             <div>
                 <h1>⚡ Ridol FB Tool Admin</h1>
-                <div class="subtitle">License & Credit Management System v9.9</div>
+                <div class="subtitle">License & Credit Management System v10.2</div>
             </div>
             <div style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
                 <span style="padding:8px 16px; border-radius:20px; font-size:12px; font-weight:bold; background:#00c85320; color:#00c853; border:1px solid #00c85340;">● Server Online</span>
@@ -459,7 +426,7 @@ def home():
     return jsonify({
         'status': 'online', 
         'service': 'Ridol FB Tool License Server',
-        'version': '9.9',
+        'version': '10.2',
         'database': 'connected',
         'timestamp': datetime.now().isoformat()
     })
@@ -579,8 +546,17 @@ def api_verify_license():
 @app.route('/api/proxy/get', methods=['POST'])
 def api_get_proxy():
     """
-    Get IP from Cliproxy API and deduct credit
-    Cliproxy Response Format: [{"host":"107.151.249.77","port":"29264"}]
+    Get Residential Proxy from Cliproxy API
+    Cliproxy Residential Format:
+    - IP: us2.cliproxy.io
+    - Port: 3010
+    - User: duov1209972-region-Rand-sid-XXXX
+    - Pass: Ridol123
+    
+    Request: {"license_key": "RIDOL-XXXX", "country": "BD"}
+    Response: {"success": true, "ip": "us2.cliproxy.io", "port": 3010, 
+               "user": "duov1209972-region-Rand-sid-1234", "pass": "Ridol123",
+               "remaining_credits": 999}
     """
     start_time = time.time()
     try:
@@ -589,7 +565,7 @@ def api_get_proxy():
             return jsonify({'success': False, 'error': 'No data provided'}), 400
         
         license_key = data.get('license_key', '').strip().upper()
-        country = data.get('country', 'Rand').lower()
+        country = data.get('country', 'Rand')
         
         if not license_key:
             return jsonify({'success': False, 'error': 'License key required'}), 400
@@ -607,89 +583,6 @@ def api_get_proxy():
                 'credits': 0
             }), 403
         
-        # ============ TRY CACHED PROXY ============
-        cached_ip, cached_port = get_cached_proxy(country)
-        if cached_ip and cached_port:
-            success, remaining = deduct_credit(license_key)
-            if success:
-                log_usage(
-                    license_key, 'proxy_cached', cached_ip, cached_port, country,
-                    license_data.get('user_id', ''), 'success', 
-                    int((time.time() - start_time) * 1000)
-                )
-                
-                return jsonify({
-                    'success': True,
-                    'ip': cached_ip,
-                    'port': cached_port,
-                    'country': country,
-                    'remaining_credits': remaining,
-                    'from_cache': True
-                })
-        
-        # ============ FETCH FROM CLIPROXY ============
-        # Cliproxy API Call - সঠিক ফরম্যাট
-        api_url = f"{CLIPROXY_API_URL}?region={country}&num=1&format=n&type=json"
-        print(f"[*] Calling Cliproxy: {api_url}")
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json'
-        }
-        
-        response = requests.get(api_url, headers=headers, timeout=15)
-        
-        if response.status_code != 200:
-            print(f"[-] Cliproxy error: {response.status_code} - {response.text}")
-            return jsonify({
-                'success': False,
-                'error': f'Cliproxy API error: {response.status_code}'
-            }), 500
-        
-        # Cliproxy রেসপন্স পার্স করা
-        raw_response = response.text.strip()
-        print(f"[*] Cliproxy response: {raw_response}")
-        
-        ip = None
-        port = None
-        
-        # JSON ফরম্যাট: [{"host":"107.151.249.77","port":"29264"}]
-        try:
-            proxy_data_list = json.loads(raw_response)
-            if isinstance(proxy_data_list, list) and len(proxy_data_list) > 0:
-                proxy_data = proxy_data_list[0]
-                ip = proxy_data.get('host')
-                port_str = proxy_data.get('port')
-                if port_str:
-                    port = int(port_str)
-        except json.JSONDecodeError as e:
-            print(f"[-] JSON decode error: {e}")
-            # JSON না হলে টেক্সট পার্স
-            if ':' in raw_response:
-                parts = raw_response.split(':')
-                if len(parts) == 2:
-                    ip = parts[0].strip()
-                    try:
-                        port = int(parts[1].strip())
-                    except:
-                        pass
-        
-        # IP Validate
-        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-        if not ip or not re.match(ip_pattern, ip):
-            print(f"[-] Invalid IP: {ip}")
-            return jsonify({
-                'success': False,
-                'error': f'Invalid IP from Cliproxy: {raw_response}'
-            }), 500
-        
-        # Port না পেলে Random
-        if not port:
-            port = random.randint(3000, 5000)
-            print(f"[!] No port from Cliproxy, generated random port: {port}")
-        
-        print(f"[+] Got proxy: {ip}:{port} from Cliproxy")
-        
         # Deduct credit
         success, remaining = deduct_credit(license_key)
         if not success:
@@ -698,31 +591,50 @@ def api_get_proxy():
                 'error': 'Failed to deduct credit'
             }), 500
         
-        # Save to cache
-        save_proxy_to_cache(ip, port, country)
+        # Cliproxy Residential Proxy Configuration
+        # Cliproxy Residential Proxy Format: 
+        # user: duov1209972-region-{country}-sid-{random}
+        # pass: Ridol123
+        # host: {country}.cliproxy.io or us2.cliproxy.io
+        
+        # দেশ অনুযায়ী Subdomain
+        country_sub = country.lower()
+        if country_sub == 'us':
+            host = "us2.cliproxy.io"
+        elif country_sub == 'bd':
+            host = "bd.cliproxy.io"
+        elif country_sub == 'uk':
+            host = "uk.cliproxy.io"
+        elif country_sub == 'in':
+            host = "in.cliproxy.io"
+        else:
+            host = "us2.cliproxy.io"  # Default
+        
+        # Random SID
+        sid = random.randint(1000, 9999)
+        
+        # User format: duov1209972-region-{country}-sid-{sid}
+        proxy_user = f"duov1209972-region-{country}-sid-{sid}"
+        proxy_pass = "Ridol123"
+        proxy_port = 3010
         
         # Log usage
         log_usage(
-            license_key, 'proxy_fetch', ip, port, country,
+            license_key, 'proxy_fetch', host, proxy_port, country,
             license_data.get('user_id', ''), 'success',
             int((time.time() - start_time) * 1000)
         )
         
         return jsonify({
             'success': True,
-            'ip': ip,
-            'port': port,
+            'ip': host,
+            'port': proxy_port,
+            'user': proxy_user,
+            'pass': proxy_pass,
             'country': country,
-            'remaining_credits': remaining,
-            'from_cache': False
+            'remaining_credits': remaining
         })
         
-    except requests.exceptions.Timeout:
-        print("[-] Cliproxy timeout")
-        return jsonify({
-            'success': False,
-            'error': 'Cliproxy API timeout'
-        }), 500
     except Exception as e:
         print(f"[-] Proxy error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -765,7 +677,7 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     
     print("="*60)
-    print("🚀 RIDOL FB TOOL - LICENSE SERVER v9.9")
+    print("🚀 RIDOL FB TOOL - LICENSE SERVER v10.2")
     print("="*60)
     print(f"✅ Database: PostgreSQL")
     print(f"🔐 Admin Password: {ADMIN_PASSWORD}")

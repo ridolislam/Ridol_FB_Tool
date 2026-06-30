@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v13.6 - Messenger Login Trigger (OTP Sender)
-SOCKS5 Proxy Support
+Ridol SaaS Tool v13.8 - Messenger Login Trigger (OTP Sender)
+Residential Proxy with Chrome Extension
 Author: Ridol Islam
 """
 
@@ -11,14 +11,16 @@ import time
 import json
 import random
 import subprocess
+import zipfile
 import requests
 from datetime import datetime
+from selenium.webdriver.chrome.service import Service
 
 # ==================== CONFIGURATION ====================
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v13.6'
+APP_VERSION = 'v13.8'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -57,6 +59,81 @@ def get_chromedriver_path():
     return None
 
 CHROMEDRIVER_PATH = get_chromedriver_path()
+
+# ==================== PROXY EXTENSION CREATOR ====================
+def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, folder_path):
+    """Chrome Proxy Authentication Extension তৈরি করা"""
+    
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Chrome Proxy",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking"
+        ],
+        "background": {
+            "scripts": ["background.js"]
+        },
+        "minimum_chrome_version": "22.0.0"
+    }
+    """
+    
+    background_js = """
+    var config = {
+        mode: "fixed_servers",
+        rules: {
+            singleProxy: {
+                scheme: "http",
+                host: "%s",
+                port: parseInt(%s)
+            },
+            bypassList: ["localhost"]
+        }
+    };
+
+    chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
+
+    function callbackFn(details) {
+        return {
+            authCredentials: {
+                username: "%s",
+                password: "%s"
+            }
+        };
+    }
+
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn,
+        {urls: ["<all_urls>"]},
+        ["blocking"]
+    );
+    """ % (proxy_host, proxy_port, proxy_user, proxy_pass)
+    
+    # Extension ফোল্ডার তৈরি
+    extension_folder = os.path.join(folder_path, 'proxy_extension')
+    os.makedirs(extension_folder, exist_ok=True)
+    
+    # ফাইল তৈরি
+    with open(os.path.join(extension_folder, 'manifest.json'), 'w') as f:
+        f.write(manifest_json)
+    with open(os.path.join(extension_folder, 'background.js'), 'w') as f:
+        f.write(background_js)
+    
+    # ZIP ফাইল তৈরি
+    zip_path = os.path.join(folder_path, 'proxy_auth_plugin.zip')
+    with zipfile.ZipFile(zip_path, 'w') as zp:
+        zp.write(os.path.join(extension_folder, 'manifest.json'), 'manifest.json')
+        zp.write(os.path.join(extension_folder, 'background.js'), 'background.js')
+    
+    # Unzipped folder path return (Chrome requires unpacked extension)
+    return extension_folder
 
 # ==================== CORE MANAGER ====================
 class CoreManager:
@@ -100,7 +177,7 @@ class CoreManager:
         return False
 
     def get_proxy_and_deduct(self):
-        """সার্ভার থেকে IP + Port নেওয়া"""
+        """সার্ভার থেকে Residential Proxy নেওয়া"""
         try:
             print(f"{Color.DIM}[*] Requesting proxy from server...{Color.RESET}")
             resp = requests.post(f"{SERVER_URL}/api/proxy/get", json={
@@ -120,18 +197,22 @@ class CoreManager:
             
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
-                ip = data.get('ip')
-                port = data.get('port')
                 
-                if not ip:
+                # Proxy Data Dictionary
+                proxy_data = {
+                    'ip': data.get('ip'),
+                    'port': str(data.get('port')),
+                    'user': data.get('user'),
+                    'pass': data.get('pass')
+                }
+                
+                if not proxy_data['ip']:
                     print(f"{Color.RED}[-] No IP in response{Color.RESET}")
                     return None
                 
-                # SOCKS5 Proxy ফরম্যাট তৈরি
-                proxy = f"socks5://{ip}:{port}"
-                print(f"{Color.GREEN}[+] Proxy: {proxy}{Color.RESET}")
+                print(f"{Color.GREEN}[+] Proxy: {proxy_data['user']}@{proxy_data['ip']}:{proxy_data['port']}{Color.RESET}")
                 print(f"{Color.CYAN}[+] Credits left: {self.credits}{Color.RESET}")
-                return proxy
+                return proxy_data
             else:
                 error = data.get('error', 'Unknown error')
                 print(f"{Color.RED}[-] Server error: {error}{Color.RESET}")
@@ -150,8 +231,8 @@ class CoreManager:
 
 # ==================== STEALTH BROWSER ====================
 class StealthBrowser:
-    def __init__(self, proxy=None):
-        self.proxy = proxy
+    def __init__(self, proxy_data=None):
+        self.proxy_data = proxy_data  # Dictionary: {'ip': '', 'port': '', 'user': '', 'pass': ''}
         self.driver = None
 
     def start(self):
@@ -161,10 +242,11 @@ class StealthBrowser:
             
         try:
             from selenium import webdriver
-            from selenium.webdriver.chrome.service import Service
             from selenium.webdriver.chrome.options import Options
             
             options = Options()
+            
+            # Headless Mode (Termux-এর জন্য প্রয়োজন)
             options.add_argument('--headless=new')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
@@ -174,11 +256,20 @@ class StealthBrowser:
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
             
-            # SOCKS5 Proxy Support
-            if self.proxy:
-                options.add_argument(f'--proxy-server={self.proxy}')
-                print(f"{Color.CYAN}[*] Using proxy: {self.proxy}{Color.RESET}")
+            # Proxy Extension Load
+            if self.proxy_data:
+                print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
+                extension_path = create_proxy_auth_extension(
+                    self.proxy_data['ip'],
+                    self.proxy_data['port'],
+                    self.proxy_data['user'],
+                    self.proxy_data['pass'],
+                    SCRIPT_DIR
+                )
+                options.add_argument(f'--load-extension={extension_path}')
+                print(f"{Color.GREEN}[+] Proxy extension loaded{Color.RESET}")
             
+            # Random User-Agent
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -191,6 +282,7 @@ class StealthBrowser:
             service = Service(CHROMEDRIVER_PATH)
             self.driver = webdriver.Chrome(service=service, options=options)
             
+            # Hide WebDriver
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.set_page_load_timeout(30)
             
@@ -332,7 +424,7 @@ class SaaSApp:
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
-        print(f"{Color.YELLOW}[!] Proxy: SOCKS5{Color.RESET}")
+        print(f"{Color.YELLOW}[!] Proxy: Residential (Chrome Extension){Color.RESET}")
         print("-" * 50)
 
         success_count = 0
@@ -346,14 +438,16 @@ class SaaSApp:
             
             print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Processing: {phone}{Color.RESET}")
             
-            proxy = self.core.get_proxy_and_deduct()
-            if not proxy:
+            # Get proxy data from server
+            proxy_data = self.core.get_proxy_and_deduct()
+            if not proxy_data:
                 print(f"{Color.RED}[✗] No proxy! Credits: {self.core.credits}{Color.RESET}")
                 no_proxy_count += 1
                 failed_count += 1
                 continue
 
-            browser = StealthBrowser(proxy)
+            # Start browser with proxy extension
+            browser = StealthBrowser(proxy_data)
             if browser.start():
                 success = messenger_login_trigger(browser.driver, phone)
                 if success:
