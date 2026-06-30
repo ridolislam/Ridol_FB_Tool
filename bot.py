@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v14.4 - Facebook Forgot Password OTP Sender
-Direct Excel File Path Support
+Ridol SaaS Tool v14.5 - Facebook Forgot Password OTP Sender
+Auto Excel Detect + Country from Column A
 Author: Ridol Islam
 """
 
@@ -16,7 +16,7 @@ import requests
 from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 
-# ==================== INSTALL OPENPYXL IF NOT AVAILABLE ====================
+# ==================== INSTALL OPENPYXL ====================
 try:
     import openpyxl
 except ImportError:
@@ -28,7 +28,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v14.4'
+APP_VERSION = 'v14.5'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -44,54 +44,115 @@ class Color:
     GOLD = '\033[38;5;214m'
     PINK = '\033[38;5;206m'
 
-# ==================== COUNTRY CODES ====================
-COUNTRY_CODES = {
-    '228': 'TG',  # Togo
-    '1': 'US',    # USA/Canada
-    '44': 'GB',   # UK
-    '91': 'IN',   # India
-    '92': 'PK',   # Pakistan
-    '880': 'BD',  # Bangladesh
-    '62': 'ID',   # Indonesia
-    '60': 'MY',   # Malaysia
-    '65': 'SG',   # Singapore
-    '63': 'PH',   # Philippines
-    '66': 'TH',   # Thailand
-    '84': 'VN',   # Vietnam
-    '81': 'JP',   # Japan
-    '82': 'KR',   # South Korea
-    '49': 'DE',   # Germany
-    '33': 'FR',   # France
-    '39': 'IT',   # Italy
-    '7': 'RU',    # Russia
-    '55': 'BR',   # Brazil
+# ==================== COUNTRY NAME TO CODE ====================
+COUNTRY_NAME_TO_CODE = {
+    'TOGO': 'TG',
+    'USA': 'US',
+    'UK': 'GB',
+    'INDIA': 'IN',
+    'BANGLADESH': 'BD',
+    'PAKISTAN': 'PK',
+    'INDONESIA': 'ID',
+    'MALAYSIA': 'MY',
+    'SINGAPORE': 'SG',
+    'PHILIPPINES': 'PH',
+    'THAILAND': 'TH',
+    'VIETNAM': 'VN',
+    'JAPAN': 'JP',
+    'SOUTH KOREA': 'KR',
+    'GERMANY': 'DE',
+    'FRANCE': 'FR',
+    'ITALY': 'IT',
+    'RUSSIA': 'RU',
+    'BRAZIL': 'BR',
 }
+
+def get_country_code_from_name(country_name):
+    """Country Name থেকে Country Code বের করা"""
+    if not country_name:
+        return 'XX'
+    country_name = country_name.strip().upper()
+    for name, code in COUNTRY_NAME_TO_CODE.items():
+        if name in country_name or country_name in name:
+            return code
+    return 'XX'
 
 def get_country_from_phone(phone_number):
     """Phone number থেকে Country Code বের করা"""
     phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
-    
-    for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
+    country_codes = {
+        '228': 'TG', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
+        '880': 'BD', '62': 'ID', '60': 'MY', '65': 'SG', '63': 'PH',
+        '66': 'TH', '84': 'VN', '81': 'JP', '82': 'KR', '49': 'DE',
+        '33': 'FR', '39': 'IT', '7': 'RU', '55': 'BR'
+    }
+    for code in sorted(country_codes.keys(), key=len, reverse=True):
         if phone.startswith(code):
-            return COUNTRY_CODES[code]
+            return country_codes[code]
     return 'XX'
 
 # ==================== EXCEL READER ====================
 def read_numbers_from_excel(file_path):
-    """Excel ফাইল থেকে নাম্বার পড়া"""
+    """
+    Excel ফাইল থেকে নাম্বার পড়া
+    - Column A: Country Name
+    - Column B: Phone Numbers (4th row থেকে শুরু)
+    """
     numbers = []
     try:
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
         
-        for row in sheet.iter_rows(min_row=2, values=True):
+        current_country = None
+        
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=1, values=False), 1):
             if row and len(row) >= 2:
-                number = row[1]  # কলাম B
-                if number:
-                    number_str = str(number).strip()
-                    if not number_str.startswith('+'):
-                        number_str = '+' + number_str
-                    numbers.append(number_str)
+                # Column A (index 0) - Country Name
+                country_cell = row[0]
+                country_name = country_cell.value if country_cell else None
+                
+                # Column B (index 1) - Number
+                number_cell = row[1]
+                number = number_cell.value if number_cell else None
+                
+                # যদি Country Name পাওয়া যায় (শুধু মাত্র ১ম সারি থেকে)
+                if country_name and isinstance(country_name, str):
+                    country_name = country_name.strip()
+                    # টেক্সট clean করা
+                    country_name = re.sub(r'\d+', '', country_name).strip()
+                    if country_name:
+                        current_country = country_name
+                        print(f"{Color.DIM}[*] Country detected: {current_country}{Color.RESET}")
+                
+                # যদি নাম্বার পাওয়া যায় (৪র্থ সারি থেকে start)
+                if number and row_idx >= 4:
+                    try:
+                        # Number কে string এ convert
+                        if isinstance(number, (int, float)):
+                            number_str = str(int(number))
+                        else:
+                            number_str = str(number).strip()
+                        
+                        # Number valid কিনা চেক (কমপক্ষে 5 digits)
+                        if len(number_str) >= 5 and number_str.isdigit():
+                            # '+' যোগ করা
+                            if not number_str.startswith('+'):
+                                number_str = '+' + number_str
+                            
+                            # Country Code বের করা
+                            country_code = get_country_from_phone(number_str)
+                            
+                            # যদি Country Code না পাওয়া যায়, Column A থেকে নেওয়া
+                            if country_code == 'XX' and current_country:
+                                country_code = get_country_code_from_name(current_country)
+                            
+                            numbers.append({
+                                'number': number_str,
+                                'country': country_code,
+                                'country_name': current_country or 'Unknown'
+                            })
+                    except:
+                        pass
         
         wb.close()
         return numbers
@@ -122,6 +183,30 @@ def get_chromedriver_path():
     return None
 
 CHROMEDRIVER_PATH = get_chromedriver_path()
+
+# ==================== FIND EXCEL FILE ====================
+def find_excel_files():
+    """Phone এ Excel ফাইল খুঁজে বের করা"""
+    excel_files = []
+    search_paths = [
+        '/storage/emulated/0/Download/',
+        '/storage/emulated/0/Documents/',
+        '/storage/emulated/0/',
+    ]
+    
+    for path in search_paths:
+        if os.path.exists(path):
+            for root, dirs, files in os.walk(path):
+                for file in files:
+                    if file.endswith('.xlsx') or file.endswith('.xls'):
+                        if 'number' in file.lower() or 'sheet' in file.lower():
+                            excel_files.append(os.path.join(root, file))
+                if len(excel_files) >= 5:
+                    break
+            if len(excel_files) >= 5:
+                break
+    
+    return excel_files
 
 # ==================== PROXY EXTENSION CREATOR ====================
 def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, folder_path):
@@ -493,18 +578,17 @@ class SaaSApp:
             return
         
         print(f"{Color.CYAN}[*] Reading numbers from Excel...{Color.RESET}")
-        numbers = read_numbers_from_excel(self.core.excel_file)
+        numbers_data = read_numbers_from_excel(self.core.excel_file)
         
-        if not numbers:
+        if not numbers_data:
             print(f"\n{Color.RED}[-] No numbers found in Excel!{Color.RESET}")
             time.sleep(2)
             return
         
-        print(f"\n{Color.GREEN}[+] Found {len(numbers)} numbers in Excel{Color.RESET}")
-        print(f"{Color.CYAN}[+] Example: {numbers[0] if numbers else 'N/A'}{Color.RESET}")
+        print(f"\n{Color.GREEN}[+] Found {len(numbers_data)} numbers in Excel{Color.RESET}")
         
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
-        print(f"{Color.CYAN}[+] Total: {len(numbers)} numbers{Color.RESET}")
+        print(f"{Color.CYAN}[+] Total: {len(numbers_data)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
         print("-" * 50)
 
@@ -512,13 +596,16 @@ class SaaSApp:
         failed_count = 0
         no_proxy_count = 0
         
-        for idx, phone in enumerate(numbers, 1):
+        for idx, data in enumerate(numbers_data, 1):
             if self.core.credits <= 0:
                 print(f"\n{Color.RED}[!] Insufficient Credits!{Color.RESET}")
                 break
             
-            country = get_country_from_phone(phone)
-            print(f"\n{Color.GOLD}[{idx}/{len(numbers)}] Phone: {phone} | Country: {country}{Color.RESET}")
+            phone = data['number']
+            country = data['country']
+            country_name = data['country_name']
+            
+            print(f"\n{Color.GOLD}[{idx}/{len(numbers_data)}] Phone: {phone} | Country: {country} ({country_name}){Color.RESET}")
             
             proxy_data = self.core.get_proxy_and_deduct(country)
             if not proxy_data:
@@ -544,7 +631,7 @@ class SaaSApp:
         print("\n" + "="*50)
         print(f"{Color.GREEN}COMPLETE{Color.RESET}")
         print("="*50)
-        print(f"Total: {len(numbers)}")
+        print(f"Total: {len(numbers_data)}")
         print(f"Success: {Color.GREEN}{success_count}{Color.RESET}")
         print(f"Failed: {Color.RED}{failed_count}{Color.RESET}")
         print(f"No Proxy: {Color.YELLOW}{no_proxy_count}{Color.RESET}")
@@ -570,20 +657,54 @@ class SaaSApp:
             
             if choice == '1': self.run_otp_sender()
             elif choice == '2':
-                print(f"\n{Color.CYAN}[*] Enter the FULL path to your Excel file{Color.RESET}")
-                print(f"{Color.DIM}Example: /storage/emulated/0/Download/My Numbers Sheet (1).xlsx{Color.RESET}")
-                path = input(f"\n{Color.CYAN} Enter Excel File Path: {Color.RESET}").strip()
-                if path:
-                    # Remove quotes if any
-                    path = path.strip('"').strip("'")
-                    if os.path.exists(path):
-                        self.core.excel_file = path
-                        self.core.save_config()
-                        print(f"{Color.GREEN}[+] Excel file path saved!{Color.RESET}")
-                        print(f"{Color.CYAN}[+] File: {path}{Color.RESET}")
+                print(f"\n{Color.CYAN}[*] Scanning for Excel files...{Color.RESET}")
+                excel_files = find_excel_files()
+                
+                if excel_files:
+                    print(f"\n{Color.GREEN}[+] Found {len(excel_files)} Excel files:{Color.RESET}")
+                    for i, f in enumerate(excel_files, 1):
+                        print(f"  {Color.CYAN}[{i}]{Color.RESET} {f}")
+                    
+                    print(f"\n{Color.YELLOW}[0]{Color.RESET} Enter custom path")
+                    choice_file = input(f"\n{Color.BOLD} Select file (number): {Color.RESET}").strip()
+                    
+                    if choice_file == '0':
+                        path = input(f"\n{Color.CYAN} Enter Excel file path: {Color.RESET}").strip()
                     else:
-                        print(f"{Color.RED}[-] File not found: {path}{Color.RESET}")
-                        print(f"{Color.YELLOW}[!] Please check the path and try again{Color.RESET}")
+                        try:
+                            idx = int(choice_file) - 1
+                            if 0 <= idx < len(excel_files):
+                                path = excel_files[idx]
+                            else:
+                                print(f"{Color.RED}Invalid selection!{Color.RESET}")
+                                time.sleep(1)
+                                continue
+                        except:
+                            print(f"{Color.RED}Invalid input!{Color.RESET}")
+                            time.sleep(1)
+                            continue
+                    
+                    if path:
+                        path = path.strip('"').strip("'")
+                        if os.path.exists(path):
+                            self.core.excel_file = path
+                            self.core.save_config()
+                            print(f"{Color.GREEN}[+] Excel file path saved!{Color.RESET}")
+                            print(f"{Color.CYAN}[+] File: {path}{Color.RESET}")
+                        else:
+                            print(f"{Color.RED}[-] File not found: {path}{Color.RESET}")
+                else:
+                    print(f"\n{Color.YELLOW}[!] No Excel files found in common locations{Color.RESET}")
+                    path = input(f"\n{Color.CYAN} Enter Excel file path manually: {Color.RESET}").strip()
+                    if path:
+                        path = path.strip('"').strip("'")
+                        if os.path.exists(path):
+                            self.core.excel_file = path
+                            self.core.save_config()
+                            print(f"{Color.GREEN}[+] Excel file path saved!{Color.RESET}")
+                        else:
+                            print(f"{Color.RED}[-] File not found: {path}{Color.RESET}")
+                
                 time.sleep(2)
             elif choice == '3':
                 key = input(f"\n{Color.CYAN} Enter License Key: {Color.RESET}").strip().upper()
