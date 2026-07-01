@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v15.2 - Facebook Forgot Password OTP Sender
-Final OTP Logic - Enter Key + JavaScript Force Click
+Ridol SaaS Tool v15.3 - Facebook Forgot Password OTP Sender
+Deep Processing - Multi-Profile Loop with Skip Logic
 Author: Ridol Islam
 """
 
@@ -29,7 +29,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v15.2'
+APP_VERSION = 'v15.3'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -47,25 +47,12 @@ class Color:
 
 # ==================== COUNTRY NAME TO CODE ====================
 COUNTRY_NAME_TO_CODE = {
-    'TOGO': 'TG',
-    'USA': 'US',
-    'UK': 'GB',
-    'INDIA': 'IN',
-    'BANGLADESH': 'BD',
-    'PAKISTAN': 'PK',
-    'INDONESIA': 'ID',
-    'MALAYSIA': 'MY',
-    'SINGAPORE': 'SG',
-    'PHILIPPINES': 'PH',
-    'THAILAND': 'TH',
-    'VIETNAM': 'VN',
-    'JAPAN': 'JP',
-    'SOUTH KOREA': 'KR',
-    'GERMANY': 'DE',
-    'FRANCE': 'FR',
-    'ITALY': 'IT',
-    'RUSSIA': 'RU',
-    'BRAZIL': 'BR',
+    'TOGO': 'TG', 'USA': 'US', 'UK': 'GB', 'INDIA': 'IN',
+    'BANGLADESH': 'BD', 'PAKISTAN': 'PK', 'INDONESIA': 'ID',
+    'MALAYSIA': 'MY', 'SINGAPORE': 'SG', 'PHILIPPINES': 'PH',
+    'THAILAND': 'TH', 'VIETNAM': 'VN', 'JAPAN': 'JP',
+    'SOUTH KOREA': 'KR', 'GERMANY': 'DE', 'FRANCE': 'FR',
+    'ITALY': 'IT', 'RUSSIA': 'RU', 'BRAZIL': 'BR',
 }
 
 def get_country_code_from_name(country_name):
@@ -425,7 +412,7 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FORGOT PASSWORD OTP SENDER (FINAL VERSION) ====================
+# ==================== FORGOT PASSWORD OTP SENDER (DEEP PROCESSING) ====================
 def forgot_password_otp_sender(driver, phone_number):
     try:
         from selenium.webdriver.common.by import By
@@ -433,93 +420,99 @@ def forgot_password_otp_sender(driver, phone_number):
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.webdriver.common.keys import Keys
         
-        print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Deep Processing: {phone_number}{Color.RESET}")
         
-        # ১. পেজ ওপেন করা
-        driver.get("https://m.facebook.com/login/identify/")
-        time.sleep(3)
-
-        # ২. ইনপুট বক্স খুঁজে নম্বর বসানো
-        try:
+        def navigate_to_identify():
+            driver.get("https://m.facebook.com/login/identify/")
+            time.sleep(2)
             input_box = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='text'], input[type='tel'], input[name='email']"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='email']"))
             )
             input_box.clear()
             input_box.send_keys(phone_number)
-            print(f"{Color.GREEN}[✓] Phone number entered{Color.RESET}")
-            
-            # ৩. বাটন ক্লিক করার বদলে কিবোর্ডের এন্টার (Enter) প্রেস করা
-            time.sleep(1)
             input_box.send_keys(Keys.ENTER)
-            print(f"{Color.CYAN}[*] Pressed Enter key instead of clicking button...{Color.RESET}")
-        except Exception as e:
-            print(f"{Color.RED}[✗] Could not enter number: {str(e)}{Color.RESET}")
-            return False
+            time.sleep(3)
 
-        time.sleep(4)
+        navigate_to_identify()
 
-        # ৪. যদি এন্টার কাজ না করে, তবে ডাইনামিক বাটন সার্চ
-        if "identify" in driver.current_url:
-            print(f"{Color.YELLOW}[!] Enter key didn't move page. Trying force click...{Color.RESET}")
-            force_click_script = """
-            var buttons = document.querySelectorAll('button, a, div, input[type="submit"]');
-            for (var i = 0; i < buttons.length; i++) {
-                var txt = buttons[i].innerText || buttons[i].value || "";
-                if (txt.includes('Continue') || txt.includes('Search') || txt.includes('Next')) {
-                    buttons[i].click();
-                    return true;
+        # প্রোফাইল লুপ শুরু
+        account_index = 0
+        while True:
+            # ১. চেক করা প্রোফাইল লিস্টে আছে কি না
+            accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[@role='button' and contains(@class, 'account')]")
+            
+            if not accounts:
+                # যদি সরাসরি রিকভারি পেজে চলে যায় (একটি প্রোফাইল থাকলে)
+                pass 
+            elif account_index < len(accounts):
+                print(f"{Color.YELLOW}[*] Checking Profile #{account_index + 1}{Color.RESET}")
+                driver.execute_script("arguments[0].click();", accounts[account_index])
+                time.sleep(3)
+            else:
+                print(f"{Color.RED}[✗] All profiles checked. No SMS option found.{Color.RESET}")
+                return False
+
+            # ২. 'See More' বা 'See All' বাটন চেক এবং ক্লিক
+            try:
+                see_more_script = """
+                var more = document.evaluate("//*[contains(text(), 'See more') or contains(text(), 'See all') or contains(text(), 'More options')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if(more) { more.click(); return true; }
+                return false;
+                """
+                if driver.execute_script(see_more_script):
+                    print(f"{Color.DIM}[*] Expanded 'See More' options...{Color.RESET}")
+                    time.sleep(2)
+            except: pass
+
+            # ৩. কাউন্টডাউন বা ব্লক চেক (skip logic)
+            try:
+                page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+                if "minute" in page_text or "second" in page_text or "(01:" in page_text or "(00:" in page_text:
+                    print(f"{Color.RED}[!] Countdown detected. Skipping this profile...{Color.RESET}")
+                    account_index += 1
+                    navigate_to_identify()
+                    continue
+            except: pass
+
+            # ৪. SMS অপশন খোঁজা (Multiple Text Match)
+            sms_logic = """
+            var targets = ['Get code or link via SMS', 'sent OTP SMS', 'Get code SMS', 'via SMS', 'Send code via SMS'];
+            var labels = document.querySelectorAll('label, div, span');
+            for (var i = 0; i < labels.length; i++) {
+                for (var j = 0; j < targets.length; j++) {
+                    if (labels[i].innerText.includes(targets[j])) {
+                        labels[i].click();
+                        return true;
+                    }
                 }
             }
             return false;
             """
-            driver.execute_script(force_click_script)
-            time.sleep(3)
-
-        # ৫. প্রোফাইল লিস্ট হ্যান্ডলিং
-        try:
-            accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[@role='button']")
-            if accounts:
-                driver.execute_script("arguments[0].click();", accounts[0])
-                print(f"{Color.GREEN}[✓] Account profile selected{Color.RESET}")
-                time.sleep(3)
-        except: 
-            pass
-
-        # ৬. SMS মেথড সিলেক্ট এবং ওটিপি ট্রিগার
-        try:
-            print(f"{Color.CYAN}[*] Triggering SMS...{Color.RESET}")
-            # সরাসরি 'SMS' যুক্ত ইনপুট বা লেবেলে ক্লিক
-            sms_logic = """
-            var labels = document.getElementsByTagName('label');
-            for (var i = 0; i < labels.length; i++) {
-                if (labels[i].innerText.includes('SMS')) {
-                    labels[i].click();
-                }
-            }
-            """
-            driver.execute_script(sms_logic)
-            time.sleep(1)
             
-            # চূড়ান্ত সাবমিশন - এন্টার ট্রাই
-            input_box.send_keys(Keys.ENTER)
-            # অথবা বাটন ক্লিক
-            final_click = "document.querySelector('button[type=\"submit\"], button[name=\"reset_action\"]')?.click();"
-            driver.execute_script(final_click)
+            if driver.execute_script(sms_logic):
+                print(f"{Color.GREEN}[✓] SMS Method Found & Selected{Color.RESET}")
+                time.sleep(1)
+                
+                # ৫. কন্টিনিউ বাটনে ক্লিক করে ওটিপি পাঠানো
+                try:
+                    submit_script = """
+                    var btn = document.querySelector('button[type="submit"], button[name="reset_action"]');
+                    if(btn) { btn.click(); return true; }
+                    return false;
+                    """
+                    if driver.execute_script(submit_script):
+                        print(f"{Color.GREEN}[+] OTP Triggered for: {phone_number}{Color.RESET}")
+                        time.sleep(5)
+                        return True
+                except: pass
             
-            print(f"{Color.GREEN}[+] OTP successfully triggered!{Color.RESET}")
-            time.sleep(5)
-            return True
-        except:
-            # চূড়ান্ত চেক: পেজ কি পরিবর্তন হয়েছে?
-            if "confirm" in driver.current_url or "checkpoint" in driver.current_url:
-                print(f"{Color.GREEN}[+] Success: Redirected to OTP page{Color.RESET}")
-                return True
-            print(f"{Color.RED}[✗] Failed to reach final OTP page{Color.RESET}")
-            return False
+            # যদি এই প্রোফাইলে SMS না থাকে তবে ব্যাকে গিয়ে পরের প্রোফাইল
+            print(f"{Color.YELLOW}[!] SMS not found in this profile. Trying next...{Color.RESET}")
+            account_index += 1
+            navigate_to_identify()
 
     except Exception as e:
-        driver.save_screenshot("debug_error.png")
-        print(f"{Color.RED}[-] Crash! Screenshot saved as debug_error.png{Color.RESET}")
+        print(f"{Color.RED}[-] Error: {str(e)}{Color.RESET}")
         return False
 
 # ==================== UI & APP CONTROLLER ====================
@@ -538,7 +531,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Forgot Password OTP Sender (Excel){Color.RESET}")
+        print(f"         {Color.PINK}Forgot Password OTP Sender (Deep){Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
