@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v20.0 - ChatGPT Account Creator
-With Live Training Mode & Next Number Button
+Ridol SaaS Tool v21.0 - ChatGPT Account Creator
+Smart Training System - Auto Detect Training File
 Author: Ridol Islam
 """
 
@@ -31,6 +31,7 @@ current_phone = ''
 next_number_triggered = False
 training_phone_list = []
 training_phone_index = 0
+is_first_run = True  # প্রথমবার চেক করার জন্য
 
 # ==================== GET LOCAL IP ====================
 def get_local_ip():
@@ -45,6 +46,18 @@ def get_local_ip():
 
 LOCAL_IP = get_local_ip()
 
+# ==================== CHECK TRAINING FILE ====================
+def has_training_file():
+    """ট্রেনিং ফাইল আছে কিনা চেক করে"""
+    return os.path.exists(MACRO_FILE) and os.path.getsize(MACRO_FILE) > 0
+
+def get_training_steps():
+    """ট্রেনিং ফাইল থেকে স্টেপ পড়ে"""
+    if has_training_file():
+        with open(MACRO_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
 # ==================== TRAINING SERVER ROUTES ====================
 @stream_app.route('/')
 def index():
@@ -58,7 +71,7 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Ridol Tool - ChatGPT Training</title>
+        <title>Ridol Tool - Training Mode</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -135,10 +148,12 @@ def index():
             .btn-save:hover { background: #00e676; transform: scale(1.02); }
             .btn-next { background: #f7971e; color: #1a1a2e; }
             .btn-next:hover { background: #ffd200; transform: scale(1.02); }
+            .btn-paste { background: #2979ff; color: white; }
+            .btn-paste:hover { background: #448aff; transform: scale(1.02); }
             .btn-clear { background: #ff1744; color: white; }
             .btn-clear:hover { background: #ff5252; transform: scale(1.02); }
-            .btn-refresh { background: #2979ff; color: white; }
-            .btn-refresh:hover { background: #448aff; transform: scale(1.02); }
+            .btn-refresh { background: #2a3a5c; color: white; }
+            .btn-refresh:hover { background: #3a4a6c; transform: scale(1.02); }
             .status-bar {
                 background: #0d1117;
                 padding: 12px 20px;
@@ -176,8 +191,8 @@ def index():
         <div class="container">
             <div class="header">
                 <h1>🤖 ChatGPT Training Mode</h1>
-                <div class="subtitle">Teach the bot how to create ChatGPT accounts</div>
-                <div class="mode-label">📌 ChatGPT Signup Training</div>
+                <div class="subtitle">First Time Setup - Teach the bot how to work</div>
+                <div class="mode-label">📌 First Time Training</div>
             </div>
 
             <div class="phone-display">
@@ -189,10 +204,10 @@ def index():
                 <h3>📋 Instructions:</h3>
                 <ul>
                     <li><span class="step-num">1.</span> Open ChatGPT login page</li>
-                    <li><span class="step-num">2.</span> Click "Continue with phone"</li>
-                    <li><span class="step-num">3.</span> Enter phone number (without country code)</li>
-                    <li><span class="step-num">4.</span> Click Continue</li>
-                    <li><span class="step-num">5.</span> Click <span class="highlight">"Save & Next"</span> when done</li>
+                    <li><span class="step-num">2.</span> Click <span class="highlight">"Paste Number"</span> to auto-fill phone</li>
+                    <li><span class="step-num">3.</span> Click <span class="highlight">"Continue"</span> button</li>
+                    <li><span class="step-num">4.</span> Click <span class="highlight">"Save & Next"</span> when done</li>
+                    <li><span class="step-num">5.</span> The bot will <span class="highlight">remember</span> this process</li>
                 </ul>
             </div>
 
@@ -202,6 +217,7 @@ def index():
             </div>
 
             <div class="controls">
+                <button class="btn-paste" onclick="pasteNumber()">📋 Paste Number</button>
                 <button class="btn-save" onclick="saveAndNext()">✅ Save & Next</button>
                 <button class="btn-refresh" onclick="location.reload()">🔄 Refresh</button>
                 <button class="btn-clear" onclick="clearSteps()">🗑️ Clear</button>
@@ -222,6 +238,7 @@ def index():
 
         <script>
             let stepCount = 0;
+            let currentPhone = "{{ phone }}";
             
             function updateStepCount() {
                 fetch('/step_count')
@@ -255,6 +272,29 @@ def index():
                     }
                 })
                 .catch(() => {});
+            }
+            
+            function pasteNumber() {
+                if (!currentPhone || currentPhone === 'Not started') {
+                    alert('⚠️ No phone number loaded!');
+                    return;
+                }
+                
+                fetch('/paste_number', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({phone: currentPhone})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ Number pasted: ' + currentPhone);
+                        updateStepCount();
+                    } else {
+                        alert('❌ Failed to paste number');
+                    }
+                })
+                .catch(() => alert('❌ Error pasting number'));
             }
             
             function saveAndNext() {
@@ -293,6 +333,78 @@ def index():
 @stream_app.route('/stream')
 def stream():
     return send_file(LIVE_IMG, mimetype='image/png') if os.path.exists(LIVE_IMG) else "Loading..."
+
+@stream_app.route('/paste_number', methods=['POST'])
+def paste_number():
+    global shared_driver, current_phone
+    if shared_driver:
+        try:
+            data = request.json
+            phone = data.get('phone', '')
+            
+            if not phone:
+                return jsonify({'success': False, 'error': 'No phone number'})
+            
+            fill_script = """
+            function fillPhone(phone) {
+                let selectors = [
+                    'input[name="phone_number"]',
+                    'input[type="tel"]',
+                    'input[placeholder*="phone"]',
+                    'input[placeholder*="Phone"]',
+                    'input[type="text"][id*="phone"]',
+                    '#phone',
+                    '.phone-input'
+                ];
+                
+                for (let selector of selectors) {
+                    let input = document.querySelector(selector);
+                    if (input) {
+                        input.value = phone;
+                        input.dispatchEvent(new Event('input', {bubbles: true}));
+                        input.dispatchEvent(new Event('change', {bubbles: true}));
+                        return true;
+                    }
+                }
+                
+                let allInputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[type="number"]');
+                for (let input of allInputs) {
+                    if (input.offsetParent !== null) {
+                        input.value = phone;
+                        input.dispatchEvent(new Event('input', {bubbles: true}));
+                        input.dispatchEvent(new Event('change', {bubbles: true}));
+                        return true;
+                    }
+                }
+                return false;
+            }
+            return fillPhone(arguments[0]);
+            """
+            
+            result = shared_driver.execute_script(fill_script, phone)
+            
+            if result:
+                steps = []
+                if os.path.exists(MACRO_FILE):
+                    with open(MACRO_FILE, 'r') as f:
+                        steps = json.load(f)
+                
+                steps.append({
+                    'action': 'paste',
+                    'phone': phone,
+                    'timestamp': time.time()
+                })
+                
+                with open(MACRO_FILE, 'w') as f:
+                    json.dump(steps, f, indent=2)
+                
+                return jsonify({'success': True, 'phone': phone})
+            else:
+                return jsonify({'success': False, 'error': 'No input field found'})
+                
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False, 'error': 'Driver not available'})
 
 @stream_app.route('/remote_click', methods=['POST'])
 def remote_click():
@@ -383,7 +495,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v20.0'
+APP_VERSION = 'v21.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -586,6 +698,7 @@ class CoreManager:
         self.user_id = "None"
         self.is_valid = False
         self.browser_ready = CHROMEDRIVER_PATH is not None
+        self.has_training = has_training_file()
 
     def load_config(self):
         try:
@@ -713,66 +826,63 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== TRAINING MODE EXECUTOR ====================
-def execute_training_mode(driver, phone_number, excel_path, phone_list, current_index):
-    global is_training_mode, training_complete, next_number_triggered, current_phone
-    global training_phone_list, training_phone_index
+# ==================== PLAYBACK MACRO ====================
+def playback_macro(driver, phone_number, steps):
+    """সেভ করা ট্রেনিং স্টেপ রিপ্লে করে"""
+    print(f"{Color.CYAN}[*] Playing back {len(steps)} recorded steps...{Color.RESET}")
     
-    current_phone = phone_number
-    training_phone_list = phone_list
-    training_phone_index = current_index
+    for step in steps:
+        try:
+            if step['action'] == 'click':
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                from selenium.webdriver.common.by import By
+                element = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, step['selector']))
+                )
+                element.click()
+                print(f"{Color.GREEN}[✓] Executed: {step['selector']}{Color.RESET}")
+                time.sleep(1)
+            elif step['action'] == 'paste':
+                fill_script = """
+                function fillPhone(phone) {
+                    let selectors = [
+                        'input[name="phone_number"]',
+                        'input[type="tel"]',
+                        'input[placeholder*="phone"]',
+                        'input[placeholder*="Phone"]',
+                        'input[type="text"][id*="phone"]'
+                    ];
+                    for (let selector of selectors) {
+                        let input = document.querySelector(selector);
+                        if (input) {
+                            input.value = phone;
+                            input.dispatchEvent(new Event('input', {bubbles: true}));
+                            input.dispatchEvent(new Event('change', {bubbles: true}));
+                            return true;
+                        }
+                    }
+                    let allInputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
+                    for (let input of allInputs) {
+                        if (input.offsetParent !== null) {
+                            input.value = phone;
+                            input.dispatchEvent(new Event('input', {bubbles: true}));
+                            input.dispatchEvent(new Event('change', {bubbles: true}));
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                return fillPhone(arguments[0]);
+                """
+                driver.execute_script(fill_script, step.get('phone', phone_number))
+                print(f"{Color.GREEN}[✓] Pasted number: {step.get('phone', phone_number)}{Color.RESET}")
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"{Color.YELLOW}[!] Step failed: {e}{Color.RESET}")
     
-    print(f"{Color.GOLD}{'='*55}{Color.RESET}")
-    print(f"{Color.GOLD}[!] 🎯 TRAINING MODE ACTIVATED!{Color.RESET}")
-    print(f"{Color.CYAN}[*] 🌐 Live View URL: http://{LOCAL_IP}:5000{Color.RESET}")
-    print(f"{Color.CYAN}[*] 📱 Current Number: {phone_number}{Color.RESET}")
-    print(f"{Color.YELLOW}[*] 📋 Perform the ChatGPT signup process manually{Color.RESET}")
-    print(f"{Color.YELLOW}[*] 🖱️ Every click you make will be recorded{Color.RESET}")
-    print(f"{Color.YELLOW}[*] ✅ Click 'Save & Next' when done{Color.RESET}")
-    print(f"{Color.GOLD}{'='*55}{Color.RESET}")
-    
-    is_training_mode = True
-    training_complete = False
-    next_number_triggered = False
-    
-    if not any(t.name == 'FlaskServer' for t in threading.enumerate()):
-        threading.Thread(target=lambda: stream_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False), 
-                        name='FlaskServer', daemon=True).start()
-        time.sleep(2)
-    
-    while is_training_mode and not training_complete and not next_number_triggered:
-        driver.save_screenshot(LIVE_IMG)
-        time.sleep(1)
-    
-    print(f"{Color.GREEN}[+] Training complete! Steps saved.{Color.RESET}")
-    
-    if os.path.exists(MACRO_FILE):
-        with open(MACRO_FILE, 'r') as f:
-            steps = json.load(f)
-        if steps:
-            print(f"{Color.CYAN}[*] Executing {len(steps)} recorded steps...{Color.RESET}")
-            for step in steps:
-                try:
-                    if step['action'] == 'click':
-                        from selenium.webdriver.support.ui import WebDriverWait
-                        from selenium.webdriver.support import expected_conditions as EC
-                        from selenium.webdriver.common.by import By
-                        element = WebDriverWait(driver, 10).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, step['selector']))
-                        )
-                        element.click()
-                        print(f"{Color.GREEN}[✓] Executed: {step['selector']}{Color.RESET}")
-                        time.sleep(1)
-                except Exception as e:
-                    print(f"{Color.YELLOW}[!] Step failed: {e}{Color.RESET}")
-            print(f"{Color.GREEN}[+] Macro playback complete!{Color.RESET}")
-            return True
-        else:
-            print(f"{Color.RED}[-] No steps recorded!{Color.RESET}")
-            return False
-    else:
-        print(f"{Color.RED}[-] No steps recorded!{Color.RESET}")
-        return False
+    print(f"{Color.GREEN}[+] Macro playback complete!{Color.RESET}")
+    return True
 
 # ==================== CHATGPT SIGNUP SENDER ====================
 def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False, phone_list=None, current_index=0):
@@ -787,18 +897,21 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
         
         print(f"{Color.CYAN}[*] ChatGPT Signup: {phone_number}{Color.RESET}")
         
-        # ChatGPT Login URL
         driver.get("https://chatgpt.com/auth/login")
         time.sleep(3)
         
-        if training_mode:
+        # চেক করুন ট্রেনিং ফাইল আছে কিনা
+        if has_training_file() and not training_mode:
+            print(f"{Color.GREEN}[*] Training file found! Using saved steps...{Color.RESET}")
+            steps = get_training_steps()
+            return playback_macro(driver, phone_number, steps)
+        elif training_mode:
             return execute_training_mode(driver, phone_number, excel_path, phone_list, current_index)
         else:
-            # Normal Mode - Auto
+            # Normal Mode - Auto (যদি ট্রেনিং না থাকে)
             try:
-                print(f"{Color.CYAN}[*] Looking for phone input...{Color.RESET}")
+                print(f"{Color.CYAN}[*] No training found. Running auto mode...{Color.RESET}")
                 
-                # Click on phone option if available
                 try:
                     phone_option = WebDriverWait(driver, 10).until(
                         EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Phone')]"))
@@ -808,7 +921,6 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
                 except:
                     pass
                 
-                # Find phone input
                 phone_input = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.NAME, "phone_number"))
                 )
@@ -818,7 +930,6 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
                 
                 print(f"{Color.GREEN}[✓] Phone entered: {phone_number}{Color.RESET}")
                 
-                # Click Continue
                 continue_btn = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Continue')]"))
                 )
@@ -838,6 +949,56 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
         take_error_screenshot(driver, phone_number, excel_path)
         return False
 
+# ==================== TRAINING MODE EXECUTOR ====================
+def execute_training_mode(driver, phone_number, excel_path, phone_list, current_index):
+    global is_training_mode, training_complete, next_number_triggered, current_phone
+    global training_phone_list, training_phone_index
+    
+    current_phone = phone_number
+    training_phone_list = phone_list
+    training_phone_index = current_index
+    
+    print(f"{Color.GOLD}{'='*55}{Color.RESET}")
+    print(f"{Color.GOLD}[!] 🎯 FIRST TIME TRAINING MODE!{Color.RESET}")
+    print(f"{Color.CYAN}[*] 🌐 Live View URL: http://{LOCAL_IP}:5000{Color.RESET}")
+    print(f"{Color.CYAN}[*] 📱 Current Number: {phone_number}{Color.RESET}")
+    print(f"{Color.YELLOW}[*] 📋 Perform the ChatGPT signup process{Color.RESET}")
+    print(f"{Color.YELLOW}[*] 🖱️ Click on screen to record actions{Color.RESET}")
+    print(f"{Color.YELLOW}[*] 📋 Use 'Paste Number' to auto-fill{Color.RESET}")
+    print(f"{Color.YELLOW}[*] ✅ Click 'Save & Next' when done{Color.RESET}")
+    print(f"{Color.GREEN}[*] 💾 This training will be saved permanently!{Color.RESET}")
+    print(f"{Color.GOLD}{'='*55}{Color.RESET}")
+    
+    is_training_mode = True
+    training_complete = False
+    next_number_triggered = False
+    
+    if not any(t.name == 'FlaskServer' for t in threading.enumerate()):
+        threading.Thread(target=lambda: stream_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False), 
+                        name='FlaskServer', daemon=True).start()
+        time.sleep(2)
+    
+    while is_training_mode and not training_complete and not next_number_triggered:
+        driver.save_screenshot(LIVE_IMG)
+        time.sleep(1)
+    
+    print(f"{Color.GREEN}[+] Training complete! Steps saved permanently.{Color.RESET}")
+    print(f"{Color.CYAN}[*] Training file: {MACRO_FILE}{Color.RESET}")
+    
+    if os.path.exists(MACRO_FILE):
+        with open(MACRO_FILE, 'r') as f:
+            steps = json.load(f)
+        if steps:
+            print(f"{Color.GREEN}[+] {len(steps)} steps saved!{Color.RESET}")
+            print(f"{Color.CYAN}[*] Next time you run, bot will auto-play these steps.{Color.RESET}")
+            return True
+        else:
+            print(f"{Color.RED}[-] No steps recorded!{Color.RESET}")
+            return False
+    else:
+        print(f"{Color.RED}[-] Training file not saved!{Color.RESET}")
+        return False
+
 # ==================== UI & APP CONTROLLER ====================
 class SaaSApp:
     def __init__(self):
@@ -855,6 +1016,13 @@ class SaaSApp:
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
         print(f"         {Color.PINK}ChatGPT Account Creator{Color.RESET}")
+        
+        # Training status
+        if has_training_file():
+            steps = get_training_steps()
+            print(f"         {Color.GREEN}📌 Training: {len(steps)} steps saved ✓{Color.RESET}")
+        else:
+            print(f"         {Color.YELLOW}📌 Training: Not found (First time setup needed){Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
@@ -907,13 +1075,20 @@ class SaaSApp:
         
         print(f"\n{Color.GREEN}[+] Found {len(numbers_data)} numbers in Excel{Color.RESET}")
         
-        print(f"\n{Color.CYAN}Select Mode:{Color.RESET}")
-        print(f"  {Color.GREEN}[1]{Color.RESET} Normal Mode (Auto ChatGPT Signup)")
-        print(f"  {Color.GOLD}[2]{Color.RESET} Training Mode (Record & Playback)")
-        mode_choice = input(f"\n{Color.BOLD}Enter choice: {Color.RESET}").strip()
-        training_mode = (mode_choice == '2')
-        
-        if training_mode:
+        # Check training file
+        training_exists = has_training_file()
+        if training_exists:
+            steps = get_training_steps()
+            print(f"{Color.GREEN}[+] Training file found! {len(steps)} steps loaded.{Color.RESET}")
+            print(f"{Color.CYAN}[*] Bot will auto-play these steps for each number.{Color.RESET}")
+            training_mode = False
+        else:
+            print(f"{Color.YELLOW}[!] No training file found!{Color.RESET}")
+            print(f"{Color.CYAN}[*] Starting First Time Training Mode...{Color.RESET}")
+            print(f"{Color.YELLOW}[*] You need to teach the bot how to work.{Color.RESET}")
+            training_mode = True
+            
+            # Start training server
             if not any(t.name == 'FlaskServer' for t in threading.enumerate()):
                 threading.Thread(target=lambda: stream_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False), 
                                 name='FlaskServer', daemon=True).start()
@@ -923,7 +1098,8 @@ class SaaSApp:
             print(f"{Color.YELLOW}[!] Open this URL in your browser{Color.RESET}")
             print(f"{Color.YELLOW}[!] Complete the ChatGPT signup process manually{Color.RESET}")
             print(f"{Color.YELLOW}[!] Click 'Save & Next' when done{Color.RESET}")
-            time.sleep(3)
+            print(f"{Color.GREEN}[!] This training will be saved permanently!{Color.RESET}")
+            time.sleep(4)
         
         print(f"\n{Color.GREEN}[+] Starting ChatGPT Account Creator...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers_data)} numbers{Color.RESET}")
@@ -989,6 +1165,7 @@ class SaaSApp:
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Data Folder Setup                  {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} License Management                 {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Install Dependencies               {Color.CYAN}│{Color.RESET}")
+            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[5]{Color.RESET} Reset Training                     {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.RED}[0]{Color.RESET} Exit                               {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}└──────────────────────────────────────────┘{Color.RESET}")
 
@@ -1058,6 +1235,14 @@ class SaaSApp:
                 else:
                     print(f"{Color.RED}[-] Not found! Try: pkg install chromedriver{Color.RESET}")
                 input("\nDone. Press Enter...")
+            elif choice == '5':
+                if os.path.exists(MACRO_FILE):
+                    os.remove(MACRO_FILE)
+                    print(f"{Color.GREEN}[+] Training file reset!{Color.RESET}")
+                    print(f"{Color.YELLOW}[!] Next time you start, it will ask for training again.{Color.RESET}")
+                else:
+                    print(f"{Color.YELLOW}[!] No training file found to reset.{Color.RESET}")
+                time.sleep(2)
             elif choice == '0':
                 print(f"\n{Color.GREEN}Goodbye!{Color.RESET}")
                 sys.exit()
