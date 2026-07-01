@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v15.3 - Facebook Forgot Password OTP Sender
-Deep Processing - Multi-Profile Loop with Skip Logic
+Ridol SaaS Tool v16.0 - Facebook Forgot Password OTP Sender
+With Screenshot & Auto Clicker Extension
 Author: Ridol Islam
 """
 
@@ -29,7 +29,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v15.3'
+APP_VERSION = 'v16.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -76,6 +76,86 @@ def get_country_from_phone(phone_number):
         if phone.startswith(code):
             return country_codes[code]
     return 'XX'
+
+# ==================== SCREENSHOT & ERROR LOGIC ====================
+def take_error_screenshot(driver, phone, excel_path):
+    """এরর হলে এক্সেল ফাইলের ডিরেক্টরিতে স্ক্রিনশট সেভ করবে"""
+    try:
+        base_dir = os.path.dirname(excel_path)
+        screenshot_dir = os.path.join(base_dir, 'Bot_Errors')
+        
+        if not os.path.exists(screenshot_dir):
+            os.makedirs(screenshot_dir, exist_ok=True)
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"error_{phone}_{timestamp}.png"
+        file_path = os.path.join(screenshot_dir, file_name)
+        
+        driver.save_screenshot(file_path)
+        print(f"{Color.YELLOW}[!] Screenshot saved to: {file_path}{Color.RESET}")
+        return file_path
+    except Exception as e:
+        print(f"{Color.RED}[-] Screenshot failed: {e}{Color.RESET}")
+        return None
+
+# ==================== AUTOMATION EXTENSION CREATOR ====================
+def create_automation_extension(folder_path):
+    """ক্লিক এবং স্ক্রল করার জন্য বিশেষ এক্সটেনশন তৈরি"""
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Ridol Auto Clicker",
+        "permissions": ["tabs", "<all_urls>", "webRequest", "webRequestBlocking", "storage"],
+        "content_scripts": [{
+            "matches": ["*://*.facebook.com/*"],
+            "js": ["content.js"],
+            "run_at": "document_end"
+        }]
+    }
+    """
+    
+    content_js = """
+    function deepSearchAndClick() {
+        // ১. অটোমেটিক স্ক্রল ডাউন
+        window.scrollTo(0, document.body.scrollHeight);
+
+        // ২. See More / See All বাটন চেক
+        let moreButtons = document.querySelectorAll('div, span, a, button');
+        moreButtons.forEach(btn => {
+            let txt = btn.innerText ? btn.innerText.toLowerCase() : "";
+            if (txt.includes('see more') || txt.includes('see all') || txt.includes('more options')) {
+                btn.click();
+            }
+        });
+
+        // ৩. SMS অপশন খুঁজে ক্লিক
+        let targets = ['sms', 'get code or link via sms', 'sent otp sms', 'get code sms'];
+        let labels = document.querySelectorAll('label, div, span, input');
+        for (let el of labels) {
+            let elTxt = el.innerText ? el.innerText.toLowerCase() : "";
+            for (let t of targets) {
+                if (elTxt.includes(t)) {
+                    el.click();
+                    console.log("SMS Found and Clicked");
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // প্রতি ২ সেকেন্ড অন্তর চেক করবে
+    setInterval(deepSearchAndClick, 2000);
+    """
+    
+    ext_path = os.path.join(folder_path, 'auto_clicker')
+    os.makedirs(ext_path, exist_ok=True)
+    with open(os.path.join(ext_path, 'manifest.json'), 'w') as f: 
+        f.write(manifest_json)
+    with open(os.path.join(ext_path, 'content.js'), 'w') as f: 
+        f.write(content_js)
+    return ext_path
 
 # ==================== EXCEL READER ====================
 def read_numbers_from_excel(file_path):
@@ -344,8 +424,10 @@ class CoreManager:
 
 # ==================== STEALTH BROWSER ====================
 class StealthBrowser:
-    def __init__(self, proxy_data=None):
+    def __init__(self, proxy_data=None, auto_clicker_path=None, excel_path=None):
         self.proxy_data = proxy_data
+        self.auto_clicker_path = auto_clicker_path
+        self.excel_path = excel_path
         self.driver = None
 
     def start(self):
@@ -370,6 +452,7 @@ class StealthBrowser:
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
             
+            # Proxy Extension
             if self.proxy_data:
                 print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
                 extension_path = create_proxy_auth_extension(
@@ -381,6 +464,11 @@ class StealthBrowser:
                 )
                 options.add_argument(f'--load-extension={extension_path}')
                 print(f"{Color.GREEN}[+] Proxy extension loaded{Color.RESET}")
+            
+            # Auto Clicker Extension
+            if self.auto_clicker_path and os.path.exists(self.auto_clicker_path):
+                options.add_argument(f'--load-extension={self.auto_clicker_path}')
+                print(f"{Color.GREEN}[+] Auto Clicker extension loaded{Color.RESET}")
             
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -412,107 +500,73 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FORGOT PASSWORD OTP SENDER (DEEP PROCESSING) ====================
-def forgot_password_otp_sender(driver, phone_number):
+# ==================== FORGOT PASSWORD OTP SENDER (WITH SCREENSHOT) ====================
+def forgot_password_otp_sender(driver, phone_number, excel_path):
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.webdriver.common.keys import Keys
         
-        print(f"{Color.CYAN}[*] Deep Processing: {phone_number}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
         
-        def navigate_to_identify():
-            driver.get("https://m.facebook.com/login/identify/")
-            time.sleep(2)
-            input_box = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='email']"))
-            )
+        # ১. সার্চ পেজ
+        driver.get("https://m.facebook.com/login/identify/")
+        time.sleep(3)
+        
+        try:
+            input_xpath = "//input[contains(@name,'email') or contains(@type,'text') or @id='identify_email']"
+            input_box = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, input_xpath)))
             input_box.clear()
             input_box.send_keys(phone_number)
             input_box.send_keys(Keys.ENTER)
-            time.sleep(3)
+            print(f"{Color.GREEN}[✓] Number Searched{Color.RESET}")
+            time.sleep(4)
+        except:
+            take_error_screenshot(driver, phone_number, excel_path)
+            return False
 
-        navigate_to_identify()
-
-        # প্রোফাইল লুপ শুরু
+        # ২. প্রোফাইল সাইকেল
         account_index = 0
-        while True:
-            # ১. চেক করা প্রোফাইল লিস্টে আছে কি না
-            accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[@role='button' and contains(@class, 'account')]")
+        max_profiles = 5
+        
+        while account_index < max_profiles:
+            accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[contains(@class, 'account')]")
             
-            if not accounts:
-                # যদি সরাসরি রিকভারি পেজে চলে যায় (একটি প্রোফাইল থাকলে)
-                pass 
-            elif account_index < len(accounts):
-                print(f"{Color.YELLOW}[*] Checking Profile #{account_index + 1}{Color.RESET}")
+            if accounts and account_index < len(accounts):
+                print(f"{Color.YELLOW}[*] Testing Profile #{account_index + 1}{Color.RESET}")
                 driver.execute_script("arguments[0].click();", accounts[account_index])
-                time.sleep(3)
-            else:
-                print(f"{Color.RED}[✗] All profiles checked. No SMS option found.{Color.RESET}")
-                return False
+                time.sleep(4)
 
-            # ২. 'See More' বা 'See All' বাটন চেক এবং ক্লিক
+            if "minute" in driver.page_source.lower() or "(01:" in driver.page_source:
+                print(f"{Color.RED}[!] Profile Locked. Skipping...{Color.RESET}")
+                account_index += 1
+                driver.get("https://m.facebook.com/login/identify/")
+                continue
+
+            # ফাইনাল সাবমিট
             try:
-                see_more_script = """
-                var more = document.evaluate("//*[contains(text(), 'See more') or contains(text(), 'See all') or contains(text(), 'More options')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if(more) { more.click(); return true; }
-                return false;
+                final_btn_script = """
+                var b = document.querySelector('button[type="submit"], button[name="reset_action"]');
+                if(b) { b.click(); return true; } return false;
                 """
-                if driver.execute_script(see_more_script):
-                    print(f"{Color.DIM}[*] Expanded 'See More' options...{Color.RESET}")
-                    time.sleep(2)
+                if driver.execute_script(final_btn_script):
+                    print(f"{Color.GREEN}[+] OTP Triggered!{Color.RESET}")
+                    time.sleep(6)
+                    return True
             except: pass
 
-            # ৩. কাউন্টডাউন বা ব্লক চেক (skip logic)
-            try:
-                page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-                if "minute" in page_text or "second" in page_text or "(01:" in page_text or "(00:" in page_text:
-                    print(f"{Color.RED}[!] Countdown detected. Skipping this profile...{Color.RESET}")
-                    account_index += 1
-                    navigate_to_identify()
-                    continue
-            except: pass
-
-            # ৪. SMS অপশন খোঁজা (Multiple Text Match)
-            sms_logic = """
-            var targets = ['Get code or link via SMS', 'sent OTP SMS', 'Get code SMS', 'via SMS', 'Send code via SMS'];
-            var labels = document.querySelectorAll('label, div, span');
-            for (var i = 0; i < labels.length; i++) {
-                for (var j = 0; j < targets.length; j++) {
-                    if (labels[i].innerText.includes(targets[j])) {
-                        labels[i].click();
-                        return true;
-                    }
-                }
-            }
-            return false;
-            """
-            
-            if driver.execute_script(sms_logic):
-                print(f"{Color.GREEN}[✓] SMS Method Found & Selected{Color.RESET}")
-                time.sleep(1)
-                
-                # ৫. কন্টিনিউ বাটনে ক্লিক করে ওটিপি পাঠানো
-                try:
-                    submit_script = """
-                    var btn = document.querySelector('button[type="submit"], button[name="reset_action"]');
-                    if(btn) { btn.click(); return true; }
-                    return false;
-                    """
-                    if driver.execute_script(submit_script):
-                        print(f"{Color.GREEN}[+] OTP Triggered for: {phone_number}{Color.RESET}")
-                        time.sleep(5)
-                        return True
-                except: pass
-            
-            # যদি এই প্রোফাইলে SMS না থাকে তবে ব্যাকে গিয়ে পরের প্রোফাইল
-            print(f"{Color.YELLOW}[!] SMS not found in this profile. Trying next...{Color.RESET}")
             account_index += 1
-            navigate_to_identify()
+            print(f"{Color.DIM}[*] Retrying with next profile...{Color.RESET}")
+            driver.get("https://m.facebook.com/login/identify/")
+            time.sleep(2)
+
+        take_error_screenshot(driver, phone_number, excel_path)
+        return False
 
     except Exception as e:
-        print(f"{Color.RED}[-] Error: {str(e)}{Color.RESET}")
+        print(f"{Color.RED}[-] Crash: {e}{Color.RESET}")
+        take_error_screenshot(driver, phone_number, excel_path)
         return False
 
 # ==================== UI & APP CONTROLLER ====================
@@ -520,6 +574,7 @@ class SaaSApp:
     def __init__(self):
         self.core = CoreManager()
         self.core.verify_license()
+        self.auto_clicker_path = None
 
     def draw_ui(self):
         os.system('clear')
@@ -531,7 +586,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Forgot Password OTP Sender (Deep){Color.RESET}")
+        print(f"         {Color.PINK}Forgot Password OTP Sender (v16.0){Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
@@ -574,6 +629,10 @@ class SaaSApp:
             time.sleep(3)
             return
         
+        # Auto Clicker Extension তৈরি
+        self.auto_clicker_path = create_automation_extension(SCRIPT_DIR)
+        print(f"{Color.GREEN}[+] Auto Clicker extension created{Color.RESET}")
+        
         print(f"{Color.CYAN}[*] Reading numbers from Excel...{Color.RESET}")
         numbers_data = read_numbers_from_excel(self.core.excel_file)
         
@@ -613,9 +672,9 @@ class SaaSApp:
                 failed_count += 1
                 continue
 
-            browser = StealthBrowser(proxy_data)
+            browser = StealthBrowser(proxy_data, self.auto_clicker_path, self.core.excel_file)
             if browser.start():
-                success = forgot_password_otp_sender(browser.driver, phone)
+                success = forgot_password_otp_sender(browser.driver, phone, self.core.excel_file)
                 if success:
                     success_count += 1
                     print(f"{Color.GREEN}[✓] OTP sent to: {phone}{Color.RESET}")
