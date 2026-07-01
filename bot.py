@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v15.0 - Facebook Forgot Password OTP Sender
-Final Version - All Features Included
+Ridol SaaS Tool v15.1 - Facebook Forgot Password OTP Sender
+Updated OTP Logic - Multiple Selectors
 Author: Ridol Islam
 """
 
@@ -29,7 +29,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v15.0'
+APP_VERSION = 'v15.1'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -425,82 +425,116 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FORGOT PASSWORD OTP SENDER ====================
+# ==================== FORGOT PASSWORD OTP SENDER (UPDATED) ====================
 def forgot_password_otp_sender(driver, phone_number):
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException
         
-        print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
+        print(f"{Color.CYAN}[*] Target: {phone_number}{Color.RESET}")
         
         # ১. ফরগট পাসওয়ার্ড পেজে যাওয়া
         driver.get("https://m.facebook.com/login/identify/")
         time.sleep(2)
 
-        # ২. ফোন নম্বর ইনপুট করা
+        # ২. ইনপুট ফিল্ড খুঁজে নম্বর বসানো
         try:
-            phone_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='tel' or @name='email']"))
-            )
-            phone_field.clear()
-            phone_field.send_keys(phone_number)
+            phone_xpath = "//input[contains(@name,'email') or contains(@type,'text') or contains(@type,'tel')]"
+            input_box = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, phone_xpath)))
+            input_box.clear()
+            input_box.send_keys(phone_number)
             print(f"{Color.GREEN}[✓] Phone number entered{Color.RESET}")
         except:
-            print(f"{Color.RED}[✗] Phone field not found!{Color.RESET}")
+            print(f"{Color.RED}[✗] Phone input box not found!{Color.RESET}")
             return False
 
-        # ৩. প্রথম "Continue" বা "Search" বাটনে ক্লিক
-        try:
-            search_btn = WebDriverWait(driver, 7).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Continue') or contains(., 'Search')]"))
-            )
-            driver.execute_script("arguments[0].click();", search_btn)
-            print(f"{Color.GREEN}[✓] First Continue clicked{Color.RESET}")
-        except:
-            print(f"{Color.RED}[✗] Search/Continue button not found!{Color.RESET}")
+        # ৩. প্রথম সার্চ/কন্টিনিউ বাটনে ক্লিক
+        search_selectors = [
+            "//button[@name='did_submit']",
+            "//button[contains(., 'Search')]",
+            "//button[contains(., 'Continue')]",
+            "//button[@type='submit']",
+            "//*[@data-sigil='touchable identify_search_button']"
+        ]
+        
+        clicked = False
+        for xpath in search_selectors:
+            try:
+                btn = WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+                driver.execute_script("arguments[0].click();", btn)
+                clicked = True
+                print(f"{Color.GREEN}[✓] Search/Continue clicked successfully{Color.RESET}")
+                break
+            except: continue
+        
+        if not clicked:
+            print(f"{Color.RED}[✗] First button could not be found!{Color.RESET}")
             return False
             
         time.sleep(3)
 
-        # ৪. যদি অ্যাকাউন্টের লিস্ট আসে (Choose your account)
+        # ৪. অ্যাকাউন্ট সিলেক্ট করা (যদি লিস্ট আসে)
         try:
-            account_list = driver.find_elements(By.XPATH, "//ul/li//a | //div[contains(@role, 'button')]")
-            if account_list:
-                driver.execute_script("arguments[0].click();", account_list[0])
-                print(f"{Color.GREEN}[✓] Profile selected from list{Color.RESET}")
+            account_xpath = "//div[contains(@class, 'account')]//a | //ul/li//a | //div[@role='button' and contains(., 'Rid')]"
+            accounts = driver.find_elements(By.XPATH, account_xpath)
+            if accounts:
+                driver.execute_script("arguments[0].click();", accounts[0])
+                print(f"{Color.GREEN}[✓] Account selected from list{Color.RESET}")
                 time.sleep(2)
-        except:
-            pass
+        except: pass
 
-        # ৫. SMS অপশন সিলেক্ট করা (Get code via SMS)
-        try:
-            sms_option = WebDriverWait(driver, 7).until(
-                EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), 'SMS')] | //label[contains(., 'SMS')]"))
-            )
-            driver.execute_script("arguments[0].click();", sms_option)
-            print(f"{Color.GREEN}[✓] SMS option selected{Color.RESET}")
-        except:
-            print(f"{Color.YELLOW}[!] SMS option not found or already selected{Color.RESET}")
+        # ৫. SMS অপশনটি খুঁজে সিলেক্ট করা
+        print(f"{Color.CYAN}[*] Step: Selecting SMS method...{Color.RESET}")
+        sms_selectors = [
+            "//div[contains(text(), 'SMS')]",
+            "//span[contains(text(), 'SMS')]",
+            "//label[contains(., 'SMS')]",
+            "//input[@value='sms']",
+            "//*[contains(text(), 'code via SMS')]"
+        ]
+        
+        sms_found = False
+        for xpath in sms_selectors:
+            try:
+                sms_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+                driver.execute_script("arguments[0].click();", sms_btn)
+                sms_found = True
+                print(f"{Color.GREEN}[✓] recovery method: SMS selected{Color.RESET}")
+                break
+            except: continue
 
-        # ৬. চূড়ান্ত "Continue" বাটন (যা ওটিপি পাঠাবে)
-        try:
-            final_btn = WebDriverWait(driver, 7).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and (contains(., 'Continue') or @name='reset_action')]"))
-            )
-            driver.execute_script("arguments[0].click();", final_btn)
-            print(f"{Color.GREEN}[+] OTP Triggered Successfully!{Color.RESET}")
+        # ৬. চূড়ান্ত কন্টিনিউ বাটন ক্লিক (OTP ট্র্রিগার করার জন্য)
+        final_selectors = [
+            "//button[@name='reset_action']",
+            "//button[@type='submit' and contains(., 'Continue')]",
+            "//button[contains(text(), 'Continue')]",
+            "//*[@data-sigil='touchable m_login_continue_button']"
+        ]
+
+        sent = False
+        for xpath in final_selectors:
+            try:
+                final_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+                driver.execute_script("arguments[0].click();", final_btn)
+                sent = True
+                print(f"{Color.GREEN}[+] OTP successfully triggered for {phone_number}{Color.RESET}")
+                break
+            except: continue
+
+        if sent:
             time.sleep(5)
             return True
-        except:
-            if "confirm" in driver.current_url or "checkpoint" in driver.current_url:
-                print(f"{Color.GREEN}[+] Success: Moved to confirmation page{Color.RESET}")
+        else:
+            if "confirm" in driver.current_url or "checkpoint" in driver.current_url or "recovery" in driver.current_url:
+                print(f"{Color.GREEN}[+] Success: Redirected to OTP page{Color.RESET}")
                 return True
-            print(f"{Color.RED}[✗] Final Continue button not found!{Color.RESET}")
+            print(f"{Color.RED}[✗] Final button not found!{Color.RESET}")
             return False
             
     except Exception as e:
-        print(f"{Color.RED}[-] Error: {str(e)}{Color.RESET}")
+        print(f"{Color.RED}[-] Automation Crash: {str(e)}{Color.RESET}")
         return False
 
 # ==================== UI & APP CONTROLLER ====================
