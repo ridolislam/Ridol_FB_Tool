@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v21.3 - ChatGPT Account Creator
-Complete Live Sync - Click, Scroll, Type all recorded
+Ridol SaaS Tool v22.0 - ChatGPT Account Creator
+Complete IP Hide + WebRTC Leak Prevention + IP Verification
 Author: Ridol Islam
 """
 
@@ -69,6 +69,19 @@ def get_training_steps():
         with open(MACRO_FILE, 'r') as f:
             return json.load(f)
     return []
+
+# ==================== CHECK CURRENT IP ====================
+def check_current_ip(driver):
+    """কাজের শুরুতে আইপি চেক করবে"""
+    try:
+        driver.get("https://api.ipify.org?format=json")
+        time.sleep(2)
+        body_text = driver.find_element("tag name", "body").text
+        print(f"{Color.GREEN}[✓] Current Browser IP: {body_text}{Color.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Color.RED}[!] Could not verify IP: {e}{Color.RESET}")
+        return False
 
 # ==================== TRAINING SERVER ROUTES ====================
 @stream_app.route('/')
@@ -302,7 +315,6 @@ def index():
             
             setInterval(updateStepCount, 1000);
             
-            // ==================== CLICK ====================
             function sendClick(event) {
                 let img = document.getElementById('screen');
                 let rect = img.getBoundingClientRect();
@@ -328,7 +340,6 @@ def index():
                 .catch(() => showFeedback('❌ Error'));
             }
             
-            // ==================== SCROLL ====================
             function sendScroll(event) {
                 let scrollY = window.scrollY || document.documentElement.scrollTop;
                 
@@ -351,32 +362,6 @@ def index():
                 }
             }
             
-            // ==================== KEYBOARD / TYPE ====================
-            document.addEventListener('keydown', function(e) {
-                // Skip if typing in input field (to avoid double recording)
-                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                    // Record the key press
-                    fetch('/remote_type', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            key: e.key,
-                            target: e.target.tagName,
-                            value: e.target.value
-                        })
-                    })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.success) {
-                            updateStepCount();
-                            showFeedback('⌨️ Typed: ' + e.key);
-                        }
-                    })
-                    .catch(() => {});
-                }
-            });
-            
-            // ==================== PASTE NUMBER ====================
             function pasteNumber() {
                 if (!currentPhone || currentPhone === 'Not started') {
                     alert('⚠️ No phone number loaded!');
@@ -400,7 +385,6 @@ def index():
                 .catch(() => showFeedback('❌ Error'));
             }
             
-            // ==================== SAVE & NEXT ====================
             function saveAndNext() {
                 if (stepCount === 0) {
                     alert('⚠️ Please record at least one step first!');
@@ -415,7 +399,6 @@ def index():
                 }
             }
             
-            // ==================== CLEAR ====================
             function clearSteps() {
                 if (confirm('🗑️ Clear all recorded steps?')) {
                     fetch('/clear_steps', { method: 'POST' })
@@ -423,12 +406,10 @@ def index():
                 }
             }
             
-            // Auto refresh screen
             setInterval(function(){
                 document.getElementById('screen').src = '/stream?' + new Date().getTime();
             }, 1000);
             
-            // Track scroll on the window
             window.addEventListener('scroll', function(e) {
                 let scrollY = window.scrollY || document.documentElement.scrollTop;
                 if (Math.abs(scrollY - lastScrollY) > 10) {
@@ -464,7 +445,6 @@ def remote_click():
             element = shared_driver.execute_script(f"return document.elementFromPoint({real_x}, {real_y});")
             
             if element:
-                # Generate selector
                 element_id = element.get_attribute('id')
                 element_name = element.get_attribute('name')
                 element_class = element.get_attribute('class')
@@ -505,7 +485,6 @@ def remote_click():
                     except:
                         selector = tag
                 
-                # Record step
                 steps = []
                 if os.path.exists(MACRO_FILE):
                     with open(MACRO_FILE, 'r') as f:
@@ -522,7 +501,6 @@ def remote_click():
                 with open(MACRO_FILE, 'w') as f:
                     json.dump(steps, f, indent=2)
                 
-                # Touch click simulate
                 click_script = """
                 function simulateClick(element) {
                     if (!element) return false;
@@ -560,9 +538,7 @@ def remote_click():
                         var clickEvent = new MouseEvent('click', {
                             view: window,
                             bubbles: true,
-                            cancelable: true,
-                            clientX: rect ? rect.left + rect.width/2 : 0,
-                            clientY: rect ? rect.top + rect.height/2 : 0
+                            cancelable: true
                         });
                         element.dispatchEvent(clickEvent);
                     }
@@ -620,12 +596,9 @@ def remote_type():
             target = data.get('target', '')
             value = data.get('value', '')
             
-            # Find active element and type
             if target == 'INPUT' or target == 'TEXTAREA':
-                # Get the focused element
                 focused = shared_driver.execute_script("return document.activeElement;")
                 if focused:
-                    # Type the key
                     shared_driver.execute_script("""
                         var element = arguments[0];
                         var key = arguments[1];
@@ -635,7 +608,6 @@ def remote_type():
                         element.dispatchEvent(event2);
                     """, focused, key)
                     
-                    # Record step
                     steps = []
                     if os.path.exists(MACRO_FILE):
                         with open(MACRO_FILE, 'r') as f:
@@ -764,7 +736,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v21.3'
+APP_VERSION = 'v22.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -797,6 +769,190 @@ def take_error_screenshot(driver, phone, excel_path):
     except Exception as e:
         print(f"{Color.RED}[-] Screenshot failed: {e}{Color.RESET}")
         return None
+
+# ==================== PROXY EXTENSION CREATOR ====================
+def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, folder_path):
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Chrome Proxy",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking"
+        ],
+        "background": {
+            "scripts": ["background.js"]
+        },
+        "minimum_chrome_version": "22.0.0"
+    }
+    """
+    background_js = """
+    var config = {
+        mode: "fixed_servers",
+        rules: {
+            singleProxy: {
+                scheme: "http",
+                host: "%s",
+                port: parseInt(%s)
+            },
+            bypassList: ["localhost"]
+        }
+    };
+    chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
+    function callbackFn(details) {
+        return {
+            authCredentials: {
+                username: "%s",
+                password: "%s"
+            }
+        };
+    }
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn,
+        {urls: ["<all_urls>"]},
+        ["blocking"]
+    );
+    """ % (proxy_host, proxy_port, proxy_user, proxy_pass)
+    
+    extension_folder = os.path.join(folder_path, 'proxy_extension')
+    os.makedirs(extension_folder, exist_ok=True)
+    with open(os.path.join(extension_folder, 'manifest.json'), 'w') as f:
+        f.write(manifest_json)
+    with open(os.path.join(extension_folder, 'background.js'), 'w') as f:
+        f.write(background_js)
+    
+    zip_path = os.path.join(folder_path, 'proxy_auth_plugin.zip')
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    with zipfile.ZipFile(zip_path, 'w') as zp:
+        zp.write(os.path.join(extension_folder, 'manifest.json'), 'manifest.json')
+        zp.write(os.path.join(extension_folder, 'background.js'), 'background.js')
+    return extension_folder
+
+# ==================== STEALTH BROWSER (FULL IP HIDE) ====================
+class StealthBrowser:
+    def __init__(self, proxy_data=None):
+        self.proxy_data = proxy_data
+        self.driver = None
+
+    def start(self):
+        if not CHROMEDRIVER_PATH:
+            print(f"{Color.RED}[-] Chromedriver not found!{Color.RESET}")
+            return False
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            
+            options = Options()
+            options.add_argument('--headless=new')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--blink-settings=imagesEnabled=false')
+            
+            # ==================== IP HIDE & LEAK PREVENTION ====================
+            # ১. WebRTC ব্লক করা (আসল IP ফাঁস হওয়া রোধ)
+            options.add_argument('--disable-webrtc')
+            options.add_argument('--disable-rtc-smoothness-algorithm')
+            options.add_argument('--force-fieldtrials=WebRTC-HideLocalIpsWithMdns/Enabled/')
+            
+            # ২. টাইমজোন এবং ল্যাঙ্গুয়েজ স্পুফিং
+            options.add_argument('--lang=en-US')
+            options.add_argument('--timezone-offset=0')
+            
+            # ৩. লোকেশন স্পুফিং
+            options.add_argument('--enable-geolocation')
+            
+            # ==================== PROXY SETUP ====================
+            if self.proxy_data:
+                print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
+                extension_folder = create_proxy_auth_extension(
+                    self.proxy_data['ip'],
+                    self.proxy_data['port'],
+                    self.proxy_data['user'],
+                    self.proxy_data['pass'],
+                    SCRIPT_DIR
+                )
+                options.add_argument(f'--load-extension={extension_folder}')
+                print(f"{Color.GREEN}[+] Proxy extension loaded{Color.RESET}")
+            
+            # ==================== ANTI-DETECTION ====================
+            # ৪. অটোমেশন সিগনেচার মুছে ফেলা
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            
+            # ৫. Random User-Agent
+            ua_list = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
+            ]
+            options.add_argument(f'user-agent={random.choice(ua_list)}')
+            
+            service = Service(CHROMEDRIVER_PATH)
+            self.driver = webdriver.Chrome(service=service, options=options)
+            
+            # ==================== JAVASCRIPT INJECTION ====================
+            # ৬. ফিঙ্গারপ্রিন্ট এবং WebRTC লিক হাইড
+            self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": """
+                    // WebDriver হাইড
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    
+                    // Languages স্পুফ
+                    Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                    
+                    // WebRTC Leak ফিক্স
+                    window.RTCPeerConnection = undefined;
+                    window.RTCSessionDescription = undefined;
+                    window.RTCIceCandidate = undefined;
+                    
+                    // Plugins স্পুফ
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => {
+                            return {
+                                length: 5,
+                                item: function(i) { return this[i]; },
+                                namedItem: function(name) { return null; }
+                            };
+                        }
+                    });
+                    
+                    // Chrome ফিচার স্পুফ
+                    Object.defineProperty(navigator, 'userAgentData', {get: () => undefined});
+                    
+                    // WebGL Vendor হাইড
+                    const getParameter = WebGLRenderingContext.prototype.getParameter;
+                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                        if (parameter === 37445) return 'Intel Inc.';
+                        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                        return getParameter.call(this, parameter);
+                    };
+                """
+            })
+            
+            print(f"{Color.GREEN}[+] Browser started with Full IP Hide{Color.RESET}")
+            return True
+            
+        except Exception as e:
+            print(f"{Color.RED}[-] Browser error: {e}{Color.RESET}")
+            return False
+
+    def stop(self):
+        if self.driver:
+            try:
+                self.driver.quit()
+                print(f"{Color.DIM}[*] Browser closed{Color.RESET}")
+            except:
+                pass
 
 # ==================== EXCEL READER ====================
 def read_numbers_from_excel(file_path):
@@ -878,71 +1034,6 @@ def find_excel_files():
                 break
     return excel_files
 
-# ==================== PROXY EXTENSION CREATOR ====================
-def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, folder_path):
-    manifest_json = """
-    {
-        "version": "1.0.0",
-        "manifest_version": 2,
-        "name": "Chrome Proxy",
-        "permissions": [
-            "proxy",
-            "tabs",
-            "unlimitedStorage",
-            "storage",
-            "<all_urls>",
-            "webRequest",
-            "webRequestBlocking"
-        ],
-        "background": {
-            "scripts": ["background.js"]
-        },
-        "minimum_chrome_version": "22.0.0"
-    }
-    """
-    background_js = """
-    var config = {
-        mode: "fixed_servers",
-        rules: {
-            singleProxy: {
-                scheme: "http",
-                host: "%s",
-                port: parseInt(%s)
-            },
-            bypassList: ["localhost"]
-        }
-    };
-    chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
-    function callbackFn(details) {
-        return {
-            authCredentials: {
-                username: "%s",
-                password: "%s"
-            }
-        };
-    }
-    chrome.webRequest.onAuthRequired.addListener(
-        callbackFn,
-        {urls: ["<all_urls>"]},
-        ["blocking"]
-    );
-    """ % (proxy_host, proxy_port, proxy_user, proxy_pass)
-    
-    extension_folder = os.path.join(folder_path, 'proxy_extension')
-    os.makedirs(extension_folder, exist_ok=True)
-    with open(os.path.join(extension_folder, 'manifest.json'), 'w') as f:
-        f.write(manifest_json)
-    with open(os.path.join(extension_folder, 'background.js'), 'w') as f:
-        f.write(background_js)
-    
-    zip_path = os.path.join(folder_path, 'proxy_auth_plugin.zip')
-    if os.path.exists(zip_path):
-        os.remove(zip_path)
-    with zipfile.ZipFile(zip_path, 'w') as zp:
-        zp.write(os.path.join(extension_folder, 'manifest.json'), 'manifest.json')
-        zp.write(os.path.join(extension_folder, 'background.js'), 'background.js')
-    return extension_folder
-
 # ==================== CORE MANAGER ====================
 class CoreManager:
     def __init__(self):
@@ -1022,64 +1113,6 @@ class CoreManager:
         except Exception as e:
             print(f"{Color.RED}[-] Proxy error: {e}{Color.RESET}")
             return None
-
-# ==================== STEALTH BROWSER ====================
-class StealthBrowser:
-    def __init__(self, proxy_data=None):
-        self.proxy_data = proxy_data
-        self.driver = None
-
-    def start(self):
-        if not CHROMEDRIVER_PATH:
-            print(f"{Color.RED}[-] Chromedriver not found!{Color.RESET}")
-            return False
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            options = Options()
-            options.add_argument('--headless=new')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--blink-settings=imagesEnabled=false')
-            options.add_argument('--disable-web-security')
-            options.add_argument('--ignore-certificate-errors')
-            options.add_argument('--disable-blink-features=AutomationControlled')
-            if self.proxy_data:
-                print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
-                extension_path = create_proxy_auth_extension(
-                    self.proxy_data['ip'],
-                    self.proxy_data['port'],
-                    self.proxy_data['user'],
-                    self.proxy_data['pass'],
-                    SCRIPT_DIR
-                )
-                options.add_argument(f'--load-extension={extension_path}')
-                print(f"{Color.GREEN}[+] Proxy extension loaded{Color.RESET}")
-            ua_list = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-            ]
-            options.add_argument(f'user-agent={random.choice(ua_list)}')
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option('useAutomationExtension', False)
-            service = Service(CHROMEDRIVER_PATH)
-            self.driver = webdriver.Chrome(service=service, options=options)
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.driver.set_page_load_timeout(30)
-            print(f"{Color.GREEN}[+] Browser started successfully!{Color.RESET}")
-            return True
-        except Exception as e:
-            print(f"{Color.RED}[-] Browser error: {e}{Color.RESET}")
-            return False
-
-    def stop(self):
-        if self.driver:
-            try:
-                self.driver.quit()
-                print(f"{Color.DIM}[*] Browser closed{Color.RESET}")
-            except:
-                pass
 
 # ==================== PLAYBACK MACRO ====================
 def playback_macro(driver, phone_number, steps):
@@ -1189,7 +1222,6 @@ def playback_macro(driver, phone_number, steps):
                 time.sleep(0.5)
                 
             elif step['action'] == 'type':
-                # Type the recorded key
                 key = step.get('key', '')
                 if key:
                     focused = driver.execute_script("return document.activeElement;")
@@ -1225,6 +1257,10 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
         current_country = get_country_from_phone(phone_number)
         print(f"{Color.CYAN}[*] Country detected: {current_country}{Color.RESET}")
         
+        # ==================== IP VERIFICATION ====================
+        check_current_ip(driver)
+        
+        # ==================== GO TO TARGET ====================
         driver.get("https://chatgpt.com/auth/login")
         time.sleep(3)
         
@@ -1419,8 +1455,6 @@ class SaaSApp:
             print(f"{Color.CYAN}[+] URL: http://{LOCAL_IP}:5000{Color.RESET}")
             print(f"{Color.YELLOW}[!] Open this URL in your browser{Color.RESET}")
             print(f"{Color.YELLOW}[!] Everything you do, the bot will do{Color.RESET}")
-            print(f"{Color.YELLOW}[!] Click → Bot clicks | Scroll → Bot scrolls{Color.RESET}")
-            print(f"{Color.YELLOW}[!] Type → Bot types | Paste → Bot pastes{Color.RESET}")
             time.sleep(4)
         
         print(f"\n{Color.GREEN}[+] Starting ChatGPT Account Creator...{Color.RESET}")
