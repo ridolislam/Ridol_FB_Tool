@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v16.0 - Facebook Forgot Password OTP Sender
-With Screenshot & Auto Clicker Extension
+Ridol SaaS Tool v18.0 - Facebook OTP Sender
+With Live Training Mode & Macro Playback
 Author: Ridol Islam
 """
 
@@ -10,12 +10,349 @@ import sys
 import time
 import json
 import random
+import threading
 import subprocess
 import zipfile
 import requests
 import re
+import socket
 from datetime import datetime
+from flask import Flask, send_file, render_template_string, request, jsonify
 from selenium.webdriver.chrome.service import Service
+
+# ==================== FLASK APP FOR TRAINING ====================
+MACRO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'robot_steps.json')
+LIVE_IMG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'liveview.png')
+stream_app = Flask(__name__)
+shared_driver = None
+is_training_mode = False
+training_complete = False
+
+# ==================== GET LOCAL IP ====================
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "127.0.0.1"
+
+LOCAL_IP = get_local_ip()
+
+# ==================== TRAINING SERVER ROUTES ====================
+@stream_app.route('/')
+def index():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Ridol Tool - Training Mode</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                background: #0a0e17; 
+                color: #e0e0e0; 
+                font-family: 'Segoe UI', Tahoma, sans-serif; 
+                padding: 20px;
+                min-height: 100vh;
+            }
+            .container { max-width: 800px; margin: 0 auto; }
+            .header {
+                background: linear-gradient(135deg, #1a1a2e, #16213e);
+                padding: 20px;
+                border-radius: 12px;
+                border: 1px solid #2a3a5c;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+            .header h1 { color: #f7971e; font-size: 24px; }
+            .header .subtitle { color: #8899aa; font-size: 14px; }
+            .instructions {
+                background: #1a1a2e;
+                padding: 20px;
+                border-radius: 12px;
+                border: 1px solid #2a3a5c;
+                margin-bottom: 20px;
+            }
+            .instructions h3 { color: #f7971e; margin-bottom: 10px; }
+            .instructions li { 
+                padding: 8px 0; 
+                color: #b0b0b0;
+                border-bottom: 1px solid #1a1a2e;
+            }
+            .instructions li:last-child { border-bottom: none; }
+            .instructions .step-num { 
+                color: #f7971e; 
+                font-weight: bold; 
+                display: inline-block;
+                width: 25px;
+            }
+            #screen { 
+                width: 100%; 
+                max-width: 600px; 
+                border: 2px solid #f7971e; 
+                cursor: crosshair; 
+                border-radius: 8px;
+                display: block;
+                margin: 0 auto;
+            }
+            .controls {
+                background: #1a1a2e;
+                padding: 15px;
+                border-radius: 12px;
+                border: 1px solid #2a3a5c;
+                margin: 15px 0;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                justify-content: center;
+            }
+            .controls button {
+                padding: 10px 25px;
+                border: none;
+                border-radius: 8px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: all 0.3s;
+                font-size: 14px;
+            }
+            .btn-save { background: #00c853; color: white; }
+            .btn-save:hover { background: #00e676; transform: scale(1.02); }
+            .btn-clear { background: #ff1744; color: white; }
+            .btn-clear:hover { background: #ff5252; transform: scale(1.02); }
+            .btn-refresh { background: #2979ff; color: white; }
+            .btn-refresh:hover { background: #448aff; transform: scale(1.02); }
+            .status-bar {
+                background: #0d1117;
+                padding: 12px 20px;
+                border-radius: 8px;
+                margin: 10px 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                border: 1px solid #2a3a5c;
+            }
+            .status-bar .count { color: #f7971e; font-weight: bold; font-size: 18px; }
+            .status-bar .label { color: #8899aa; }
+            .info-text {
+                color: #8899aa;
+                font-size: 12px;
+                text-align: center;
+                padding: 10px;
+            }
+            .highlight { color: #ffd200; }
+            @media (max-width: 600px) {
+                .header h1 { font-size: 18px; }
+                .controls { flex-direction: column; align-items: stretch; }
+                .controls button { width: 100%; }
+                #screen { max-width: 100%; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🤖 Live Training Mode</h1>
+                <div class="subtitle">Teach the bot by demonstrating the process</div>
+            </div>
+
+            <div class="instructions">
+                <h3>📋 Instructions:</h3>
+                <ul style="list-style: none;">
+                    <li><span class="step-num">1.</span> Click on the <span class="highlight">live screen</span> below to record actions</li>
+                    <li><span class="step-num">2.</span> Perform the <span class="highlight">entire process</span> step by step</li>
+                    <li><span class="step-num">3.</span> Watch the <span class="highlight">step counter</span> increase</li>
+                    <li><span class="step-num">4.</span> Click <span class="highlight">"Save & Finish"</span> when done</li>
+                    <li><span class="step-num">5.</span> The bot will <span class="highlight">auto-play</span> your steps</li>
+                </ul>
+            </div>
+
+            <div class="status-bar">
+                <span class="label">📌 Steps Recorded:</span>
+                <span class="count" id="stepCount">0</span>
+            </div>
+
+            <div class="controls">
+                <button class="btn-save" onclick="saveAndFinish()">✅ Save & Finish</button>
+                <button class="btn-refresh" onclick="location.reload()">🔄 Refresh</button>
+                <button class="btn-clear" onclick="clearSteps()">🗑️ Clear All</button>
+            </div>
+
+            <img id="screen" src="/stream" onclick="sendClick(event)" alt="Live View">
+
+            <p class="info-text">
+                💡 Click on any <span class="highlight">button, input field, or link</span> in the live view to record it.
+                <br>🔄 Screen updates every 1 second.
+            </p>
+        </div>
+
+        <script>
+            let stepCount = 0;
+            
+            function updateStepCount() {
+                fetch('/step_count')
+                    .then(r => r.json())
+                    .then(data => {
+                        stepCount = data.count;
+                        document.getElementById('stepCount').textContent = stepCount;
+                    })
+                    .catch(() => {});
+            }
+            
+            setInterval(updateStepCount, 1000);
+            
+            function sendClick(event) {
+                let img = document.getElementById('screen');
+                let rect = img.getBoundingClientRect();
+                let x = (event.clientX - rect.left) / rect.width;
+                let y = (event.clientY - rect.top) / rect.height;
+                
+                fetch('/remote_click', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({x: x, y: y})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStepCount();
+                        // Visual feedback
+                        img.style.borderColor = '#00c853';
+                        setTimeout(() => img.style.borderColor = '#f7971e', 300);
+                    }
+                })
+                .catch(() => {});
+            }
+            
+            function saveAndFinish() {
+                if (stepCount === 0) {
+                    alert('⚠️ Please record at least one step first!');
+                    return;
+                }
+                if (confirm('✅ Save recorded steps and finish training?')) {
+                    fetch('/finish_training', { method: 'POST' })
+                        .then(() => {
+                            alert('✅ Training saved successfully!\nBot will now auto-play your steps.');
+                            window.close();
+                        });
+                }
+            }
+            
+            function clearSteps() {
+                if (confirm('🗑️ Clear all recorded steps?')) {
+                    fetch('/clear_steps', { method: 'POST' })
+                        .then(() => updateStepCount());
+                }
+            }
+            
+            // Auto refresh screen
+            setInterval(function(){
+                document.getElementById('screen').src = '/stream?' + new Date().getTime();
+            }, 1000);
+        </script>
+    </body>
+    </html>
+    """)
+
+@stream_app.route('/stream')
+def stream():
+    return send_file(LIVE_IMG, mimetype='image/png') if os.path.exists(LIVE_IMG) else "Loading..."
+
+@stream_app.route('/remote_click', methods=['POST'])
+def remote_click():
+    global shared_driver
+    if shared_driver:
+        try:
+            data = request.json
+            size = shared_driver.get_window_size()
+            real_x = int(data['x'] * size['width'])
+            real_y = int(data['y'] * size['height'])
+            
+            element = shared_driver.execute_script(f"return document.elementFromPoint({real_x}, {real_y});")
+            if element:
+                # Generate selector
+                tag = element.tag_name
+                element_id = element.get_attribute('id')
+                element_name = element.get_attribute('name')
+                element_class = element.get_attribute('class')
+                element_type = element.get_attribute('type')
+                
+                if element_id:
+                    selector = f"#{element_id}"
+                elif element_name:
+                    selector = f"[name='{element_name}']"
+                elif element_class:
+                    classes = element_class.split()
+                    if classes:
+                        selector = f".{classes[0]}"
+                    else:
+                        selector = tag
+                else:
+                    # Try to find unique selector
+                    try:
+                        selectors = shared_driver.execute_script("""
+                            function getSelector(el) {
+                                if (el.id) return '#' + el.id;
+                                if (el.name) return '[name="' + el.name + '"]';
+                                return el.tagName.toLowerCase();
+                            }
+                            return getSelector(arguments[0]);
+                        """, element)
+                        selector = selectors if selectors else tag
+                    except:
+                        selector = tag
+                
+                # Record step
+                steps = []
+                if os.path.exists(MACRO_FILE):
+                    with open(MACRO_FILE, 'r') as f:
+                        steps = json.load(f)
+                
+                steps.append({
+                    'action': 'click',
+                    'selector': selector,
+                    'tag': tag,
+                    'timestamp': time.time()
+                })
+                
+                with open(MACRO_FILE, 'w') as f:
+                    json.dump(steps, f, indent=2)
+                
+                # Perform click
+                shared_driver.execute_script("arguments[0].click();", element)
+                
+                return jsonify({'success': True, 'selector': selector, 'count': len(steps)})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False})
+
+@stream_app.route('/step_count')
+def step_count():
+    if os.path.exists(MACRO_FILE):
+        try:
+            with open(MACRO_FILE, 'r') as f:
+                steps = json.load(f)
+                return jsonify({'count': len(steps)})
+        except:
+            return jsonify({'count': 0})
+    return jsonify({'count': 0})
+
+@stream_app.route('/finish_training', methods=['POST'])
+def finish_training():
+    global is_training_mode, training_complete
+    is_training_mode = False
+    training_complete = True
+    return jsonify({'success': True})
+
+@stream_app.route('/clear_steps', methods=['POST'])
+def clear_steps():
+    if os.path.exists(MACRO_FILE):
+        os.remove(MACRO_FILE)
+    return jsonify({'success': True})
 
 # ==================== INSTALL OPENPYXL ====================
 try:
@@ -29,7 +366,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v16.0'
+APP_VERSION = 'v18.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -44,6 +381,7 @@ class Color:
     RESET = '\033[0m'
     GOLD = '\033[38;5;214m'
     PINK = '\033[38;5;206m'
+    ORANGE = '\033[38;5;208m'
 
 # ==================== COUNTRY NAME TO CODE ====================
 COUNTRY_NAME_TO_CODE = {
@@ -79,83 +417,20 @@ def get_country_from_phone(phone_number):
 
 # ==================== SCREENSHOT & ERROR LOGIC ====================
 def take_error_screenshot(driver, phone, excel_path):
-    """এরর হলে এক্সেল ফাইলের ডিরেক্টরিতে স্ক্রিনশট সেভ করবে"""
     try:
         base_dir = os.path.dirname(excel_path)
         screenshot_dir = os.path.join(base_dir, 'Bot_Errors')
-        
         if not os.path.exists(screenshot_dir):
             os.makedirs(screenshot_dir, exist_ok=True)
-            
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"error_{phone}_{timestamp}.png"
         file_path = os.path.join(screenshot_dir, file_name)
-        
         driver.save_screenshot(file_path)
         print(f"{Color.YELLOW}[!] Screenshot saved to: {file_path}{Color.RESET}")
         return file_path
     except Exception as e:
         print(f"{Color.RED}[-] Screenshot failed: {e}{Color.RESET}")
         return None
-
-# ==================== AUTOMATION EXTENSION CREATOR ====================
-def create_automation_extension(folder_path):
-    """ক্লিক এবং স্ক্রল করার জন্য বিশেষ এক্সটেনশন তৈরি"""
-    manifest_json = """
-    {
-        "version": "1.0.0",
-        "manifest_version": 2,
-        "name": "Ridol Auto Clicker",
-        "permissions": ["tabs", "<all_urls>", "webRequest", "webRequestBlocking", "storage"],
-        "content_scripts": [{
-            "matches": ["*://*.facebook.com/*"],
-            "js": ["content.js"],
-            "run_at": "document_end"
-        }]
-    }
-    """
-    
-    content_js = """
-    function deepSearchAndClick() {
-        // ১. অটোমেটিক স্ক্রল ডাউন
-        window.scrollTo(0, document.body.scrollHeight);
-
-        // ২. See More / See All বাটন চেক
-        let moreButtons = document.querySelectorAll('div, span, a, button');
-        moreButtons.forEach(btn => {
-            let txt = btn.innerText ? btn.innerText.toLowerCase() : "";
-            if (txt.includes('see more') || txt.includes('see all') || txt.includes('more options')) {
-                btn.click();
-            }
-        });
-
-        // ৩. SMS অপশন খুঁজে ক্লিক
-        let targets = ['sms', 'get code or link via sms', 'sent otp sms', 'get code sms'];
-        let labels = document.querySelectorAll('label, div, span, input');
-        for (let el of labels) {
-            let elTxt = el.innerText ? el.innerText.toLowerCase() : "";
-            for (let t of targets) {
-                if (elTxt.includes(t)) {
-                    el.click();
-                    console.log("SMS Found and Clicked");
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-    
-    // প্রতি ২ সেকেন্ড অন্তর চেক করবে
-    setInterval(deepSearchAndClick, 2000);
-    """
-    
-    ext_path = os.path.join(folder_path, 'auto_clicker')
-    os.makedirs(ext_path, exist_ok=True)
-    with open(os.path.join(ext_path, 'manifest.json'), 'w') as f: 
-        f.write(manifest_json)
-    with open(os.path.join(ext_path, 'content.js'), 'w') as f: 
-        f.write(content_js)
-    return ext_path
 
 # ==================== EXCEL READER ====================
 def read_numbers_from_excel(file_path):
@@ -167,11 +442,9 @@ def read_numbers_from_excel(file_path):
 
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
-        
         print(f"{Color.CYAN}[*] Sheet Name: {sheet.title}{Color.RESET}")
         
         current_country = None
-        
         for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
             country_val = row[0] if len(row) > 0 else None
             number_val = row[1] if len(row) > 1 else None
@@ -185,7 +458,6 @@ def read_numbers_from_excel(file_path):
                 number_str = str(number_val).strip()
                 if 'E+' in number_str:
                     number_str = "{:.0f}".format(float(number_val))
-                
                 clean_number = re.sub(r'[^0-9]', '', number_str)
                 
                 if len(clean_number) >= 7:
@@ -193,17 +465,14 @@ def read_numbers_from_excel(file_path):
                         full_number = '+' + clean_number
                     else:
                         full_number = number_str
-
                     c_code = get_country_from_phone(full_number)
                     if c_code == 'XX' and current_country:
                         c_code = get_country_code_from_name(current_country)
-
                     numbers.append({
                         'number': full_number,
                         'country': c_code,
                         'country_name': current_country or 'Unknown'
                     })
-        
         wb.close()
         print(f"{Color.GREEN}[+] Total numbers found: {len(numbers)}{Color.RESET}")
         return numbers
@@ -221,18 +490,15 @@ def get_chromedriver_path():
         '/data/data/com.termux/files/usr/libexec/chromedriver',
         '/usr/bin/chromedriver',
     ]
-    
     for path in possible_paths:
         if os.path.exists(path):
             return path
-    
     try:
         result = subprocess.run(['which', 'chromedriver'], capture_output=True, text=True)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     except:
         pass
-    
     return None
 
 CHROMEDRIVER_PATH = get_chromedriver_path()
@@ -245,7 +511,6 @@ def find_excel_files():
         '/storage/emulated/0/Documents/',
         '/storage/emulated/0/',
     ]
-    
     for path in search_paths:
         if os.path.exists(path):
             try:
@@ -260,7 +525,6 @@ def find_excel_files():
                 pass
             if len(excel_files) >= 5:
                 break
-    
     return excel_files
 
 # ==================== PROXY EXTENSION CREATOR ====================
@@ -285,7 +549,6 @@ def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, 
         "minimum_chrome_version": "22.0.0"
     }
     """
-    
     background_js = """
     var config = {
         mode: "fixed_servers",
@@ -298,9 +561,7 @@ def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, 
             bypassList: ["localhost"]
         }
     };
-
     chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
-
     function callbackFn(details) {
         return {
             authCredentials: {
@@ -309,7 +570,6 @@ def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, 
             }
         };
     }
-
     chrome.webRequest.onAuthRequired.addListener(
         callbackFn,
         {urls: ["<all_urls>"]},
@@ -319,7 +579,6 @@ def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, 
     
     extension_folder = os.path.join(folder_path, 'proxy_extension')
     os.makedirs(extension_folder, exist_ok=True)
-    
     with open(os.path.join(extension_folder, 'manifest.json'), 'w') as f:
         f.write(manifest_json)
     with open(os.path.join(extension_folder, 'background.js'), 'w') as f:
@@ -328,11 +587,9 @@ def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, 
     zip_path = os.path.join(folder_path, 'proxy_auth_plugin.zip')
     if os.path.exists(zip_path):
         os.remove(zip_path)
-    
     with zipfile.ZipFile(zip_path, 'w') as zp:
         zp.write(os.path.join(extension_folder, 'manifest.json'), 'manifest.json')
         zp.write(os.path.join(extension_folder, 'background.js'), 'background.js')
-    
     return extension_folder
 
 # ==================== CORE MANAGER ====================
@@ -383,33 +640,26 @@ class CoreManager:
                 'license_key': self.license_key,
                 'country': country
             }, timeout=20)
-            
             if resp.status_code != 200:
                 print(f"{Color.RED}[-] Server error: {resp.status_code}{Color.RESET}")
                 return None
-            
             data = resp.json()
-            
             if data.get('success'):
                 self.credits = data.get('remaining_credits', 0)
-                
                 raw_user = data.get('user', '')
                 if '@' in raw_user:
                     proxy_user = raw_user.split('@')[0]
                 else:
                     proxy_user = raw_user
-                
                 proxy_data = {
                     'ip': data.get('ip'),
                     'port': str(data.get('port')),
                     'user': proxy_user,
                     'pass': data.get('pass', 'Ridol123')
                 }
-                
                 if not proxy_data['ip']:
                     print(f"{Color.RED}[-] No IP in response{Color.RESET}")
                     return None
-                
                 print(f"{Color.GREEN}[+] Proxy: {proxy_data['user']}@{proxy_data['ip']}:{proxy_data['port']}{Color.RESET}")
                 print(f"{Color.CYAN}[+] Credits left: {self.credits}{Color.RESET}")
                 return proxy_data
@@ -417,32 +667,24 @@ class CoreManager:
                 error = data.get('error', 'Unknown error')
                 print(f"{Color.RED}[-] Server error: {error}{Color.RESET}")
                 return None
-                
         except Exception as e:
             print(f"{Color.RED}[-] Proxy error: {e}{Color.RESET}")
             return None
 
 # ==================== STEALTH BROWSER ====================
 class StealthBrowser:
-    def __init__(self, proxy_data=None, auto_clicker_path=None, excel_path=None):
+    def __init__(self, proxy_data=None):
         self.proxy_data = proxy_data
-        self.auto_clicker_path = auto_clicker_path
-        self.excel_path = excel_path
         self.driver = None
 
     def start(self):
         if not CHROMEDRIVER_PATH:
             print(f"{Color.RED}[-] Chromedriver not found!{Color.RESET}")
             return False
-            
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
-            
-            print(f"{Color.CYAN}[*] Initializing Chrome options...{Color.RESET}")
-            
             options = Options()
-            
             options.add_argument('--headless=new')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
@@ -451,8 +693,6 @@ class StealthBrowser:
             options.add_argument('--disable-web-security')
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--disable-blink-features=AutomationControlled')
-            
-            # Proxy Extension
             if self.proxy_data:
                 print(f"{Color.CYAN}[*] Creating proxy extension...{Color.RESET}")
                 extension_path = create_proxy_auth_extension(
@@ -464,12 +704,6 @@ class StealthBrowser:
                 )
                 options.add_argument(f'--load-extension={extension_path}')
                 print(f"{Color.GREEN}[+] Proxy extension loaded{Color.RESET}")
-            
-            # Auto Clicker Extension
-            if self.auto_clicker_path and os.path.exists(self.auto_clicker_path):
-                options.add_argument(f'--load-extension={self.auto_clicker_path}')
-                print(f"{Color.GREEN}[+] Auto Clicker extension loaded{Color.RESET}")
-            
             ua_list = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
@@ -477,17 +711,12 @@ class StealthBrowser:
             options.add_argument(f'user-agent={random.choice(ua_list)}')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
-            
-            print(f"{Color.CYAN}[*] Starting Chrome driver...{Color.RESET}")
             service = Service(CHROMEDRIVER_PATH)
             self.driver = webdriver.Chrome(service=service, options=options)
-            
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.set_page_load_timeout(30)
-            
             print(f"{Color.GREEN}[+] Browser started successfully!{Color.RESET}")
             return True
-                
         except Exception as e:
             print(f"{Color.RED}[-] Browser error: {e}{Color.RESET}")
             return False
@@ -500,8 +729,11 @@ class StealthBrowser:
             except:
                 pass
 
-# ==================== FORGOT PASSWORD OTP SENDER (WITH SCREENSHOT) ====================
-def forgot_password_otp_sender(driver, phone_number, excel_path):
+# ==================== OTP SENDER WITH TRAINING MODE ====================
+def forgot_password_otp_sender(driver, phone_number, excel_path, training_mode=False):
+    global shared_driver, is_training_mode, training_complete
+    shared_driver = driver
+    
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
@@ -510,10 +742,11 @@ def forgot_password_otp_sender(driver, phone_number, excel_path):
         
         print(f"{Color.CYAN}[*] Processing: {phone_number}{Color.RESET}")
         
-        # ১. সার্চ পেজ
+        # ১. Identify পেজে যাওয়া
         driver.get("https://m.facebook.com/login/identify/")
         time.sleep(3)
         
+        # ২. Phone Input
         try:
             input_xpath = "//input[contains(@name,'email') or contains(@type,'text') or @id='identify_email']"
             input_box = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, input_xpath)))
@@ -525,45 +758,85 @@ def forgot_password_otp_sender(driver, phone_number, excel_path):
         except:
             take_error_screenshot(driver, phone_number, excel_path)
             return False
-
-        # ২. প্রোফাইল সাইকেল
-        account_index = 0
-        max_profiles = 5
         
-        while account_index < max_profiles:
-            accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[contains(@class, 'account')]")
+        if training_mode:
+            print(f"{Color.GOLD}{'='*55}{Color.RESET}")
+            print(f"{Color.GOLD}[!] 🎯 TRAINING MODE ACTIVATED!{Color.RESET}")
+            print(f"{Color.CYAN}[*] 🌐 Live View URL: http://{LOCAL_IP}:5000{Color.RESET}")
+            print(f"{Color.YELLOW}[*] 📋 Please perform the entire process manually{Color.RESET}")
+            print(f"{Color.YELLOW}[*] 🖱️ Every click you make will be recorded{Color.RESET}")
+            print(f"{Color.YELLOW}[*] ✅ Click 'Save & Finish' when done{Color.RESET}")
+            print(f"{Color.GOLD}{'='*55}{Color.RESET}")
             
-            if accounts and account_index < len(accounts):
-                print(f"{Color.YELLOW}[*] Testing Profile #{account_index + 1}{Color.RESET}")
-                driver.execute_script("arguments[0].click();", accounts[account_index])
-                time.sleep(4)
-
-            if "minute" in driver.page_source.lower() or "(01:" in driver.page_source:
-                print(f"{Color.RED}[!] Profile Locked. Skipping...{Color.RESET}")
-                account_index += 1
-                driver.get("https://m.facebook.com/login/identify/")
-                continue
-
-            # ফাইনাল সাবমিট
-            try:
-                final_btn_script = """
-                var b = document.querySelector('button[type="submit"], button[name="reset_action"]');
-                if(b) { b.click(); return true; } return false;
-                """
-                if driver.execute_script(final_btn_script):
-                    print(f"{Color.GREEN}[+] OTP Triggered!{Color.RESET}")
-                    time.sleep(6)
+            is_training_mode = True
+            training_complete = False
+            
+            # Save screenshot continuously
+            while is_training_mode and not training_complete:
+                driver.save_screenshot(LIVE_IMG)
+                time.sleep(1)
+            
+            print(f"{Color.GREEN}[+] Training complete! Steps saved.{Color.RESET}")
+            
+            # Playback recorded steps
+            if os.path.exists(MACRO_FILE):
+                with open(MACRO_FILE, 'r') as f:
+                    steps = json.load(f)
+                if steps:
+                    print(f"{Color.CYAN}[*] Executing {len(steps)} recorded steps...{Color.RESET}")
+                    for step in steps:
+                        try:
+                            if step['action'] == 'click':
+                                element = WebDriverWait(driver, 10).until(
+                                    EC.element_to_be_clickable((By.CSS_SELECTOR, step['selector']))
+                                )
+                                element.click()
+                                print(f"{Color.GREEN}[✓] Executed: {step['selector']}{Color.RESET}")
+                                time.sleep(1)
+                        except Exception as e:
+                            print(f"{Color.YELLOW}[!] Step failed: {e}{Color.RESET}")
+                    print(f"{Color.GREEN}[+] Macro playback complete!{Color.RESET}")
                     return True
-            except: pass
-
-            account_index += 1
-            print(f"{Color.DIM}[*] Retrying with next profile...{Color.RESET}")
-            driver.get("https://m.facebook.com/login/identify/")
-            time.sleep(2)
-
-        take_error_screenshot(driver, phone_number, excel_path)
-        return False
-
+                else:
+                    print(f"{Color.RED}[-] No steps recorded!{Color.RESET}")
+                    return False
+            else:
+                print(f"{Color.RED}[-] No steps recorded!{Color.RESET}")
+                return False
+        
+        else:
+            # Normal Mode - Auto OTP
+            # Profile loop
+            account_index = 0
+            max_profiles = 5
+            while account_index < max_profiles:
+                accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[contains(@class, 'account')]")
+                if accounts and account_index < len(accounts):
+                    print(f"{Color.YELLOW}[*] Testing Profile #{account_index + 1}{Color.RESET}")
+                    driver.execute_script("arguments[0].click();", accounts[account_index])
+                    time.sleep(4)
+                if "minute" in driver.page_source.lower() or "(01:" in driver.page_source:
+                    print(f"{Color.RED}[!] Profile Locked. Skipping...{Color.RESET}")
+                    account_index += 1
+                    driver.get("https://m.facebook.com/login/identify/")
+                    continue
+                try:
+                    final_btn_script = """
+                    var b = document.querySelector('button[type="submit"], button[name="reset_action"]');
+                    if(b) { b.click(); return true; } return false;
+                    """
+                    if driver.execute_script(final_btn_script):
+                        print(f"{Color.GREEN}[+] OTP Triggered!{Color.RESET}")
+                        time.sleep(6)
+                        return True
+                except: pass
+                account_index += 1
+                print(f"{Color.DIM}[*] Retrying with next profile...{Color.RESET}")
+                driver.get("https://m.facebook.com/login/identify/")
+                time.sleep(2)
+            take_error_screenshot(driver, phone_number, excel_path)
+            return False
+            
     except Exception as e:
         print(f"{Color.RED}[-] Crash: {e}{Color.RESET}")
         take_error_screenshot(driver, phone_number, excel_path)
@@ -574,7 +847,7 @@ class SaaSApp:
     def __init__(self):
         self.core = CoreManager()
         self.core.verify_license()
-        self.auto_clicker_path = None
+        self.training_mode = False
 
     def draw_ui(self):
         os.system('clear')
@@ -586,7 +859,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Forgot Password OTP Sender (v16.0){Color.RESET}")
+        print(f"         {Color.PINK}OTP Sender with Live Training{Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
@@ -629,10 +902,6 @@ class SaaSApp:
             time.sleep(3)
             return
         
-        # Auto Clicker Extension তৈরি
-        self.auto_clicker_path = create_automation_extension(SCRIPT_DIR)
-        print(f"{Color.GREEN}[+] Auto Clicker extension created{Color.RESET}")
-        
         print(f"{Color.CYAN}[*] Reading numbers from Excel...{Color.RESET}")
         numbers_data = read_numbers_from_excel(self.core.excel_file)
         
@@ -642,6 +911,23 @@ class SaaSApp:
             return
         
         print(f"\n{Color.GREEN}[+] Found {len(numbers_data)} numbers in Excel{Color.RESET}")
+        
+        # Ask for mode
+        print(f"\n{Color.CYAN}Select Mode:{Color.RESET}")
+        print(f"  {Color.GREEN}[1]{Color.RESET} Normal Mode (Auto OTP)")
+        print(f"  {Color.GOLD}[2]{Color.RESET} Training Mode (Record & Playback)")
+        mode_choice = input(f"\n{Color.BOLD}Enter choice: {Color.RESET}").strip()
+        training_mode = (mode_choice == '2')
+        
+        if training_mode:
+            # Start Flask server
+            threading.Thread(target=lambda: stream_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False), daemon=True).start()
+            print(f"\n{Color.GREEN}[+] Training server started!{Color.RESET}")
+            print(f"{Color.CYAN}[+] URL: http://{LOCAL_IP}:5000{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Open this URL in your browser{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Complete the process manually in live view{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Click 'Save & Finish' when done{Color.RESET}")
+            time.sleep(3)
         
         print(f"\n{Color.GREEN}[+] Starting OTP Sender...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers_data)} numbers{Color.RESET}")
@@ -672,9 +958,9 @@ class SaaSApp:
                 failed_count += 1
                 continue
 
-            browser = StealthBrowser(proxy_data, self.auto_clicker_path, self.core.excel_file)
+            browser = StealthBrowser(proxy_data)
             if browser.start():
-                success = forgot_password_otp_sender(browser.driver, phone, self.core.excel_file)
+                success = forgot_password_otp_sender(browser.driver, phone, self.core.excel_file, training_mode)
                 if success:
                     success_count += 1
                     print(f"{Color.GREEN}[✓] OTP sent to: {phone}{Color.RESET}")
@@ -717,16 +1003,13 @@ class SaaSApp:
             elif choice == '2':
                 print(f"\n{Color.CYAN}[*] Scanning for Excel files...{Color.RESET}")
                 excel_files = find_excel_files()
-                
                 if excel_files:
                     print(f"\n{Color.GREEN}[+] Found {len(excel_files)} Excel files:{Color.RESET}")
                     for i, f in enumerate(excel_files, 1):
                         print(f"  {Color.CYAN}[{i}]{Color.RESET} {os.path.basename(f)}")
                         print(f"      {Color.DIM}{f}{Color.RESET}")
-                    
                     print(f"\n{Color.YELLOW}[0]{Color.RESET} Enter custom path")
                     choice_file = input(f"\n{Color.BOLD} Select file (number): {Color.RESET}").strip()
-                    
                     if choice_file == '0':
                         path = input(f"\n{Color.CYAN} Enter Excel file path: {Color.RESET}").strip()
                     else:
@@ -742,7 +1025,6 @@ class SaaSApp:
                             print(f"{Color.RED}Invalid input!{Color.RESET}")
                             time.sleep(1)
                             continue
-                    
                     if path:
                         path = path.strip('"').strip("'")
                         if os.path.exists(path):
@@ -763,7 +1045,6 @@ class SaaSApp:
                             print(f"{Color.GREEN}[+] Excel file path saved!{Color.RESET}")
                         else:
                             print(f"{Color.RED}[-] File not found: {path}{Color.RESET}")
-                
                 time.sleep(2)
             elif choice == '3':
                 key = input(f"\n{Color.CYAN} Enter License Key: {Color.RESET}").strip().upper()
@@ -774,7 +1055,7 @@ class SaaSApp:
                 time.sleep(2)
             elif choice == '4':
                 print(f"\n{Color.CYAN}[*] Installing Dependencies...{Color.RESET}")
-                subprocess.run("pkg update -y && pkg install -y tur-repo python chromium chromedriver && pip install --upgrade pip && pip install selenium requests openpyxl", shell=True)
+                subprocess.run("pkg update -y && pkg install -y tur-repo python chromium chromedriver && pip install --upgrade pip && pip install selenium requests openpyxl flask flask-cors", shell=True)
                 global CHROMEDRIVER_PATH
                 CHROMEDRIVER_PATH = get_chromedriver_path()
                 if CHROMEDRIVER_PATH:
