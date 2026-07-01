@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v21.1 - ChatGPT Account Creator
-Smart Training System - Touch Click Support
+Ridol SaaS Tool v21.3 - ChatGPT Account Creator
+Complete Live Sync - Click, Scroll, Type all recorded
 Author: Ridol Islam
 """
 
@@ -31,6 +31,7 @@ current_phone = ''
 next_number_triggered = False
 training_phone_list = []
 training_phone_index = 0
+current_country = 'XX'
 
 # ==================== GET LOCAL IP ====================
 def get_local_ip():
@@ -45,6 +46,20 @@ def get_local_ip():
 
 LOCAL_IP = get_local_ip()
 
+# ==================== COUNTRY FUNCTIONS ====================
+def get_country_from_phone(phone_number):
+    phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
+    country_codes = {
+        '228': 'TG', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
+        '880': 'BD', '62': 'ID', '60': 'MY', '65': 'SG', '63': 'PH',
+        '66': 'TH', '84': 'VN', '81': 'JP', '82': 'KR', '49': 'DE',
+        '33': 'FR', '39': 'IT', '7': 'RU', '55': 'BR'
+    }
+    for code in sorted(country_codes.keys(), key=len, reverse=True):
+        if phone.startswith(code):
+            return country_codes[code]
+    return 'XX'
+
 # ==================== CHECK TRAINING FILE ====================
 def has_training_file():
     return os.path.exists(MACRO_FILE) and os.path.getsize(MACRO_FILE) > 0
@@ -58,17 +73,18 @@ def get_training_steps():
 # ==================== TRAINING SERVER ROUTES ====================
 @stream_app.route('/')
 def index():
-    global training_phone_list, training_phone_index, current_phone
+    global training_phone_list, training_phone_index, current_phone, current_country
     
     total = len(training_phone_list)
     current_idx = training_phone_index + 1 if training_phone_index < total else total
     phone_display = current_phone if current_phone else 'Not started'
+    country_display = current_country if current_country else 'XX'
     
     return render_template_string("""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Ridol Tool - Training Mode</title>
+        <title>Ridol Tool - Live Training</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -105,6 +121,7 @@ def index():
                 flex-wrap: wrap;
             }
             .phone-display .phone { color: #ffd200; font-weight: bold; font-size: 18px; }
+            .phone-display .country { color: #2979ff; font-weight: bold; font-size: 14px; }
             .phone-display .progress { color: #8899aa; font-size: 14px; }
             .instructions {
                 background: #1a1a2e;
@@ -175,6 +192,29 @@ def index():
                 text-align: center;
             }
             .next-number-section .info { color: #8899aa; font-size: 13px; margin-bottom: 10px; }
+            .country-badge {
+                display: inline-block;
+                padding: 2px 12px;
+                border-radius: 12px;
+                background: #2979ff20;
+                border: 1px solid #2979ff40;
+                color: #2979ff;
+                font-size: 12px;
+            }
+            .action-feedback {
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                background: #00c85320;
+                border: 1px solid #00c85340;
+                padding: 8px 16px;
+                border-radius: 8px;
+                color: #00c853;
+                font-size: 12px;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }
+            .action-feedback.show { opacity: 1; }
             @media (max-width: 600px) {
                 .header h1 { font-size: 18px; }
                 .controls { flex-direction: column; align-items: stretch; }
@@ -187,23 +227,25 @@ def index():
     <body>
         <div class="container">
             <div class="header">
-                <h1>🤖 ChatGPT Training Mode</h1>
-                <div class="subtitle">Click on the live screen to teach the bot</div>
-                <div class="mode-label">📌 Touch Click Training</div>
+                <h1>🤖 Live Training Mode</h1>
+                <div class="subtitle">Everything you do, the bot will do</div>
+                <div class="mode-label">📌 Country: <span class="country-badge">{{ country }}</span></div>
             </div>
 
             <div class="phone-display">
                 <span class="phone">📱 Current: {{ phone }}</span>
+                <span class="country">🌍 {{ country }}</span>
                 <span class="progress">Progress: {{ current_index }}/{{ total }}</span>
             </div>
 
             <div class="instructions">
                 <h3>📋 Instructions:</h3>
                 <ul>
-                    <li><span class="step-num">1.</span> Click on the <span class="highlight">live screen</span> below</li>
-                    <li><span class="step-num">2.</span> The bot will <span class="highlight">click</span> the same spot</li>
-                    <li><span class="step-num">3.</span> Use <span class="highlight">"Paste Number"</span> to auto-fill</li>
-                    <li><span class="step-num">4.</span> Click <span class="highlight">"Save & Next"</span> when done</li>
+                    <li><span class="step-num">1.</span> <span class="highlight">Click</span> on any button/field → Bot clicks</li>
+                    <li><span class="step-num">2.</span> <span class="highlight">Scroll</span> the page → Bot scrolls</li>
+                    <li><span class="step-num">3.</span> <span class="highlight">Type</span> in any field → Bot types</li>
+                    <li><span class="step-num">4.</span> Click <span class="highlight">"Paste Number"</span> → Bot auto-fills</li>
+                    <li><span class="step-num">5.</span> Click <span class="highlight">"Save & Next"</span> when done</li>
                 </ul>
             </div>
 
@@ -224,17 +266,29 @@ def index():
                 <button class="btn-next" onclick="saveAndNext()">➡️ Save & Next Number</button>
             </div>
 
-            <img id="screen" src="/stream" onclick="sendClick(event)" alt="Live View">
+            <img id="screen" src="/stream" onclick="sendClick(event)" onwheel="sendScroll(event)" alt="Live View">
 
             <p class="info-text">
-                💡 Click on any <span class="highlight">button or input field</span> to record it.
+                💡 <span class="highlight">Click</span> on any element | <span class="highlight">Scroll</span> to see more | <span class="highlight">Type</span> in any field
                 <br>🔄 Screen updates every 1 second.
             </p>
         </div>
 
+        <div id="feedback" class="action-feedback">✅ Action Recorded</div>
+
         <script>
             let stepCount = 0;
             let currentPhone = "{{ phone }}";
+            let lastScrollY = 0;
+            let feedbackTimeout = null;
+            
+            function showFeedback(text) {
+                let el = document.getElementById('feedback');
+                el.textContent = text;
+                el.classList.add('show');
+                clearTimeout(feedbackTimeout);
+                feedbackTimeout = setTimeout(() => el.classList.remove('show'), 1500);
+            }
             
             function updateStepCount() {
                 fetch('/step_count')
@@ -248,6 +302,7 @@ def index():
             
             setInterval(updateStepCount, 1000);
             
+            // ==================== CLICK ====================
             function sendClick(event) {
                 let img = document.getElementById('screen');
                 let rect = img.getBoundingClientRect();
@@ -263,13 +318,65 @@ def index():
                 .then(data => {
                     if (data.success) {
                         updateStepCount();
+                        showFeedback('✅ Clicked: ' + (data.selector || 'element'));
                         img.style.borderColor = '#00c853';
                         setTimeout(() => img.style.borderColor = '#f7971e', 300);
+                    } else {
+                        showFeedback('❌ Click failed');
                     }
                 })
-                .catch(() => {});
+                .catch(() => showFeedback('❌ Error'));
             }
             
+            // ==================== SCROLL ====================
+            function sendScroll(event) {
+                let scrollY = window.scrollY || document.documentElement.scrollTop;
+                
+                if (Math.abs(scrollY - lastScrollY) > 10) {
+                    lastScrollY = scrollY;
+                    
+                    fetch('/remote_scroll', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({scrollY: scrollY})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            updateStepCount();
+                            showFeedback('📜 Scrolled to: ' + scrollY);
+                        }
+                    })
+                    .catch(() => {});
+                }
+            }
+            
+            // ==================== KEYBOARD / TYPE ====================
+            document.addEventListener('keydown', function(e) {
+                // Skip if typing in input field (to avoid double recording)
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                    // Record the key press
+                    fetch('/remote_type', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            key: e.key,
+                            target: e.target.tagName,
+                            value: e.target.value
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            updateStepCount();
+                            showFeedback('⌨️ Typed: ' + e.key);
+                        }
+                    })
+                    .catch(() => {});
+                }
+            });
+            
+            // ==================== PASTE NUMBER ====================
             function pasteNumber() {
                 if (!currentPhone || currentPhone === 'Not started') {
                     alert('⚠️ No phone number loaded!');
@@ -284,15 +391,16 @@ def index():
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        alert('✅ Number pasted: ' + currentPhone);
+                        showFeedback('📋 Pasted: ' + currentPhone);
                         updateStepCount();
                     } else {
-                        alert('❌ Failed to paste number');
+                        showFeedback('❌ Paste failed');
                     }
                 })
-                .catch(() => alert('❌ Error pasting number'));
+                .catch(() => showFeedback('❌ Error'));
             }
             
+            // ==================== SAVE & NEXT ====================
             function saveAndNext() {
                 if (stepCount === 0) {
                     alert('⚠️ Please record at least one step first!');
@@ -301,12 +409,13 @@ def index():
                 if (confirm('✅ Save steps and go to next number?')) {
                     fetch('/save_and_next', { method: 'POST' })
                         .then(() => {
-                            alert('✅ Steps saved! Moving to next number...');
-                            window.location.reload();
+                            showFeedback('✅ Saved! Moving to next...');
+                            setTimeout(() => window.location.reload(), 1500);
                         });
                 }
             }
             
+            // ==================== CLEAR ====================
             function clearSteps() {
                 if (confirm('🗑️ Clear all recorded steps?')) {
                     fetch('/clear_steps', { method: 'POST' })
@@ -314,14 +423,24 @@ def index():
                 }
             }
             
+            // Auto refresh screen
             setInterval(function(){
                 document.getElementById('screen').src = '/stream?' + new Date().getTime();
             }, 1000);
+            
+            // Track scroll on the window
+            window.addEventListener('scroll', function(e) {
+                let scrollY = window.scrollY || document.documentElement.scrollTop;
+                if (Math.abs(scrollY - lastScrollY) > 10) {
+                    sendScroll(e);
+                }
+            });
         </script>
     </body>
     </html>
     """, 
     phone=current_phone if current_phone else 'Not started',
+    country=current_country if current_country else 'XX',
     current_index=training_phone_index + 1 if training_phone_index < len(training_phone_list) else len(training_phone_list),
     total=len(training_phone_list) if training_phone_list else 1
     )
@@ -329,6 +448,215 @@ def index():
 @stream_app.route('/stream')
 def stream():
     return send_file(LIVE_IMG, mimetype='image/png') if os.path.exists(LIVE_IMG) else "Loading..."
+
+# ==================== REMOTE ACTIONS ====================
+
+@stream_app.route('/remote_click', methods=['POST'])
+def remote_click():
+    global shared_driver
+    if shared_driver:
+        try:
+            data = request.json
+            size = shared_driver.get_window_size()
+            real_x = int(data['x'] * size['width'])
+            real_y = int(data['y'] * size['height'])
+            
+            element = shared_driver.execute_script(f"return document.elementFromPoint({real_x}, {real_y});")
+            
+            if element:
+                # Generate selector
+                element_id = element.get_attribute('id')
+                element_name = element.get_attribute('name')
+                element_class = element.get_attribute('class')
+                tag = element.tag_name.lower()
+                element_text = element.text[:30] if element.text else ''
+                
+                if element_id:
+                    selector = f"#{element_id}"
+                elif element_name:
+                    selector = f"[name='{element_name}']"
+                elif element_class:
+                    classes = element_class.split()
+                    if classes:
+                        selector = f".{classes[0]}"
+                    else:
+                        selector = tag
+                else:
+                    try:
+                        xpath = shared_driver.execute_script("""
+                            function getXPath(element) {
+                                if (element.id !== '')
+                                    return '//*[@id="' + element.id + '"]';
+                                if (element === document.body)
+                                    return '/html/body';
+                                var ix = 0;
+                                var siblings = element.parentNode.childNodes;
+                                for (var i = 0; i < siblings.length; i++) {
+                                    var sibling = siblings[i];
+                                    if (sibling === element)
+                                        return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                                    if (sibling.nodeType === 1 && sibling.tagName === element.tagName)
+                                        ix++;
+                                }
+                            }
+                            return getXPath(arguments[0]);
+                        """, element)
+                        selector = xpath
+                    except:
+                        selector = tag
+                
+                # Record step
+                steps = []
+                if os.path.exists(MACRO_FILE):
+                    with open(MACRO_FILE, 'r') as f:
+                        steps = json.load(f)
+                
+                steps.append({
+                    'action': 'click',
+                    'selector': selector,
+                    'tag': tag,
+                    'text': element_text,
+                    'timestamp': time.time()
+                })
+                
+                with open(MACRO_FILE, 'w') as f:
+                    json.dump(steps, f, indent=2)
+                
+                # Touch click simulate
+                click_script = """
+                function simulateClick(element) {
+                    if (!element) return false;
+                    try {
+                        var rect = element.getBoundingClientRect();
+                        var touch = new Touch({
+                            identifier: Date.now(),
+                            target: element,
+                            clientX: rect.left + rect.width/2,
+                            clientY: rect.top + rect.height/2,
+                            pageX: rect.left + rect.width/2 + window.pageXOffset,
+                            pageY: rect.top + rect.height/2 + window.pageYOffset,
+                            radiusX: 5,
+                            radiusY: 5,
+                            rotationAngle: 0,
+                            force: 1
+                        });
+                        var touchEvent = new TouchEvent('touchstart', {
+                            touches: [touch],
+                            targetTouches: [touch],
+                            changedTouches: [touch],
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        element.dispatchEvent(touchEvent);
+                        var touchEndEvent = new TouchEvent('touchend', {
+                            touches: [],
+                            targetTouches: [],
+                            changedTouches: [touch],
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        element.dispatchEvent(touchEndEvent);
+                    } catch(e) {
+                        var clickEvent = new MouseEvent('click', {
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: rect ? rect.left + rect.width/2 : 0,
+                            clientY: rect ? rect.top + rect.height/2 : 0
+                        });
+                        element.dispatchEvent(clickEvent);
+                    }
+                    try { element.click(); } catch(e) {}
+                    return true;
+                }
+                return simulateClick(arguments[0]);
+                """
+                shared_driver.execute_script(click_script, element)
+                
+                return jsonify({'success': True, 'selector': selector, 'count': len(steps)})
+            else:
+                return jsonify({'success': False, 'error': 'No element found'})
+                
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False, 'error': 'Driver not available'})
+
+@stream_app.route('/remote_scroll', methods=['POST'])
+def remote_scroll():
+    global shared_driver
+    if shared_driver:
+        try:
+            data = request.json
+            scroll_y = data.get('scrollY', 0)
+            
+            shared_driver.execute_script(f"window.scrollTo(0, {scroll_y});")
+            
+            steps = []
+            if os.path.exists(MACRO_FILE):
+                with open(MACRO_FILE, 'r') as f:
+                    steps = json.load(f)
+            
+            steps.append({
+                'action': 'scroll',
+                'scrollY': scroll_y,
+                'timestamp': time.time()
+            })
+            
+            with open(MACRO_FILE, 'w') as f:
+                json.dump(steps, f, indent=2)
+            
+            return jsonify({'success': True, 'scrollY': scroll_y})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False, 'error': 'Driver not available'})
+
+@stream_app.route('/remote_type', methods=['POST'])
+def remote_type():
+    global shared_driver
+    if shared_driver:
+        try:
+            data = request.json
+            key = data.get('key', '')
+            target = data.get('target', '')
+            value = data.get('value', '')
+            
+            # Find active element and type
+            if target == 'INPUT' or target == 'TEXTAREA':
+                # Get the focused element
+                focused = shared_driver.execute_script("return document.activeElement;")
+                if focused:
+                    # Type the key
+                    shared_driver.execute_script("""
+                        var element = arguments[0];
+                        var key = arguments[1];
+                        var event = new KeyboardEvent('keydown', {key: key, bubbles: true});
+                        element.dispatchEvent(event);
+                        var event2 = new KeyboardEvent('keyup', {key: key, bubbles: true});
+                        element.dispatchEvent(event2);
+                    """, focused, key)
+                    
+                    # Record step
+                    steps = []
+                    if os.path.exists(MACRO_FILE):
+                        with open(MACRO_FILE, 'r') as f:
+                            steps = json.load(f)
+                    
+                    steps.append({
+                        'action': 'type',
+                        'key': key,
+                        'target': target,
+                        'timestamp': time.time()
+                    })
+                    
+                    with open(MACRO_FILE, 'w') as f:
+                        json.dump(steps, f, indent=2)
+                    
+                    return jsonify({'success': True, 'key': key})
+            
+            return jsonify({'success': False, 'error': 'Not an input field'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False, 'error': 'Driver not available'})
 
 @stream_app.route('/paste_number', methods=['POST'])
 def paste_number():
@@ -348,7 +676,8 @@ def paste_number():
                     'input[type="tel"]',
                     'input[placeholder*="phone"]',
                     'input[placeholder*="Phone"]',
-                    'input[type="text"][id*="phone"]'
+                    'input[type="text"][id*="phone"]',
+                    'input[type="number"]'
                 ];
                 for (let selector of selectors) {
                     let input = document.querySelector(selector);
@@ -359,7 +688,7 @@ def paste_number():
                         return true;
                     }
                 }
-                let allInputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
+                let allInputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[type="number"]');
                 for (let input of allInputs) {
                     if (input.offsetParent !== null) {
                         input.value = phone;
@@ -393,169 +722,6 @@ def paste_number():
                 return jsonify({'success': True, 'phone': phone})
             else:
                 return jsonify({'success': False, 'error': 'No input field found'})
-                
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-    return jsonify({'success': False, 'error': 'Driver not available'})
-
-@stream_app.route('/remote_click', methods=['POST'])
-def remote_click():
-    """Live View থেকে ক্লিক রেকর্ড এবং রিয়েল ক্লিক ট্রিগার"""
-    global shared_driver
-    if shared_driver:
-        try:
-            data = request.json
-            size = shared_driver.get_window_size()
-            real_x = int(data['x'] * size['width'])
-            real_y = int(data['y'] * size['height'])
-            
-            # elementFromPoint দিয়ে এলিমেন্ট খুঁজে বের করা
-            element = shared_driver.execute_script(f"return document.elementFromPoint({real_x}, {real_y});")
-            
-            if element:
-                # এলিমেন্টের সিলেক্টর জেনারেট করা
-                element_id = element.get_attribute('id')
-                element_name = element.get_attribute('name')
-                element_class = element.get_attribute('class')
-                tag = element.tag_name.lower()
-                
-                if element_id:
-                    selector = f"#{element_id}"
-                elif element_name:
-                    selector = f"[name='{element_name}']"
-                elif element_class:
-                    classes = element_class.split()
-                    if classes:
-                        selector = f".{classes[0]}"
-                    else:
-                        selector = tag
-                else:
-                    # এখান থেকেও যদি সিলেক্টর না পাওয়া যায়, তাহলে XPath তৈরি করব
-                    try:
-                        xpath = shared_driver.execute_script("""
-                            function getXPath(element) {
-                                if (element.id !== '')
-                                    return '//*[@id="' + element.id + '"]';
-                                if (element === document.body)
-                                    return '/html/body';
-                                var ix = 0;
-                                var siblings = element.parentNode.childNodes;
-                                for (var i = 0; i < siblings.length; i++) {
-                                    var sibling = siblings[i];
-                                    if (sibling === element)
-                                        return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
-                                    if (sibling.nodeType === 1 && sibling.tagName === element.tagName)
-                                        ix++;
-                                }
-                            }
-                            return getXPath(arguments[0]);
-                        """, element)
-                        selector = xpath
-                    except:
-                        selector = tag
-                
-                # স্টেপ রেকর্ড করা
-                steps = []
-                if os.path.exists(MACRO_FILE):
-                    with open(MACRO_FILE, 'r') as f:
-                        steps = json.load(f)
-                
-                steps.append({
-                    'action': 'click',
-                    'selector': selector,
-                    'tag': tag,
-                    'timestamp': time.time()
-                })
-                
-                with open(MACRO_FILE, 'w') as f:
-                    json.dump(steps, f, indent=2)
-                
-                # ============ টাচ ক্লিক ট্রিগার ============
-                # এটি সম্পূর্ণ টাচ ইভেন্ট সিমুলেট করবে
-                click_script = """
-                function simulateClick(element) {
-                    if (!element) return false;
-                    
-                    try {
-                        // Touch events
-                        var rect = element.getBoundingClientRect();
-                        var touch = new Touch({
-                            identifier: Date.now(),
-                            target: element,
-                            clientX: rect.left + rect.width/2,
-                            clientY: rect.top + rect.height/2,
-                            pageX: rect.left + rect.width/2 + window.pageXOffset,
-                            pageY: rect.top + rect.height/2 + window.pageYOffset,
-                            radiusX: 5,
-                            radiusY: 5,
-                            rotationAngle: 0,
-                            force: 1
-                        });
-                        
-                        var touchEvent = new TouchEvent('touchstart', {
-                            touches: [touch],
-                            targetTouches: [touch],
-                            changedTouches: [touch],
-                            bubbles: true,
-                            cancelable: true
-                        });
-                        element.dispatchEvent(touchEvent);
-                        
-                        var touchEndEvent = new TouchEvent('touchend', {
-                            touches: [],
-                            targetTouches: [],
-                            changedTouches: [touch],
-                            bubbles: true,
-                            cancelable: true
-                        });
-                        element.dispatchEvent(touchEndEvent);
-                    } catch(e) {
-                        // Touch না সাপোর্ট করলে Mouse Events
-                        var clickEvent = new MouseEvent('click', {
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: rect ? rect.left + rect.width/2 : 0,
-                            clientY: rect ? rect.top + rect.height/2 : 0
-                        });
-                        element.dispatchEvent(clickEvent);
-                        
-                        var mousedownEvent = new MouseEvent('mousedown', {
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: rect ? rect.left + rect.width/2 : 0,
-                            clientY: rect ? rect.top + rect.height/2 : 0
-                        });
-                        element.dispatchEvent(mousedownEvent);
-                        
-                        var mouseupEvent = new MouseEvent('mouseup', {
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: rect ? rect.left + rect.width/2 : 0,
-                            clientY: rect ? rect.top + rect.height/2 : 0
-                        });
-                        element.dispatchEvent(mouseupEvent);
-                    }
-                    
-                    // Fallback: সরাসরি click() কল
-                    try {
-                        element.click();
-                    } catch(e) {}
-                    
-                    return true;
-                }
-                
-                var element = document.elementFromPoint(arguments[0], arguments[1]);
-                return simulateClick(element);
-                """
-                
-                shared_driver.execute_script(click_script, real_x, real_y)
-                
-                return jsonify({'success': True, 'selector': selector, 'count': len(steps)})
-            else:
-                return jsonify({'success': False, 'error': 'No element found at click position'})
                 
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)})
@@ -598,7 +764,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v21.1'
+APP_VERSION = 'v21.3'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -614,20 +780,6 @@ class Color:
     GOLD = '\033[38;5;214m'
     PINK = '\033[38;5;206m'
     ORANGE = '\033[38;5;208m'
-
-# ==================== COUNTRY FUNCTIONS ====================
-def get_country_from_phone(phone_number):
-    phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
-    country_codes = {
-        '228': 'TG', '1': 'US', '44': 'GB', '91': 'IN', '92': 'PK',
-        '880': 'BD', '62': 'ID', '60': 'MY', '65': 'SG', '63': 'PH',
-        '66': 'TH', '84': 'VN', '81': 'JP', '82': 'KR', '49': 'DE',
-        '33': 'FR', '39': 'IT', '7': 'RU', '55': 'BR'
-    }
-    for code in sorted(country_codes.keys(), key=len, reverse=True):
-        if phone.startswith(code):
-            return country_codes[code]
-    return 'XX'
 
 # ==================== SCREENSHOT & ERROR LOGIC ====================
 def take_error_screenshot(driver, phone, excel_path):
@@ -931,7 +1083,6 @@ class StealthBrowser:
 
 # ==================== PLAYBACK MACRO ====================
 def playback_macro(driver, phone_number, steps):
-    """সেভ করা ট্রেনিং স্টেপ রিপ্লে করে (টাচ ক্লিক সহ)"""
     print(f"{Color.CYAN}[*] Playing back {len(steps)} recorded steps...{Color.RESET}")
     
     for step in steps:
@@ -945,7 +1096,6 @@ def playback_macro(driver, phone_number, steps):
                     EC.element_to_be_clickable((By.CSS_SELECTOR, step['selector']))
                 )
                 
-                # টাচ ক্লিক সিমুলেট
                 click_script = """
                 function simulateClick(element) {
                     if (!element) return false;
@@ -996,6 +1146,12 @@ def playback_macro(driver, phone_number, steps):
                 print(f"{Color.GREEN}[✓] Clicked: {step['selector']}{Color.RESET}")
                 time.sleep(1)
                 
+            elif step['action'] == 'scroll':
+                scroll_y = step.get('scrollY', 0)
+                driver.execute_script(f"window.scrollTo(0, {scroll_y});")
+                print(f"{Color.GREEN}[✓] Scrolled to: {scroll_y}{Color.RESET}")
+                time.sleep(0.3)
+                
             elif step['action'] == 'paste':
                 fill_script = """
                 function fillPhone(phone) {
@@ -1031,6 +1187,22 @@ def playback_macro(driver, phone_number, steps):
                 driver.execute_script(fill_script, step.get('phone', phone_number))
                 print(f"{Color.GREEN}[✓] Pasted number: {step.get('phone', phone_number)}{Color.RESET}")
                 time.sleep(0.5)
+                
+            elif step['action'] == 'type':
+                # Type the recorded key
+                key = step.get('key', '')
+                if key:
+                    focused = driver.execute_script("return document.activeElement;")
+                    if focused:
+                        driver.execute_script("""
+                            var element = arguments[0];
+                            var key = arguments[1];
+                            element.value += key;
+                            element.dispatchEvent(new Event('input', {bubbles: true}));
+                            element.dispatchEvent(new Event('change', {bubbles: true}));
+                        """, focused, key)
+                        print(f"{Color.GREEN}[✓] Typed: {key}{Color.RESET}")
+                        time.sleep(0.1)
         except Exception as e:
             print(f"{Color.YELLOW}[!] Step failed: {e}{Color.RESET}")
     
@@ -1039,7 +1211,7 @@ def playback_macro(driver, phone_number, steps):
 
 # ==================== CHATGPT SIGNUP SENDER ====================
 def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False, phone_list=None, current_index=0):
-    global shared_driver
+    global shared_driver, current_country
     shared_driver = driver
     
     try:
@@ -1049,6 +1221,9 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
         from selenium.webdriver.common.keys import Keys
         
         print(f"{Color.CYAN}[*] ChatGPT Signup: {phone_number}{Color.RESET}")
+        
+        current_country = get_country_from_phone(phone_number)
+        print(f"{Color.CYAN}[*] Country detected: {current_country}{Color.RESET}")
         
         driver.get("https://chatgpt.com/auth/login")
         time.sleep(3)
@@ -1104,21 +1279,23 @@ def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False,
 # ==================== TRAINING MODE EXECUTOR ====================
 def execute_training_mode(driver, phone_number, excel_path, phone_list, current_index):
     global is_training_mode, training_complete, next_number_triggered, current_phone
-    global training_phone_list, training_phone_index
+    global training_phone_list, training_phone_index, current_country
     
     current_phone = phone_number
     training_phone_list = phone_list
     training_phone_index = current_index
+    current_country = get_country_from_phone(phone_number)
     
     print(f"{Color.GOLD}{'='*55}{Color.RESET}")
-    print(f"{Color.GOLD}[!] 🎯 TRAINING MODE!{Color.RESET}")
+    print(f"{Color.GOLD}[!] 🎯 LIVE TRAINING MODE!{Color.RESET}")
     print(f"{Color.CYAN}[*] 🌐 Live View URL: http://{LOCAL_IP}:5000{Color.RESET}")
     print(f"{Color.CYAN}[*] 📱 Current Number: {phone_number}{Color.RESET}")
-    print(f"{Color.YELLOW}[*] 📋 Click on the live screen to teach the bot{Color.RESET}")
-    print(f"{Color.YELLOW}[*] 🖱️ Every click will be recorded{Color.RESET}")
-    print(f"{Color.YELLOW}[*] 📋 Use 'Paste Number' to auto-fill{Color.RESET}")
+    print(f"{Color.CYAN}[*] 🌍 Country: {current_country}{Color.RESET}")
+    print(f"{Color.YELLOW}[*] 📋 Everything you do, the bot will do{Color.RESET}")
+    print(f"{Color.YELLOW}[*] 🖱️ Click → Bot clicks | 📜 Scroll → Bot scrolls{Color.RESET}")
+    print(f"{Color.YELLOW}[*] ⌨️ Type → Bot types | 📋 Paste → Bot pastes{Color.RESET}")
     print(f"{Color.YELLOW}[*] ✅ Click 'Save & Next' when done{Color.RESET}")
-    print(f"{Color.GREEN}[*] 💾 Training will be saved permanently!{Color.RESET}")
+    print(f"{Color.GREEN}[*] 💾 All actions will be saved permanently!{Color.RESET}")
     print(f"{Color.GOLD}{'='*55}{Color.RESET}")
     
     is_training_mode = True
@@ -1241,7 +1418,9 @@ class SaaSApp:
             print(f"\n{Color.GREEN}[+] Training server started!{Color.RESET}")
             print(f"{Color.CYAN}[+] URL: http://{LOCAL_IP}:5000{Color.RESET}")
             print(f"{Color.YELLOW}[!] Open this URL in your browser{Color.RESET}")
-            print(f"{Color.YELLOW}[!] Click on the live screen to teach the bot{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Everything you do, the bot will do{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Click → Bot clicks | Scroll → Bot scrolls{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Type → Bot types | Paste → Bot pastes{Color.RESET}")
             time.sleep(4)
         
         print(f"\n{Color.GREEN}[+] Starting ChatGPT Account Creator...{Color.RESET}")
