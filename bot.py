@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ridol SaaS Tool v19.1 - Facebook Signup OTP Sender
+Ridol SaaS Tool v20.0 - ChatGPT Account Creator
 With Live Training Mode & Next Number Button
 Author: Ridol Islam
 """
@@ -21,14 +21,12 @@ from flask import Flask, send_file, render_template_string, request, jsonify
 from selenium.webdriver.chrome.service import Service
 
 # ==================== FLASK APP FOR TRAINING ====================
-MACRO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'robot_steps.json')
-MACRO_FILE_SIGNUP = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'robot_steps_signup.json')
+MACRO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'robot_steps_chatgpt.json')
 LIVE_IMG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'liveview.png')
 stream_app = Flask(__name__)
 shared_driver = None
 is_training_mode = False
 training_complete = False
-training_type = 'forgot'
 current_phone = ''
 next_number_triggered = False
 training_phone_list = []
@@ -60,7 +58,7 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Ridol Tool - Training Mode</title>
+        <title>Ridol Tool - ChatGPT Training</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -83,9 +81,8 @@ def index():
                 font-size: 12px; 
                 font-weight: bold;
                 margin-top: 5px;
+                background: #00c85320; color: #00c853; border: 1px solid #00c85340;
             }
-            .mode-forgot { background: #2979ff20; color: #2979ff; border: 1px solid #2979ff40; }
-            .mode-signup { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
             .phone-display {
                 background: #0d1117;
                 padding: 10px 20px;
@@ -138,7 +135,6 @@ def index():
             .btn-save:hover { background: #00e676; transform: scale(1.02); }
             .btn-next { background: #f7971e; color: #1a1a2e; }
             .btn-next:hover { background: #ffd200; transform: scale(1.02); }
-            .btn-next:disabled { background: #2a3a5c; color: #8899aa; cursor: not-allowed; transform: none; }
             .btn-clear { background: #ff1744; color: white; }
             .btn-clear:hover { background: #ff5252; transform: scale(1.02); }
             .btn-refresh { background: #2979ff; color: white; }
@@ -179,9 +175,9 @@ def index():
     <body>
         <div class="container">
             <div class="header">
-                <h1>🤖 Live Training Mode</h1>
-                <div class="subtitle">Teach the bot by demonstrating the process</div>
-                <div class="mode-label mode-{{ mode_class }}">📌 {{ mode_label }}</div>
+                <h1>🤖 ChatGPT Training Mode</h1>
+                <div class="subtitle">Teach the bot how to create ChatGPT accounts</div>
+                <div class="mode-label">📌 ChatGPT Signup Training</div>
             </div>
 
             <div class="phone-display">
@@ -192,11 +188,11 @@ def index():
             <div class="instructions">
                 <h3>📋 Instructions:</h3>
                 <ul>
-                    <li><span class="step-num">1.</span> Click on the <span class="highlight">live screen</span> below to record actions</li>
-                    <li><span class="step-num">2.</span> Perform the <span class="highlight">entire process</span> step by step</li>
-                    <li><span class="step-num">3.</span> Watch the <span class="highlight">step counter</span> increase</li>
-                    <li><span class="step-num">4.</span> Click <span class="highlight">"Save & Next"</span> to finish and move to next number</li>
-                    <li><span class="step-num">5.</span> The bot will <span class="highlight">auto-play</span> your steps</li>
+                    <li><span class="step-num">1.</span> Open ChatGPT login page</li>
+                    <li><span class="step-num">2.</span> Click "Continue with phone"</li>
+                    <li><span class="step-num">3.</span> Enter phone number (without country code)</li>
+                    <li><span class="step-num">4.</span> Click Continue</li>
+                    <li><span class="step-num">5.</span> Click <span class="highlight">"Save & Next"</span> when done</li>
                 </ul>
             </div>
 
@@ -212,14 +208,14 @@ def index():
             </div>
 
             <div class="next-number-section">
-                <div class="info">💡 After completing training for current number, click "Save & Next"</div>
-                <button class="btn-next" onclick="saveAndNext()" id="nextBtn">➡️ Save & Next Number</button>
+                <div class="info">💡 After completing training, click "Save & Next"</div>
+                <button class="btn-next" onclick="saveAndNext()">➡️ Save & Next Number</button>
             </div>
 
             <img id="screen" src="/stream" onclick="sendClick(event)" alt="Live View">
 
             <p class="info-text">
-                💡 Click on any <span class="highlight">button, input field, or link</span> in the live view to record it.
+                💡 Click on any <span class="highlight">button or input field</span> to record it.
                 <br>🔄 Screen updates every 1 second.
             </p>
         </div>
@@ -289,8 +285,6 @@ def index():
     </body>
     </html>
     """, 
-    mode_class='signup' if training_type == 'signup' else 'forgot',
-    mode_label='Signup Training' if training_type == 'signup' else 'Forgot Password Training',
     phone=current_phone if current_phone else 'Not started',
     current_index=training_phone_index + 1 if training_phone_index < len(training_phone_list) else len(training_phone_list),
     total=len(training_phone_list) if training_phone_list else 1
@@ -302,7 +296,7 @@ def stream():
 
 @stream_app.route('/remote_click', methods=['POST'])
 def remote_click():
-    global shared_driver, training_type
+    global shared_driver
     if shared_driver:
         try:
             data = request.json
@@ -330,10 +324,9 @@ def remote_click():
                 else:
                     selector = tag
                 
-                macro_file = MACRO_FILE_SIGNUP if training_type == 'signup' else MACRO_FILE
                 steps = []
-                if os.path.exists(macro_file):
-                    with open(macro_file, 'r') as f:
+                if os.path.exists(MACRO_FILE):
+                    with open(MACRO_FILE, 'r') as f:
                         steps = json.load(f)
                 
                 steps.append({
@@ -343,7 +336,7 @@ def remote_click():
                     'timestamp': time.time()
                 })
                 
-                with open(macro_file, 'w') as f:
+                with open(MACRO_FILE, 'w') as f:
                     json.dump(steps, f, indent=2)
                 
                 shared_driver.execute_script("arguments[0].click();", element)
@@ -355,10 +348,9 @@ def remote_click():
 
 @stream_app.route('/step_count')
 def step_count():
-    macro_file = MACRO_FILE_SIGNUP if training_type == 'signup' else MACRO_FILE
-    if os.path.exists(macro_file):
+    if os.path.exists(MACRO_FILE):
         try:
-            with open(macro_file, 'r') as f:
+            with open(MACRO_FILE, 'r') as f:
                 steps = json.load(f)
                 return jsonify({'count': len(steps)})
         except:
@@ -375,9 +367,8 @@ def save_and_next():
 
 @stream_app.route('/clear_steps', methods=['POST'])
 def clear_steps():
-    macro_file = MACRO_FILE_SIGNUP if training_type == 'signup' else MACRO_FILE
-    if os.path.exists(macro_file):
-        os.remove(macro_file)
+    if os.path.exists(MACRO_FILE):
+        os.remove(MACRO_FILE)
     return jsonify({'success': True})
 
 # ==================== INSTALL OPENPYXL ====================
@@ -392,7 +383,7 @@ except ImportError:
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_URL = 'https://ridol-fb-tool.onrender.com' 
-APP_VERSION = 'v19.1'
+APP_VERSION = 'v20.0'
 
 # ==================== COLOR CODES ====================
 class Color:
@@ -409,66 +400,7 @@ class Color:
     PINK = '\033[38;5;206m'
     ORANGE = '\033[38;5;208m'
 
-# ==================== DATA GENERATOR ====================
-class DataGenerator:
-    FIRST_NAMES = {
-        'US': ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles'],
-        'BD': ['Mohammad', 'Abdullah', 'Rafiq', 'Shahid', 'Kamal', 'Jamal', 'Rahim', 'Karim', 'Hasan', 'Ali'],
-        'IN': ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Pranav', 'Dhruv', 'Aryan', 'Reyansh'],
-        'GB': ['Oliver', 'George', 'Harry', 'Jack', 'Jacob', 'Charlie', 'Thomas', 'James', 'William', 'Muhammad'],
-        'XX': ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Hayden', 'Harper']
-    }
-    
-    LAST_NAMES = {
-        'US': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'],
-        'BD': ['Rahman', 'Ahmed', 'Islam', 'Hossain', 'Ali', 'Khan', 'Haque', 'Sarkar', 'Mia', 'Pramanik'],
-        'IN': ['Sharma', 'Verma', 'Patel', 'Singh', 'Kumar', 'Gupta', 'Joshi', 'Gandhi', 'Prasad', 'Sinha'],
-        'GB': ['Smith', 'Jones', 'Williams', 'Taylor', 'Brown', 'Davies', 'Evans', 'Thomas', 'Johnson', 'Roberts'],
-        'XX': ['Chen', 'Singh', 'Garcia', 'Wang', 'Perez', 'Nguyen', 'Patel', 'Smith', 'Jones', 'Williams']
-    }
-    
-    @classmethod
-    def get_random_name(cls, country_code):
-        first_list = cls.FIRST_NAMES.get(country_code, cls.FIRST_NAMES['XX'])
-        last_list = cls.LAST_NAMES.get(country_code, cls.LAST_NAMES['XX'])
-        return random.choice(first_list), random.choice(last_list)
-    
-    @classmethod
-    def get_random_dob(cls):
-        day = random.randint(1, 28)
-        month = random.randint(1, 12)
-        year = random.randint(1992, 2005)
-        return day, month, year
-    
-    @classmethod
-    def get_random_gender(cls):
-        return random.choice(['Male', 'Female'])
-    
-    @classmethod
-    def get_random_password(cls):
-        length = random.randint(8, 12)
-        chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
-        return ''.join(random.choices(chars, k=length))
-
 # ==================== COUNTRY FUNCTIONS ====================
-COUNTRY_NAME_TO_CODE = {
-    'TOGO': 'TG', 'USA': 'US', 'UK': 'GB', 'INDIA': 'IN',
-    'BANGLADESH': 'BD', 'PAKISTAN': 'PK', 'INDONESIA': 'ID',
-    'MALAYSIA': 'MY', 'SINGAPORE': 'SG', 'PHILIPPINES': 'PH',
-    'THAILAND': 'TH', 'VIETNAM': 'VN', 'JAPAN': 'JP',
-    'SOUTH KOREA': 'KR', 'GERMANY': 'DE', 'FRANCE': 'FR',
-    'ITALY': 'IT', 'RUSSIA': 'RU', 'BRAZIL': 'BR',
-}
-
-def get_country_code_from_name(country_name):
-    if not country_name:
-        return 'XX'
-    country_name = country_name.strip().upper()
-    for name, code in COUNTRY_NAME_TO_CODE.items():
-        if name in country_name or country_name in name:
-            return code
-    return 'XX'
-
 def get_country_from_phone(phone_number):
     phone = phone_number.strip().replace('+', '').replace(' ', '').replace('-', '')
     country_codes = {
@@ -511,15 +443,8 @@ def read_numbers_from_excel(file_path):
         sheet = wb.active
         print(f"{Color.CYAN}[*] Sheet Name: {sheet.title}{Color.RESET}")
         
-        current_country = None
         for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-            country_val = row[0] if len(row) > 0 else None
             number_val = row[1] if len(row) > 1 else None
-            
-            if country_val and isinstance(country_val, str):
-                temp_country = re.sub(r'\d+', '', country_val).strip()
-                if temp_country:
-                    current_country = temp_country
             
             if number_val:
                 number_str = str(number_val).strip()
@@ -528,17 +453,9 @@ def read_numbers_from_excel(file_path):
                 clean_number = re.sub(r'[^0-9]', '', number_str)
                 
                 if len(clean_number) >= 7:
-                    if not number_str.startswith('+'):
-                        full_number = '+' + clean_number
-                    else:
-                        full_number = number_str
-                    c_code = get_country_from_phone(full_number)
-                    if c_code == 'XX' and current_country:
-                        c_code = get_country_code_from_name(current_country)
                     numbers.append({
-                        'number': full_number,
-                        'country': c_code,
-                        'country_name': current_country or 'Unknown'
+                        'number': clean_number,
+                        'country': get_country_from_phone(clean_number)
                     })
         wb.close()
         print(f"{Color.GREEN}[+] Total numbers found: {len(numbers)}{Color.RESET}")
@@ -797,7 +714,7 @@ class StealthBrowser:
                 pass
 
 # ==================== TRAINING MODE EXECUTOR ====================
-def execute_training_mode(driver, phone_number, excel_path, macro_file, phone_list, current_index):
+def execute_training_mode(driver, phone_number, excel_path, phone_list, current_index):
     global is_training_mode, training_complete, next_number_triggered, current_phone
     global training_phone_list, training_phone_index
     
@@ -809,7 +726,7 @@ def execute_training_mode(driver, phone_number, excel_path, macro_file, phone_li
     print(f"{Color.GOLD}[!] 🎯 TRAINING MODE ACTIVATED!{Color.RESET}")
     print(f"{Color.CYAN}[*] 🌐 Live View URL: http://{LOCAL_IP}:5000{Color.RESET}")
     print(f"{Color.CYAN}[*] 📱 Current Number: {phone_number}{Color.RESET}")
-    print(f"{Color.YELLOW}[*] 📋 Perform the entire process manually{Color.RESET}")
+    print(f"{Color.YELLOW}[*] 📋 Perform the ChatGPT signup process manually{Color.RESET}")
     print(f"{Color.YELLOW}[*] 🖱️ Every click you make will be recorded{Color.RESET}")
     print(f"{Color.YELLOW}[*] ✅ Click 'Save & Next' when done{Color.RESET}")
     print(f"{Color.GOLD}{'='*55}{Color.RESET}")
@@ -818,7 +735,6 @@ def execute_training_mode(driver, phone_number, excel_path, macro_file, phone_li
     training_complete = False
     next_number_triggered = False
     
-    # Start Flask server if not already running
     if not any(t.name == 'FlaskServer' for t in threading.enumerate()):
         threading.Thread(target=lambda: stream_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False), 
                         name='FlaskServer', daemon=True).start()
@@ -830,14 +746,17 @@ def execute_training_mode(driver, phone_number, excel_path, macro_file, phone_li
     
     print(f"{Color.GREEN}[+] Training complete! Steps saved.{Color.RESET}")
     
-    if os.path.exists(macro_file):
-        with open(macro_file, 'r') as f:
+    if os.path.exists(MACRO_FILE):
+        with open(MACRO_FILE, 'r') as f:
             steps = json.load(f)
         if steps:
             print(f"{Color.CYAN}[*] Executing {len(steps)} recorded steps...{Color.RESET}")
             for step in steps:
                 try:
                     if step['action'] == 'click':
+                        from selenium.webdriver.support.ui import WebDriverWait
+                        from selenium.webdriver.support import expected_conditions as EC
+                        from selenium.webdriver.common.by import By
                         element = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, step['selector']))
                         )
@@ -855,9 +774,9 @@ def execute_training_mode(driver, phone_number, excel_path, macro_file, phone_li
         print(f"{Color.RED}[-] No steps recorded!{Color.RESET}")
         return False
 
-# ==================== OTP SENDER - FORGOT PASSWORD ====================
-def forgot_password_sender(driver, phone_number, excel_path, training_mode=False, phone_list=None, current_index=0):
-    global shared_driver, training_type
+# ==================== CHATGPT SIGNUP SENDER ====================
+def chatgpt_signup_sender(driver, phone_number, excel_path, training_mode=False, phone_list=None, current_index=0):
+    global shared_driver
     shared_driver = driver
     
     try:
@@ -866,177 +785,57 @@ def forgot_password_sender(driver, phone_number, excel_path, training_mode=False
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.webdriver.common.keys import Keys
         
-        print(f"{Color.CYAN}[*] Forgot Password: {phone_number}{Color.RESET}")
+        print(f"{Color.CYAN}[*] ChatGPT Signup: {phone_number}{Color.RESET}")
         
-        driver.get("https://m.facebook.com/login/identify/")
+        # ChatGPT Login URL
+        driver.get("https://chatgpt.com/auth/login")
         time.sleep(3)
         
-        try:
-            input_xpath = "//input[contains(@name,'email') or contains(@type,'text') or @id='identify_email']"
-            input_box = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, input_xpath)))
-            input_box.clear()
-            input_box.send_keys(phone_number)
-            input_box.send_keys(Keys.ENTER)
-            print(f"{Color.GREEN}[✓] Number Searched{Color.RESET}")
-            time.sleep(4)
-        except:
-            take_error_screenshot(driver, phone_number, excel_path)
-            return False
-        
         if training_mode:
-            training_type = 'forgot'
-            return execute_training_mode(driver, phone_number, excel_path, MACRO_FILE, phone_list, current_index)
+            return execute_training_mode(driver, phone_number, excel_path, phone_list, current_index)
         else:
-            return execute_forgot_auto(driver, phone_number, excel_path)
-            
-    except Exception as e:
-        print(f"{Color.RED}[-] Crash: {e}{Color.RESET}")
-        take_error_screenshot(driver, phone_number, excel_path)
-        return False
-
-# ==================== OTP SENDER - SIGNUP ====================
-def signup_sender(driver, phone_number, excel_path, training_mode=False, phone_list=None, current_index=0):
-    global shared_driver, training_type
-    shared_driver = driver
-    
-    try:
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait, Select
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.common.keys import Keys
-        
-        print(f"{Color.CYAN}[*] Signup: {phone_number}{Color.RESET}")
-        
-        country_code = get_country_from_phone(phone_number)
-        first_name, last_name = DataGenerator.get_random_name(country_code)
-        day, month, year = DataGenerator.get_random_dob()
-        gender = DataGenerator.get_random_gender()
-        password = DataGenerator.get_random_password()
-        
-        print(f"{Color.CYAN}[*] Name: {first_name} {last_name} ({country_code}){Color.RESET}")
-        print(f"{Color.CYAN}[*] DOB: {day}/{month}/{year}{Color.RESET}")
-        print(f"{Color.CYAN}[*] Gender: {gender}{Color.RESET}")
-        print(f"{Color.CYAN}[*] Password: {password}{Color.RESET}")
-        
-        driver.get("https://m.facebook.com/reg/")
-        time.sleep(3)
-        
-        try:
-            first_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "firstname"))
-            )
-            first_field.send_keys(first_name)
-            time.sleep(0.5)
-            
-            last_field = driver.find_element(By.NAME, "lastname")
-            last_field.send_keys(last_name)
-            time.sleep(0.5)
-            
-            day_select = Select(driver.find_element(By.NAME, "birthday_day"))
-            day_select.select_by_value(str(day))
-            time.sleep(0.3)
-            
-            month_select = Select(driver.find_element(By.NAME, "birthday_month"))
-            month_select.select_by_value(str(month))
-            time.sleep(0.3)
-            
-            year_select = Select(driver.find_element(By.NAME, "birthday_year"))
-            year_select.select_by_value(str(year))
-            time.sleep(0.3)
-            
-            gender_value = '2' if gender == 'Female' else '1'
-            gender_radio = driver.find_element(By.CSS_SELECTOR, f'input[name="sex"][value="{gender_value}"]')
-            gender_radio.click()
-            time.sleep(0.5)
-            
-            phone_field = driver.find_element(By.NAME, "reg_email__")
-            phone_field.send_keys(phone_number)
-            time.sleep(0.5)
-            
-            pass_field = driver.find_element(By.NAME, "reg_passwd__")
-            pass_field.send_keys(password)
-            time.sleep(0.5)
-            
-            print(f"{Color.GREEN}[✓] Form filled{Color.RESET}")
-            
-        except Exception as e:
-            print(f"{Color.RED}[-] Form fill error: {e}{Color.RESET}")
-            take_error_screenshot(driver, phone_number, excel_path)
-            return False
-        
-        if training_mode:
-            training_type = 'signup'
-            return execute_training_mode(driver, phone_number, excel_path, MACRO_FILE_SIGNUP, phone_list, current_index)
-        else:
-            return execute_signup_auto(driver, phone_number, excel_path)
-            
-    except Exception as e:
-        print(f"{Color.RED}[-] Crash: {e}{Color.RESET}")
-        take_error_screenshot(driver, phone_number, excel_path)
-        return False
-
-# ==================== AUTO MODE - FORGOT PASSWORD ====================
-def execute_forgot_auto(driver, phone_number, excel_path):
-    try:
-        from selenium.webdriver.common.by import By
-        account_index = 0
-        max_profiles = 5
-        
-        while account_index < max_profiles:
-            accounts = driver.find_elements(By.XPATH, "//a[contains(@href, '/recover/')] | //div[contains(@class, 'account')]")
-            if accounts and account_index < len(accounts):
-                print(f"{Color.YELLOW}[*] Testing Profile #{account_index + 1}{Color.RESET}")
-                driver.execute_script("arguments[0].click();", accounts[account_index])
-                time.sleep(4)
-            
-            if "minute" in driver.page_source.lower() or "(01:" in driver.page_source:
-                print(f"{Color.RED}[!] Profile Locked. Skipping...{Color.RESET}")
-                account_index += 1
-                driver.get("https://m.facebook.com/login/identify/")
-                continue
-            
+            # Normal Mode - Auto
             try:
-                final_btn_script = """
-                var b = document.querySelector('button[type="submit"], button[name="reset_action"]');
-                if(b) { b.click(); return true; } return false;
-                """
-                if driver.execute_script(final_btn_script):
-                    print(f"{Color.GREEN}[+] OTP Triggered!{Color.RESET}")
-                    time.sleep(6)
-                    return True
-            except: pass
+                print(f"{Color.CYAN}[*] Looking for phone input...{Color.RESET}")
+                
+                # Click on phone option if available
+                try:
+                    phone_option = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Phone')]"))
+                    )
+                    phone_option.click()
+                    time.sleep(1)
+                except:
+                    pass
+                
+                # Find phone input
+                phone_input = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.NAME, "phone_number"))
+                )
+                phone_input.clear()
+                phone_input.send_keys(phone_number)
+                time.sleep(1)
+                
+                print(f"{Color.GREEN}[✓] Phone entered: {phone_number}{Color.RESET}")
+                
+                # Click Continue
+                continue_btn = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Continue')]"))
+                )
+                continue_btn.click()
+                time.sleep(2)
+                
+                print(f"{Color.GREEN}[+] Continue clicked! OTP sent to: {phone_number}{Color.RESET}")
+                return True
+                
+            except Exception as e:
+                print(f"{Color.RED}[-] Error: {e}{Color.RESET}")
+                take_error_screenshot(driver, phone_number, excel_path)
+                return False
             
-            account_index += 1
-            print(f"{Color.DIM}[*] Retrying with next profile...{Color.RESET}")
-            driver.get("https://m.facebook.com/login/identify/")
-            time.sleep(2)
-        
+    except Exception as e:
+        print(f"{Color.RED}[-] Crash: {e}{Color.RESET}")
         take_error_screenshot(driver, phone_number, excel_path)
-        return False
-    except Exception as e:
-        print(f"{Color.RED}[-] Auto error: {e}{Color.RESET}")
-        return False
-
-# ==================== AUTO MODE - SIGNUP ====================
-def execute_signup_auto(driver, phone_number, excel_path):
-    try:
-        from selenium.webdriver.common.by import By
-        
-        print(f"{Color.CYAN}[*] Submitting signup form...{Color.RESET}")
-        
-        try:
-            signup_btn = driver.find_element(By.NAME, "websubmit")
-            signup_btn.click()
-            print(f"{Color.GREEN}[+] Signup submitted! OTP sent to: {phone_number}{Color.RESET}")
-            time.sleep(6)
-            return True
-        except:
-            print(f"{Color.RED}[-] Could not submit signup form{Color.RESET}")
-            take_error_screenshot(driver, phone_number, excel_path)
-            return False
-            
-    except Exception as e:
-        print(f"{Color.RED}[-] Auto error: {e}{Color.RESET}")
         return False
 
 # ==================== UI & APP CONTROLLER ====================
@@ -1055,7 +854,7 @@ class SaaSApp:
    ██║  ██║██║██████╔╝╚██████╔╝███████╗
    ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝{Color.RESET}""")
         print(f"            {Color.WHITE}{Color.BOLD}RIDOL FB TOOL {APP_VERSION}{Color.RESET}")
-        print(f"         {Color.PINK}Signup + Forgot Password OTP Sender{Color.RESET}")
+        print(f"         {Color.PINK}ChatGPT Account Creator{Color.RESET}")
         
         print(f"  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
         br_status = f"{Color.GREEN}Active{Color.RESET}" if self.core.browser_ready else f"{Color.RED}Missing{Color.RESET}"
@@ -1074,7 +873,7 @@ class SaaSApp:
         if CHROMEDRIVER_PATH:
             print(f"  {Color.DIM}Chromedriver: {CHROMEDRIVER_PATH}{Color.RESET}")
 
-    def run_otp_sender(self):
+    def run_chatgpt_creator(self):
         if not self.core.is_valid:
             print(f"\n{Color.RED}[!] Verify License First!{Color.RESET}")
             time.sleep(2)
@@ -1108,21 +907,25 @@ class SaaSApp:
         
         print(f"\n{Color.GREEN}[+] Found {len(numbers_data)} numbers in Excel{Color.RESET}")
         
-        # Ask for operation type
-        print(f"\n{Color.CYAN}Select Operation:{Color.RESET}")
-        print(f"  {Color.GREEN}[1]{Color.RESET} Forgot Password (Recover Account)")
-        print(f"  {Color.GOLD}[2]{Color.RESET} Signup (Create New Account)")
-        op_choice = input(f"\n{Color.BOLD}Enter choice: {Color.RESET}").strip()
-        is_signup = (op_choice == '2')
-        
-        # Ask for mode
         print(f"\n{Color.CYAN}Select Mode:{Color.RESET}")
-        print(f"  {Color.GREEN}[1]{Color.RESET} Normal Mode (Auto)")
+        print(f"  {Color.GREEN}[1]{Color.RESET} Normal Mode (Auto ChatGPT Signup)")
         print(f"  {Color.GOLD}[2]{Color.RESET} Training Mode (Record & Playback)")
         mode_choice = input(f"\n{Color.BOLD}Enter choice: {Color.RESET}").strip()
         training_mode = (mode_choice == '2')
         
-        print(f"\n{Color.GREEN}[+] Starting...{Color.RESET}")
+        if training_mode:
+            if not any(t.name == 'FlaskServer' for t in threading.enumerate()):
+                threading.Thread(target=lambda: stream_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False), 
+                                name='FlaskServer', daemon=True).start()
+                time.sleep(2)
+            print(f"\n{Color.GREEN}[+] Training server started!{Color.RESET}")
+            print(f"{Color.CYAN}[+] URL: http://{LOCAL_IP}:5000{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Open this URL in your browser{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Complete the ChatGPT signup process manually{Color.RESET}")
+            print(f"{Color.YELLOW}[!] Click 'Save & Next' when done{Color.RESET}")
+            time.sleep(3)
+        
+        print(f"\n{Color.GREEN}[+] Starting ChatGPT Account Creator...{Color.RESET}")
         print(f"{Color.CYAN}[+] Total: {len(numbers_data)} numbers{Color.RESET}")
         print(f"{Color.YELLOW}[!] Each number costs 1 credit{Color.RESET}")
         print("-" * 50)
@@ -1138,10 +941,9 @@ class SaaSApp:
             
             phone = data['number']
             country = data['country']
-            country_name = data['country_name']
             
             print(f"\n{Color.GOLD}{'='*50}{Color.RESET}")
-            print(f"{Color.GOLD}[{idx}/{len(numbers_data)}] Phone: {phone} | Country: {country} ({country_name}){Color.RESET}")
+            print(f"{Color.GOLD}[{idx}/{len(numbers_data)}] Phone: {phone} | Country: {country}{Color.RESET}")
             print(f"{Color.GOLD}{'='*50}{Color.RESET}")
             
             proxy_data = self.core.get_proxy_and_deduct(country)
@@ -1153,11 +955,7 @@ class SaaSApp:
 
             browser = StealthBrowser(proxy_data)
             if browser.start():
-                if is_signup:
-                    success = signup_sender(browser.driver, phone, self.core.excel_file, training_mode, numbers_data, idx-1)
-                else:
-                    success = forgot_password_sender(browser.driver, phone, self.core.excel_file, training_mode, numbers_data, idx-1)
-                
+                success = chatgpt_signup_sender(browser.driver, phone, self.core.excel_file, training_mode, numbers_data, idx-1)
                 if success:
                     success_count += 1
                     print(f"{Color.GREEN}[✓] Success: {phone}{Color.RESET}")
@@ -1187,7 +985,7 @@ class SaaSApp:
             print(f"\n  {Color.CYAN}┌──────────────────────────────────────────┐{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}   MAIN MENU                           {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}├──────────────────────────────────────────┤{Color.RESET}")
-            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Start OTP Sender                   {Color.CYAN}│{Color.RESET}")
+            print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[1]{Color.RESET} Start ChatGPT Creator              {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[2]{Color.RESET} Data Folder Setup                  {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[3]{Color.RESET} License Management                 {Color.CYAN}│{Color.RESET}")
             print(f"  {Color.CYAN}│{Color.RESET}  {Color.GREEN}[4]{Color.RESET} Install Dependencies               {Color.CYAN}│{Color.RESET}")
@@ -1196,7 +994,7 @@ class SaaSApp:
 
             choice = input(f"\n{Color.BOLD} Enter choice: {Color.RESET}").strip()
             
-            if choice == '1': self.run_otp_sender()
+            if choice == '1': self.run_chatgpt_creator()
             elif choice == '2':
                 print(f"\n{Color.CYAN}[*] Scanning for Excel files...{Color.RESET}")
                 excel_files = find_excel_files()
